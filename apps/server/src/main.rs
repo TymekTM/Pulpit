@@ -341,7 +341,12 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// Resolve on the process's termination signals: Ctrl+C everywhere,
-/// plus SIGTERM where it exists (service managers).
+/// plus SIGTERM where it exists (service managers). On Windows also the
+/// console-window close and the system shutdown: Ctrl+C alone never sees
+/// those, so the tablets used to get a bare drop. Tokio's handler parks
+/// the OS thread for these until the process exits on its own, so the
+/// goodbye flush below gets to finish. Logoff is left out on purpose -
+/// a service receives it whenever any user signs out.
 async fn wait_for_terminate() {
     #[cfg(unix)]
     {
@@ -352,7 +357,20 @@ async fn wait_for_terminate() {
             _ = sigterm.recv() => {}
         }
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        use tokio::signal::windows::{ctrl_break, ctrl_close, ctrl_shutdown};
+        let mut close = ctrl_close().expect("install console close handler");
+        let mut shutdown = ctrl_shutdown().expect("install system shutdown handler");
+        let mut brk = ctrl_break().expect("install Ctrl+Break handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = close.recv() => {}
+            _ = shutdown.recv() => {}
+            _ = brk.recv() => {}
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = tokio::signal::ctrl_c().await;
     }

@@ -273,11 +273,16 @@ pub fn run() {
                 } => {
                     api.prevent_exit();
                 }
-                // A real exit (tray quit, OS shutdown when Tauri surfaces
-                // it): tell the v2 tablets the exit is deliberate. The
-                // once-guard keeps the tray quit from paying the flush
-                // wait twice.
+                // A real exit (tray quit, updater restart): tell the v2
+                // tablets the exit is deliberate. The once-guard keeps the
+                // tray quit from paying the flush wait twice.
                 tauri::RunEvent::ExitRequested { .. } => goodbye_v2(app),
+                // Windows session end (shutdown, restart, sign-out) never
+                // raises ExitRequested: tao answers WM_ENDSESSION by
+                // tearing the loop down straight into Exit, and the OS
+                // kills the process as soon as this handler returns - so
+                // the goodbye has to go out here, synchronously.
+                tauri::RunEvent::Exit => goodbye_v2(app),
                 _ => {}
             }
         });
@@ -873,6 +878,7 @@ fn goodbye_v2(app: &AppHandle) {
     else {
         return;
     };
+    tracing::info!(sessions = hub.count(), "exiting - saying goodbye to v2 tablets");
     hub.shutdown();
     // The session pumps write the frame + close asynchronously; give them
     // a beat before `exit` tears the process down.
