@@ -136,6 +136,28 @@ describe("App live state", () => {
     expect(w.vm.customValues.g.suffix).toBe("%");
   });
 
+  it("builds a graph from numeric-string samples like system info pushes", async () => {
+    seed();
+    const w = await mountApp();
+    await pushed(w, "APP_CUSTOM_VALUE", { "si-load-cpu": { title: "CPU Load", value: "12.0", suffix: "%" } });
+    await pushed(w, "APP_CUSTOM_VALUE", { "si-load-cpu": { title: "CPU Load", value: "30.5", suffix: "%" } });
+    expect(w.vm.customValues["si-load-cpu"].values).toEqual(["12.0", "30.5"]);
+    expect(w.vm.customValues["si-load-cpu"].suffix).toBe("%");
+  });
+
+  it("does not turn non-numeric or null readings into graph samples", async () => {
+    seed();
+    const w = await mountApp();
+    await pushed(w, "APP_CUSTOM_VALUE", {
+      temp: { title: "CPU Temperature", value: null, suffix: "°C" },
+      blank: { value: "  " },
+      text: { value: "n/a" },
+    });
+    expect(w.vm.customValues.temp.values).toBeUndefined();
+    expect(w.vm.customValues.blank.values).toBeUndefined();
+    expect(w.vm.customValues.text.values).toBeUndefined();
+  });
+
   it("keeps graph identity while only samples change", async () => {
     seed();
     const w = await mountApp();

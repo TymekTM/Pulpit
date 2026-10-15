@@ -576,11 +576,19 @@ function jsonEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// A graph sample is a finite number or a numeric string: the system-info
+// producer (and the JS package it replaced) pushes `toFixed(1)` text like
+// "12.3". The raw sample is kept so the tile shows "12.0%", not "12%".
+function isGraphSample(sample) {
+  if (typeof sample === "number") return true;
+  return typeof sample === "string" && sample.trim() !== "" && Number.isFinite(Number(sample));
+}
+
 function mergeCustomValues(data) {
   for (const [key, value] of Object.entries(data)) {
     if (typeof value !== "object" || value === null) {
       customValues[key] = value;
-    } else if (typeof value.value === "number") {
+    } else if (isGraphSample(value.value)) {
       // graph-style payload: keep the last 10 readings for the sparkline
       // and pass the rest through (title, suffix, per-provider rows)
       const prev = customValues[key];
