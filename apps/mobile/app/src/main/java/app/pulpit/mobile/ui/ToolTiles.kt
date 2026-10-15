@@ -101,6 +101,40 @@ fun formatMmSs(ms: Long): String {
     }
 }
 
+/** Floor and ceiling of the tick delays below. The floor stops a wake-up
+ *  that lands a hair before the boundary (wall clock vs. uptime drift) from
+ *  degenerating into a 1 ms busy loop; the ceiling keeps a stale
+ *  extrapolation from sleeping more than one displayed second. */
+internal const val TICK_MIN_DELAY_MS = 16L
+internal const val TICK_MAX_DELAY_MS = 1_000L
+
+/**
+ * How long until the countdown's text can next change. [formatMmSs] shows
+ * ceil(ms / 1000), so with [remainingMs] in ((k-1)*1000, k*1000] the text
+ * reads k and flips to k-1 once remaining drops to (k-1)*1000, i.e. after
+ * ((remaining - 1) % 1000) + 1 ms (remaining == k*1000 waits a full second;
+ * remaining == (k-1)*1000 + 1 waits 1 ms). The last step lands on exactly
+ * 0, which is also the instant the tile's finished state appears. Callers
+ * stop ticking at 0 (nothing changes after it).
+ */
+internal fun timerTickDelayMs(remainingMs: Long): Long {
+    if (remainingMs <= 0L) return TICK_MAX_DELAY_MS
+    return (((remainingMs - 1L) % 1000L) + 1L).coerceIn(TICK_MIN_DELAY_MS, TICK_MAX_DELAY_MS)
+}
+
+/**
+ * How long until the stopwatch's text can next change. The same ceil
+ * display on an increasing value flips from k to k+1 one millisecond
+ * after elapsed passes k*1000 (elapsed == 2000 still reads 2, 2001 reads
+ * 3), so the wait is 1000 - ((elapsed - 1) % 1000); elapsed == 0 and
+ * exact multiples of 1000 wait 1 ms (clamped up to the floor), never a
+ * full second, otherwise the flip would be skipped for a whole second.
+ */
+internal fun stopwatchTickDelayMs(elapsedMs: Long): Long {
+    if (elapsedMs <= 0L) return TICK_MIN_DELAY_MS
+    return (1000L - ((elapsedMs - 1L) % 1000L)).coerceIn(TICK_MIN_DELAY_MS, TICK_MAX_DELAY_MS)
+}
+
 /** Parses duration string (e.g. "05:00", "5:00", "300") into milliseconds. */
 fun parseDurationString(str: String?): Long {
     val s = str?.trim().orEmpty()
@@ -219,14 +253,28 @@ fun ToolTimerTile(
 
     var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    LaunchedEffect(running) {
+    // wakes only when the displayed second can change (see
+    // timerTickDelayMs) instead of polling at 5 Hz. Keyed on every input
+    // of the extrapolation, so a server push (pause/resume, new
+    // startedAtMs/elapsedMs/durationMs) restarts the loop and re-aligns
+    // rather than sleeping on a delay computed from the old state.
+    LaunchedEffect(running, finished, startedAtMs, elapsedMs, durationMs) {
+        nowTick = System.currentTimeMillis()
         if (running) {
             while (true) {
+                val left = timerExtrapolateRemaining(
+                    durationMs = durationMs,
+                    elapsedMs = elapsedMs,
+                    startedAtMs = startedAtMs,
+                    running = true,
+                    finished = finished,
+                    nowMs = nowTick,
+                )
+                // at 0 the text and the finished state are final
+                if (left <= 0L) break
+                delay(timerTickDelayMs(left))
                 nowTick = System.currentTimeMillis()
-                delay(200L)
             }
-        } else {
-            nowTick = System.currentTimeMillis()
         }
     }
 
@@ -328,14 +376,22 @@ fun ToolStopwatchTile(
 
     var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    LaunchedEffect(running) {
+    // wakes only when the displayed second can change (see
+    // stopwatchTickDelayMs); keyed on the extrapolation inputs so a pushed
+    // pause/resume/reset re-aligns instead of keeping a stale delay
+    LaunchedEffect(running, startedAtMs, elapsedMs) {
+        nowTick = System.currentTimeMillis()
         if (running) {
             while (true) {
+                val shown = stopwatchExtrapolateElapsed(
+                    elapsedMs = elapsedMs,
+                    startedAtMs = startedAtMs,
+                    running = true,
+                    nowMs = nowTick,
+                )
+                delay(stopwatchTickDelayMs(shown))
                 nowTick = System.currentTimeMillis()
-                delay(200L)
             }
-        } else {
-            nowTick = System.currentTimeMillis()
         }
     }
 

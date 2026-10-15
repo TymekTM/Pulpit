@@ -9,6 +9,7 @@ package app.pulpit.mobile.state
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.compose.ui.graphics.ImageBitmap
@@ -36,6 +37,8 @@ import kotlinx.coroutines.flow.StateFlow
 import app.pulpit.mobile.ui.HapticConfig
 import app.pulpit.mobile.ui.HapticIntensity
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import okhttp3.Request
@@ -158,6 +161,12 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
      *  only). Failures retry ASSET_RETRIES times with backoff; forgetPairing
      *  clears the set together with the bitmaps it guards. */
     private val assetFetches = mutableSetOf<String>()
+
+    /** Bounds concurrent asset network reads + decodes to [ASSET_PARALLELISM]:
+     *  a board with N images used to start N fetches at once, each buffering
+     *  up to ASSET_MAX_BYTES, which on the 1 GB deck tablet meant a heap
+     *  spike and GC pauses. Excess fetches queue as suspended coroutines. */
+    private val assetPermits = Semaphore(ASSET_PARALLELISM)
 
     private var client: V2Client? = null
     private var eventJob: Job? = null
@@ -377,37 +386,11 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
         val cfg = _config.value
         val token = cfg.token ?: return
         scope.launch {
+            // the permit is held only around the network read + decode, never
+            // across the retry delay below; acquiring it is cancellable, so a
+            // scope cancel still unwinds queued fetches
             val bitmap = withContext(Dispatchers.IO) {
-                runCatching {
-                    val url = "http://${cfg.host}:${cfg.port}/assets/$hash?token=$token"
-                    V2Client.httpCalls.newCall(Request.Builder().url(url).build()).execute().use { resp ->
-                        if (!resp.isSuccessful) return@use null
-                        val body = resp.body ?: return@use null
-                        // MOB-12: bail on an asset too big to be a tile
-                        // image or background - the sampled decode was
-                        // always capped, the read was not, and a multi-MB
-                        // body buffered whole into the heap of a 1 GB
-                        // tablet. A lying or absent Content-Length is
-                        // caught by the capped stream read itself.
-                        if (body.contentLength() > ASSET_MAX_BYTES) return@use null
-                        // one read: OkHttp streams cannot be consumed twice
-                        val bytes = readAtMost(body.byteStream(), ASSET_MAX_BYTES.toInt())
-                            ?: return@use null
-                        // decode with a power-of-two sample at the purpose's
-                        // target size, so a future full-res photo cannot eat
-                        // the heap of a 1 GB tablet
-                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                        val sampled = BitmapFactory.Options().apply {
-                            inSampleSize = maxOf(
-                                bounds.outWidth / maxDim,
-                                bounds.outHeight / maxDim,
-                                1,
-                            )
-                        }
-                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, sampled)
-                    }
-                }.getOrNull()
+                assetPermits.withPermit { fetchAsset(cfg, token, hash, maxDim) }
             }
             if (bitmap != null) {
                 bitmapLru.put(hash, bitmap.asImageBitmap())
@@ -419,6 +402,44 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    /** One blocking fetch + sampled decode of [hash]; null on any failure
+     *  (the caller retries). Runs on Dispatchers.IO under [assetPermits]. */
+    private fun fetchAsset(cfg: ServerConfig, token: String, hash: String, maxDim: Int): Bitmap? =
+        runCatching {
+            val url = "http://${cfg.host}:${cfg.port}/assets/$hash?token=$token"
+            V2Client.httpCalls.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val body = resp.body ?: return@use null
+                // MOB-12: bail on an asset too big to be a tile
+                // image or background - the sampled decode was
+                // always capped, the read was not, and a multi-MB
+                // body buffered whole into the heap of a 1 GB
+                // tablet. A lying or absent Content-Length is
+                // caught by the capped stream read itself.
+                if (body.contentLength() > ASSET_MAX_BYTES) return@use null
+                // one read: OkHttp streams cannot be consumed twice
+                val bytes = readAtMost(body.byteStream(), ASSET_MAX_BYTES.toInt())
+                    ?: return@use null
+                // decode with a power-of-two sample at the purpose's
+                // target size, so a future full-res photo cannot eat
+                // the heap of a 1 GB tablet
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                val sampled = BitmapFactory.Options().apply {
+                    inSampleSize = maxOf(
+                        bounds.outWidth / maxDim,
+                        bounds.outHeight / maxDim,
+                        1,
+                    )
+                }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, sampled)?.also {
+                    // upload the texture here on the IO thread, not on the
+                    // first frame that draws it (API 24+, no-op once uploaded)
+                    it.prepareToDraw()
+                }
+            }
+        }.getOrNull()
 
     /** Prefs → [ServerConfig]. The stored token is either an `enc1:`
      *  envelope (decrypted) or a legacy plaintext from before ADR-008
@@ -700,7 +721,10 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
             }
             is V2Event.Patch -> {
                 val values = _values.value.toMutableMap()
-                val series = _series.value.toMutableMap()
+                // copied lazily: most patches carry no series channel, and a
+                // fresh map on every patch re-evaluates every tile's
+                // derivedStateOf over `series` for nothing
+                var series: MutableMap<String, List<Double>>? = null
                 for (change in ev.changes) {
                     val info = change.value
                     // series channels carry their newest point; scalars replace
@@ -711,15 +735,16 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
                             // the window may not exist yet: a fresh server
                             // sends an empty state.sync and only patches
                             // from here on build the chart history
-                            val window = ((series[change.channel] ?: emptyList()) + point)
+                            val target = series ?: _series.value.toMutableMap().also { series = it }
+                            val window = ((target[change.channel] ?: emptyList()) + point)
                                 .takeLast(V2.SERIES_CAP)
-                            series[change.channel] = window
+                            target[change.channel] = window
                         }
                     }
                     values[change.channel] = info
                 }
                 _values.value = values
-                _series.value = series
+                series?.let { _series.value = it }
             }
             is V2Event.ServerError -> {
                 // Fatal codes are already terminal in V2Client
@@ -830,6 +855,11 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
         private const val TAG = "PulpitViewModel"
 
         private const val ASSET_RETRIES = 3
+
+        /** Concurrent asset fetch+decode permits: enough to overlap
+         *  network latency with decode, few enough that the buffered
+         *  bodies (up to ASSET_MAX_BYTES each) stay small on a 1 GB tablet. */
+        private const val ASSET_PARALLELISM = 3
 
         /** Shutdown-overlay probe cadence; see the init loop. */
         private const val PROBE_SECONDS = 30L

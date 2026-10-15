@@ -143,8 +143,12 @@ fun Tile(
         else -> null
     }
     val muted = discordKind != null && liveText == "OFF"
-    val baseColor = hex(style?.color, DeckColors.tileFallback)
-    val activeColor = hex(style?.color2, baseColor)
+    // hex() is runCatching + Color.parseColor; Tile recomposes on every
+    // live value / press, so each parse is keyed on its input string and
+    // runs only when that string (or the base color it falls back to)
+    // actually changes
+    val baseColor = remember(style?.color) { hex(style?.color, DeckColors.tileFallback) }
+    val activeColor = remember(style?.color2, baseColor) { hex(style?.color2, baseColor) }
     val color = when {
         muted -> Color(0xFFED4245)
         active -> activeColor
@@ -163,9 +167,12 @@ fun Tile(
     fun pick(first: String?, second: String?): String? =
         if (active) second ?: first else first
 
-    val iconColor = hex(pick(style?.iconColor, style?.iconColor2), Color.White)
-    val titleColor = hex(pick(style?.titleColor, style?.titleColor2), Color.White)
+    val iconColorStr = pick(style?.iconColor, style?.iconColor2)
+    val titleColorStr = pick(style?.titleColor, style?.titleColor2)
+    val iconColor = remember(iconColorStr) { hex(iconColorStr, Color.White) }
+    val titleColor = remember(titleColorStr) { hex(titleColorStr, Color.White) }
     val borderColor = pick(style?.borderColor, style?.borderColor2)
+    val borderStroke = remember(borderColor) { hex(borderColor, Color.Transparent) }
     val title = style?.title.orEmpty()
     // active state swaps the shape pair too (state 2 falls back to
     // state 1 per field, §4); shapes travel as stringified ints
@@ -174,7 +181,8 @@ fun Tile(
     // title pinning + box color with the same per-field state-2 fallback
     fun pickInt(first: Int?, second: Int?): Int? = if (active) second ?: first else first
     val titlePos = pickInt(style?.titlePosition, style?.titlePosition2) ?: 0
-    val titleBox = pick(style?.titleBoxColor, style?.titleBoxColor2)?.let { hex(it, Color.Transparent) }
+    val titleBoxStr = pick(style?.titleBoxColor, style?.titleBoxColor2)
+    val titleBox = remember(titleBoxStr) { titleBoxStr?.let { hex(it, Color.Transparent) } }
     // the active-state image (img2) replaces the resting face while the
     // tile reads its active value; absent falls back to the resting one
     val face = if (active) image2 ?: image else image
@@ -250,7 +258,7 @@ fun Tile(
                 // pixels, one less draw node per tile)
                 .then(
                     if (borderColor != null) {
-                        Modifier.border(2.dp, hex(borderColor, Color.Transparent))
+                        Modifier.border(2.dp, borderStroke)
                     } else {
                         Modifier
                     },

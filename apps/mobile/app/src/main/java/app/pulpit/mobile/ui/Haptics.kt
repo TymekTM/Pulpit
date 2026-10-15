@@ -8,6 +8,7 @@ package app.pulpit.mobile.ui
 
 import android.content.Context
 import android.os.Build
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.provider.Settings
@@ -149,6 +150,13 @@ fun isSystemHapticFeedbackEnabled(context: Context): Boolean =
         ) != 0
     }.getOrDefault(true)
 
+/** How long a read of the system haptics switch stays valid. A slider drag
+ *  ticks up to ~20 times a second and each Settings.System read is a binder
+ *  round trip; one read per second keeps the user's toggle effective within
+ *  a second without a ContentObserver (AndroidHaptics has no dispose hook,
+ *  and a leaked observer is worse than the occasional IPC). */
+internal const val SYSTEM_HAPTICS_CACHE_MS = 1_000L
+
 /** Production Haptics implementation honoring system settings and local preference. */
 class AndroidHaptics(
     private val viewProvider: () -> View?,
@@ -161,6 +169,22 @@ class AndroidHaptics(
         context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
     }
 
+    private var systemHapticsEnabled = true
+    private var systemHapticsReadAtMs = 0L
+    private var systemHapticsRead = false
+
+    /** [isSystemHapticFeedbackEnabled] re-read at most once per
+     *  [SYSTEM_HAPTICS_CACHE_MS]; perform() is called from the main thread. */
+    private fun systemHapticsOn(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (!systemHapticsRead || now - systemHapticsReadAtMs >= SYSTEM_HAPTICS_CACHE_MS) {
+            systemHapticsEnabled = isSystemHapticFeedbackEnabled(context)
+            systemHapticsReadAtMs = now
+            systemHapticsRead = true
+        }
+        return systemHapticsEnabled
+    }
+
     override fun click() = perform(HapticKind.Click)
     override fun toggleFlip() = perform(HapticKind.ToggleFlip)
     override fun sliderTick() = perform(HapticKind.SliderTick)
@@ -170,7 +194,7 @@ class AndroidHaptics(
         val config = configProvider()
         if (!config.enabled) return
 
-        if (!isSystemHapticFeedbackEnabled(context)) return
+        if (!systemHapticsOn()) return
 
         val view = viewProvider()
         val constant = resolveHapticFeedbackConstant(kind, config.intensity)
