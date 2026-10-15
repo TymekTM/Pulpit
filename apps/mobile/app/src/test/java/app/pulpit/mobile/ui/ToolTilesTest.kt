@@ -1,6 +1,8 @@
 package app.pulpit.mobile.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Pure extrapolation/format helpers of the tool tiles (ToolTiles.kt). */
@@ -69,5 +71,56 @@ class ToolTilesTest {
         // unusable input falls back to the 5 min default, like the server
         assertEquals(300_000L, parseDurationString("abc"))
         assertEquals(300_000L, parseDurationString(null))
+    }
+
+    @Test
+    fun timerTickDelayLandsOnTheNextDisplayChange() {
+        // k*1000 waits a full second, k*1000 + 1 waits 1 ms (floored)
+        assertEquals(1_000L, timerTickDelayMs(5_000L))
+        assertEquals(500L, timerTickDelayMs(1_500L))
+        assertEquals(TICK_MIN_DELAY_MS, timerTickDelayMs(1_001L))
+        // the last step lands on exactly 0 (the finished instant)
+        assertEquals(1_000L, timerTickDelayMs(1_000L))
+        assertEquals(TICK_MIN_DELAY_MS, timerTickDelayMs(1L))
+        // nothing left to tick for: bounded, never zero or negative
+        assertEquals(TICK_MAX_DELAY_MS, timerTickDelayMs(0L))
+        assertEquals(TICK_MAX_DELAY_MS, timerTickDelayMs(-5L))
+    }
+
+    @Test
+    fun timerTickDelayMatchesFormatMmSsBruteForce() {
+        for (remaining in 1L..3_500L) {
+            val delay = timerTickDelayMs(remaining)
+            assertTrue("clamped range for $remaining", delay in TICK_MIN_DELAY_MS..TICK_MAX_DELAY_MS)
+            val before = formatMmSs(remaining)
+            // unclamped delays are exact: same text right before, new text on the dot
+            if (delay > TICK_MIN_DELAY_MS) {
+                assertEquals("same at $remaining - ${delay - 1}", before, formatMmSs(remaining - (delay - 1)))
+                assertNotEquals("flips at $remaining - $delay", before, formatMmSs(maxOf(0L, remaining - delay)))
+            }
+        }
+    }
+
+    @Test
+    fun stopwatchTickDelayLandsOnTheNextDisplayChange() {
+        // 1500 reads 2; it reads 3 from 2001, i.e. 501 ms later
+        assertEquals(501L, stopwatchTickDelayMs(1_500L))
+        assertEquals(1_000L, stopwatchTickDelayMs(1_001L))
+        // exact multiples read k until 1 ms later: wait the floor, not a second
+        assertEquals(TICK_MIN_DELAY_MS, stopwatchTickDelayMs(2_000L))
+        assertEquals(TICK_MIN_DELAY_MS, stopwatchTickDelayMs(0L))
+    }
+
+    @Test
+    fun stopwatchTickDelayMatchesFormatMmSsBruteForce() {
+        for (elapsed in 1L..3_500L) {
+            val delay = stopwatchTickDelayMs(elapsed)
+            assertTrue("clamped range for $elapsed", delay in TICK_MIN_DELAY_MS..TICK_MAX_DELAY_MS)
+            val before = formatMmSs(elapsed)
+            if (delay > TICK_MIN_DELAY_MS) {
+                assertEquals("same at $elapsed + ${delay - 1}", before, formatMmSs(elapsed + delay - 1))
+                assertNotEquals("flips at $elapsed + $delay", before, formatMmSs(elapsed + delay))
+            }
+        }
     }
 }

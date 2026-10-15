@@ -878,7 +878,10 @@ fn goodbye_v2(app: &AppHandle) {
     else {
         return;
     };
-    tracing::info!(sessions = hub.count(), "exiting - saying goodbye to v2 tablets");
+    tracing::info!(
+        sessions = hub.count(),
+        "exiting - saying goodbye to v2 tablets"
+    );
     hub.shutdown();
     // The session pumps write the frame + close asynchronously; give them
     // a beat before `exit` tears the process down.

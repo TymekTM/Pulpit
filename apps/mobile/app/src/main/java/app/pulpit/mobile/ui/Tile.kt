@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
@@ -47,6 +48,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.times
@@ -141,8 +143,12 @@ fun Tile(
         else -> null
     }
     val muted = discordKind != null && liveText == "OFF"
-    val baseColor = hex(style?.color, DeckColors.tileFallback)
-    val activeColor = hex(style?.color2, baseColor)
+    // hex() is runCatching + Color.parseColor; Tile recomposes on every
+    // live value / press, so each parse is keyed on its input string and
+    // runs only when that string (or the base color it falls back to)
+    // actually changes
+    val baseColor = remember(style?.color) { hex(style?.color, DeckColors.tileFallback) }
+    val activeColor = remember(style?.color2, baseColor) { hex(style?.color2, baseColor) }
     val color = when {
         muted -> Color(0xFFED4245)
         active -> activeColor
@@ -161,9 +167,12 @@ fun Tile(
     fun pick(first: String?, second: String?): String? =
         if (active) second ?: first else first
 
-    val iconColor = hex(pick(style?.iconColor, style?.iconColor2), Color.White)
-    val titleColor = hex(pick(style?.titleColor, style?.titleColor2), Color.White)
+    val iconColorStr = pick(style?.iconColor, style?.iconColor2)
+    val titleColorStr = pick(style?.titleColor, style?.titleColor2)
+    val iconColor = remember(iconColorStr) { hex(iconColorStr, Color.White) }
+    val titleColor = remember(titleColorStr) { hex(titleColorStr, Color.White) }
     val borderColor = pick(style?.borderColor, style?.borderColor2)
+    val borderStroke = remember(borderColor) { hex(borderColor, Color.Transparent) }
     val title = style?.title.orEmpty()
     // active state swaps the shape pair too (state 2 falls back to
     // state 1 per field, §4); shapes travel as stringified ints
@@ -172,7 +181,8 @@ fun Tile(
     // title pinning + box color with the same per-field state-2 fallback
     fun pickInt(first: Int?, second: Int?): Int? = if (active) second ?: first else first
     val titlePos = pickInt(style?.titlePosition, style?.titlePosition2) ?: 0
-    val titleBox = pick(style?.titleBoxColor, style?.titleBoxColor2)?.let { hex(it, Color.Transparent) }
+    val titleBoxStr = pick(style?.titleBoxColor, style?.titleBoxColor2)
+    val titleBox = remember(titleBoxStr) { titleBoxStr?.let { hex(it, Color.Transparent) } }
     // the active-state image (img2) replaces the resting face while the
     // tile reads its active value; absent falls back to the resting one
     val face = if (active) image2 ?: image else image
@@ -183,9 +193,13 @@ fun Tile(
     // physical key feedback: tiles sit raised with a hard shadow cast to
     // the bottom-right; pressing sinks the face (scale + shift toward the
     // shadow) and softens the shadow, release pops back with a small
-    // bounce so it reads like a real key springing up
+    // bounce so it reads like a real key springing up.
+    // The four animated values are kept as State and only read in the
+    // layout/draw phases (graphicsLayer, offset {}, drawBehind), so a press
+    // animation re-runs layout/draw for this tile instead of recomposing
+    // the whole tile (and its content template) on every frame.
     var pressed by remember(tile.id) { mutableStateOf(false) }
-    val scale by animateFloatAsState(
+    val scale = animateFloatAsState(
         targetValue = if (pressed) 0.96f else 1f,
         animationSpec = if (pressed) {
             tween(durationMillis = 80)
@@ -194,7 +208,7 @@ fun Tile(
         },
         label = "tilePressScale",
     )
-    val sink by animateDpAsState(
+    val sink = animateDpAsState(
         targetValue = if (pressed) 2.dp else 0.dp,
         animationSpec = if (pressed) {
             tween(durationMillis = 80)
@@ -203,12 +217,12 @@ fun Tile(
         },
         label = "tilePressSink",
     )
-    val scrim by animateFloatAsState(
+    val scrim = animateFloatAsState(
         targetValue = if (pressed) 0.12f else 0f,
         animationSpec = tween(durationMillis = 80),
         label = "tilePressScrim",
     )
-    val shadowAlpha by animateFloatAsState(
+    val shadowAlpha = animateFloatAsState(
         targetValue = if (pressed) 0.28f else 0.45f,
         animationSpec = tween(durationMillis = 80),
         label = "tilePressShadow",
@@ -217,8 +231,8 @@ fun Tile(
     Box(
         modifier
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                scaleX = scale.value
+                scaleY = scale.value
             }
             .aspectRatio(tile.w.toFloat() / tile.h.toFloat())
             .padding(3.dp),
@@ -231,24 +245,34 @@ fun Tile(
                     .matchParentSize()
                     .offset(x = 4.dp, y = 4.dp)
                     .clip(shape)
-                    .background(Color.Black.copy(alpha = shadowAlpha)),
+                    .drawBehind { drawRect(Color.Black.copy(alpha = shadowAlpha.value)) },
             )
         }
         Box(
             Modifier
                 .matchParentSize()
-                .offset(x = sink, y = sink)
+                .offset { IntOffset(sink.value.roundToPx(), sink.value.roundToPx()) }
                 .clip(shape)
                 .background(color)
-                .border(
-                    if (borderColor != null) 2.dp else 0.dp,
-                    hex(borderColor, Color.Transparent),
-                ),
+                // no border at all beats a transparent 0dp one (identical
+                // pixels, one less draw node per tile)
+                .then(
+                    if (borderColor != null) {
+                        Modifier.border(2.dp, borderStroke)
+                    } else {
+                        Modifier
+                    },
+                )
+                // press scrim: drawn over the face background but under
+                // the content and the border stroke (border draws on top
+                // of everything after it), inside the clip - exactly where
+                // the old conditional white Box sat - and nothing at rest
+                .drawBehind {
+                    val a = scrim.value
+                    if (a > 0f) drawRect(Color.White.copy(alpha = a))
+                },
             contentAlignment = Alignment.Center,
         ) {
-            if (scrim > 0f) {
-                Box(Modifier.matchParentSize().background(Color.White.copy(alpha = scrim)))
-            }
             when (template) {
                 "tool-clock" -> ToolClockTile(tile, titleColor)
                 "tool-timer" -> ToolTimerTile(tile, liveElement, titleColor, onPress = onPressEnd, onGesture = onGesture)

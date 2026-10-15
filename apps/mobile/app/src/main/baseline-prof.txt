@@ -1,0 +1,11 @@
+# Baseline profile for the app's own code (AGP 8 merges src/main/baseline-prof.txt
+# into the release APK as assets/dexopt/baseline.prof). Compose UI already ships
+# profiles for the library code; this covers Tile, BoardGrid, Widgets, the view
+# model and the v2 client. profileinstaller writes the profile on the first
+# launch and the next background dexopt (idle + charging - the deck is always
+# on its charger) AOT-compiles them, instead of the first board switches
+# running interpreted/JIT (SM-T561, Android 7.1).
+# H = hot, S = startup, P = post-startup; the wildcard rules match every method
+# and class under the app package.
+HSPLapp/pulpit/mobile/**->**(**)**
+Lapp/pulpit/mobile/**;

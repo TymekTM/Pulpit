@@ -56,3 +56,8 @@ long as the app is updated with `adb install -r`.
   `/assets/<hash>?token=<device token>`.
 - Release minification relies on the keep rules bundled with
   kotlinx-serialization and OkHttp; no custom proguard file is needed.
+- `app/src/main/baseline-prof.txt` is a baseline profile for the app's own
+  code (wildcard over `app.pulpit.mobile`); it only pays off in release
+  builds, installed with `adb install -r`: profileinstaller writes it on
+  the first launch and the next background dexopt (idle + charging)
+  AOT-compiles the listed methods. Debug builds ignore it.

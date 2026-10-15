@@ -49,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
@@ -133,7 +134,10 @@ private const val BASE_DIM = 0.35f
  *  animator scales at 0 - that collapses every standard Compose animation
  *  into an instant jump (the frozen spinner on the SM-T561). Layer
  *  properties change per frame, so the boards themselves never
- *  recompose during the transition. */
+ *  recompose during the transition. Both boards are emitted from one
+ *  call site keyed by board id, so when the slide ends the incoming
+ *  board's composition is moved into the settled role instead of being
+ *  thrown away and rebuilt from scratch. */
 @Composable
 private fun BoardSwitcher(
     board: Board?,
@@ -178,10 +182,11 @@ private fun BoardSwitcher(
             if (t >= 1f) break
         }
         // Let the completed-slide frame present before swapping the
-        // boards: the swap recomposes the whole settled board (36 tiles
-        // on All In One) and stalls composition for hundreds of
-        // milliseconds on the tablet. Deferred by one frame, that stall
-        // lands on a static final image instead of freezing mid-slide.
+        // boards. The swap no longer rebuilds the board (the incoming
+        // composition is keyed by board id and just changes role), but it
+        // still disposes the old board's 36-odd tiles (All In One) and
+        // re-roles the survivor, so that work stays off the final slide
+        // frame: it lands after a static, fully presented image.
         withFrameNanos { }
         settled = target
         incoming = null
@@ -194,33 +199,48 @@ private fun BoardSwitcher(
     fun rendered(b: Board): Board = if (board?.id == b.id) board else b
 
     Box(modifier.onSizeChanged { widthPx = it.width }) {
-        settled?.let { base ->
-            val dim = if (incoming == null) 0f else progress
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        val drift = BASE_PARALLAX * widthPx * dim
-                        translationX = if (fromRight) -drift else drift
-                    },
-            ) {
-                BoardGrid(vm, rendered(base), Modifier.fillMaxSize())
+        // settled first so the incoming board draws on top of it. One call
+        // site + key(id): when the slide ends and incoming becomes settled
+        // its id is unchanged, so Compose moves the already-built tile
+        // tree instead of composing a fresh one. distinctBy guards the
+        // key against a (never expected) settled/incoming id collision.
+        val inc = incoming
+        for (b in listOfNotNull(settled, inc).distinctBy { it.id }) {
+            key(b.id) {
+                val isIncoming = b === inc
+                // every per-frame read (progress, fromRight, widthPx, and
+                // whether a slide is running) sits inside the graphicsLayer
+                // lambda, so the transition never recomposes the board
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            if (isIncoming) {
+                                val side = if (fromRight) 1f else -1f
+                                translationX = side * (1f - progress) * widthPx
+                            } else {
+                                val dim = if (incoming == null) 0f else progress
+                                val drift = BASE_PARALLAX * widthPx * dim
+                                translationX = if (fromRight) -drift else drift
+                            }
+                        },
+                ) {
+                    BoardGrid(vm, rendered(b), Modifier.fillMaxSize())
+                }
+                if (!isIncoming) {
+                    // dim over the settled board only (and under the
+                    // incoming one, which is the next sibling); it does not
+                    // drift with the board, and draws nothing at rest
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .drawBehind {
+                                val dim = if (incoming == null) 0f else progress
+                                if (dim > 0f) drawRect(Color.Black.copy(alpha = BASE_DIM * dim))
+                            },
+                    )
+                }
             }
-            if (dim > 0f) {
-                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = BASE_DIM * dim)))
-            }
-        }
-        incoming?.let { next ->
-            BoardGrid(
-                vm,
-                rendered(next),
-                Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        val side = if (fromRight) 1f else -1f
-                        translationX = side * (1f - progress) * widthPx
-                    },
-            )
         }
     }
 }
