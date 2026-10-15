@@ -5,7 +5,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -241,18 +241,6 @@ fun ToolTimerTile(
 
     val isFinished = finished || (remaining == 0L && durationMs > 0 && (running || elapsedMs >= durationMs))
 
-    // Flashing effect when timer is finished
-    val infiniteTransition = rememberInfiniteTransition(label = "timerFlash")
-    val flashAlpha by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 0.85f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(400),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "flashAlpha",
-    )
-
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -265,12 +253,11 @@ fun ToolTimerTile(
             },
         contentAlignment = Alignment.Center,
     ) {
+        // the flashing effect only exists while finished: the infinite
+        // transition lives inside TimerFlash, so an idle/running timer has
+        // no per-frame work at all
         if (isFinished) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFFE74C3C).copy(alpha = flashAlpha)),
-            )
+            TimerFlash()
         }
 
         Column(
@@ -299,6 +286,29 @@ fun ToolTimerTile(
             )
         }
     }
+}
+
+/** Red pulse behind a finished timer's text. The infinite transition is
+ *  created only while this is composed (the timer is finished), and the
+ *  alpha is read in the draw phase so the pulse redraws a rect each frame
+ *  instead of recomposing the tile. */
+@Composable
+private fun TimerFlash() {
+    val infiniteTransition = rememberInfiniteTransition(label = "timerFlash")
+    val flashAlpha = infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(400),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "flashAlpha",
+    )
+    Box(
+        Modifier
+            .fillMaxSize()
+            .drawBehind { drawRect(Color(0xFFE74C3C).copy(alpha = flashAlpha.value)) },
+    )
 }
 
 /** Native stopwatch tile (tool-stopwatch). */
