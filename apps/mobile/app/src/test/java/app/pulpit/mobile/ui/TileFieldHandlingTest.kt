@@ -8,6 +8,7 @@ import app.pulpit.mobile.proto.V2
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -60,6 +61,23 @@ class TileFieldHandlingTest {
         assertEquals(2, slider.h)
         assertTrue(slider.interacts(V2.INT_SLIDE))
         assertFalse(slider.interacts(V2.INT_PRESS_START))
+    }
+
+    @Test
+    fun sliderDefaultParamParsesIntoTheResetFraction() {
+        // a tile with a default value declares the double-tap reset and
+        // carries the fraction for the local snap
+        val configured = tile(
+            """{"id":40,"kind":"slider",
+                "params":{"slider_default":0.8333},
+                "interactions":["slide","double-tap"]}""",
+        )
+        assertEquals(0.8333f, configured.sliderDefault())
+        assertTrue(configured.interacts(V2.INT_DOUBLE_TAP))
+        // junk, out-of-range and absent values read as "no reset"
+        assertNull(tile("""{"id":41,"kind":"slider","params":{"slider_default":"x"}}""").sliderDefault())
+        assertNull(tile("""{"id":42,"kind":"slider","params":{"slider_default":1.5}}""").sliderDefault())
+        assertNull(tile("""{"id":43,"kind":"slider"}""").sliderDefault())
     }
 
     @Test

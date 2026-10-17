@@ -61,6 +61,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import app.pulpit.mobile.proto.ChannelInfo
 import app.pulpit.mobile.proto.Tile
+import app.pulpit.mobile.proto.V2
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -353,6 +354,7 @@ fun KnobTile(
     titleColor: Color,
     liveValue: Double?,
     onSlider: (Float) -> Unit,
+    onGesture: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // one drag protocol with the slider template (MOB-13): see
@@ -363,6 +365,8 @@ fun KnobTile(
     // see ButtonTile (Tile.kt): the drag block outlives a live tile edit
     val live by rememberUpdatedState(liveValue)
     val sendSlide by rememberUpdatedState(onSlider)
+    val sendGesture by rememberUpdatedState(onGesture)
+    val currentTile by rememberUpdatedState(tile)
     val value = slide.current(liveValue)
     LaunchedEffect(liveValue) { slide.onLive(liveValue) }
     val arcColor = tile.style?.color2?.let { hex(it, titleColor) } ?: titleColor
@@ -402,7 +406,24 @@ fun KnobTile(
                         slide.cancel(live, send = sendSlide)
                     },
                 )
-            },
+            }
+            // double-tap reset (declared only for tiles with a default
+            // value), same snap-then-echo policy as the slider template
+            .then(
+                if (tile.interacts(V2.INT_DOUBLE_TAP)) {
+                    Modifier.pointerInput(tile.id, tile.interactions) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                haptics.heavy()
+                                currentTile.sliderDefault()?.let { slide.snap(it, live) }
+                                sendGesture(V2.INT_DOUBLE_TAP)
+                            },
+                        )
+                    }
+                } else {
+                    Modifier
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize().padding(10.dp)) {

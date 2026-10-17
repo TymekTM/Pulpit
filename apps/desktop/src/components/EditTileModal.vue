@@ -645,6 +645,89 @@ function applyGestures() {
 }
 loadGestures();
 
+// ---- slider default ("double-tap reset") ------------------------------------
+
+// slider/knob tiles may carry a reset value in the options JSON:
+//   {"slider_default": 0.5}
+// Double-tapping the fader snaps it back there (desktop touch mode and
+// tablets alike; the server declares the gesture from the same field).
+// Edited as a percent, stored as a 0..1 fraction.
+const sliderDefault = ref("");
+const sliderDefaultAvailable = computed(() =>
+  ["slider", "knob"].includes(form.mode || "button")
+);
+
+function loadSliderDefault() {
+  sliderDefault.value = "";
+  try {
+    const parsed = JSON.parse(form.options || "");
+    const v =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? Number(parsed.slider_default)
+        : NaN;
+    if (Number.isFinite(v) && v >= 0 && v <= 1) {
+      sliderDefault.value = String(Math.round(v * 10000) / 100);
+    }
+  } catch {}
+}
+
+// a typed value must parse into 0..100, and the stored options must be a
+// JSON object (or empty) - inline conflicts instead of a silent overwrite
+// on save, mirroring the gesture editor's rules above
+const sliderDefaultError = computed(() => {
+  if (!sliderDefaultAvailable.value) return "";
+  const raw = String(sliderDefault.value).trim();
+  if (!raw) return "";
+  const v = Number(raw.replace(",", "."));
+  if (!Number.isFinite(v) || v < 0 || v > 100) {
+    return "Wartość domyślna musi być liczbą 0-100.";
+  }
+  const stored = String(form.options || "").trim();
+  if (!stored) return "";
+  try {
+    const parsed = JSON.parse(stored);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return "";
+  } catch {}
+  return "Pole „Opcje” zawiera już treść nie-JSON - wartość domyślna wymaga zapisu JSON.";
+});
+
+function applySliderDefault() {
+  if (!sliderDefaultAvailable.value) return true;
+  if (sliderDefaultError.value) return false;
+  const raw = String(sliderDefault.value).trim();
+  const stored = String(form.options || "").trim();
+  if (!raw) {
+    // emptied: strip the key from an options JSON that carries it (a
+    // previous configuration), leave any other options byte-identical
+    if (!stored) return true;
+    try {
+      const parsed = JSON.parse(stored);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return true;
+      if (!("slider_default" in parsed)) return true;
+      delete parsed.slider_default;
+      form.options = JSON.stringify(parsed);
+    } catch {}
+    return true;
+  }
+  let obj = {};
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return false;
+      }
+      obj = parsed;
+    } catch {
+      return false;
+    }
+  }
+  const v = Number(raw.replace(",", "."));
+  obj.slider_default = Math.round((v / 100) * 10000) / 10000;
+  form.options = JSON.stringify(obj);
+  return true;
+}
+loadSliderDefault();
+
 // ---- image -----------------------------------------------------------------
 
 const imageError = ref("");
@@ -694,6 +777,7 @@ function formSnapshot() {
     steps: steps.value,
     boardId: boardId.value,
     gestures: JSON.parse(JSON.stringify(gestures)),
+    sliderDefault: sliderDefault.value,
   });
 }
 const initialSnapshot = formSnapshot();
@@ -724,6 +808,7 @@ function save() {
   if (form.type === "board") applyBoardId();
   if (stepConfig.value) applySteps();
   if (!applyGestures()) return; // inline gesture conflict (see gestureError)
+  if (!applySliderDefault()) return; // inline slider-default conflict
   emit(isCreate.value ? "create" : "save", { ...form, ...resolveTypeMeta() });
 }
 
@@ -1167,6 +1252,27 @@ function colorOr(val, fallback) {
               </template>
             </div>
             <div v-if="gestureError" class="dual-error">{{ gestureError }}</div>
+          </template>
+
+          <!-- slider/knob: the double-tap reset value -->
+          <template v-if="sliderDefaultAvailable">
+            <div class="dual-head">Wartość domyślna</div>
+            <p class="gesture-note">
+              Podwójne tapnięcie suwaka przywraca tę wartość - np. Voicemeeter
+              0 dB, Spotify 50%. Te dwa mają wartości wbudowane; wpisana liczba
+              je nadpisze, a puste pole wyłącza reset dla pozostałych suwaków.
+              Działa w trybie dotykowym i na tabletach.
+            </p>
+            <label class="field">
+              Domyślna wartość (% 0-100)
+              <input
+                v-model="sliderDefault"
+                inputmode="decimal"
+                placeholder="np. 50"
+                @keydown.enter.prevent
+              />
+            </label>
+            <div v-if="sliderDefaultError" class="dual-error">{{ sliderDefaultError }}</div>
           </template>
         </div>
       </div>

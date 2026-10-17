@@ -200,6 +200,28 @@ pub fn hold_repeat_config(params: &Value) -> Option<(u64, u64)> {
     ))
 }
 
+/// The 0..1 fraction a slider/knob tile's double-tap resets to: the
+/// editor's `slider_default` option when it holds a usable number, else
+/// the kind's built-in reset (VM faders snap to 0 dB unity gain, Spotify
+/// volume to 50%). `None` means the tile has no reset: `double-tap`
+/// stays undeclared and the tap keeps positioning the fader directly.
+/// The built-in fractions mirror the desktop's TileCell (`sliderResetValue`)
+/// and catalog.js (`VM_SLIDER_RESET`, "must match pulpit_vm::GAIN_MIN /
+/// GAIN_MAX"): -60..12 dB puts 0 dB at 60/72.
+pub fn slider_reset_value(kind: &str, params: &Value) -> Option<f64> {
+    // an unusable option (junk type, out of range) reads as unset and
+    // falls through to the kind's built-in
+    params
+        .get("slider_default")
+        .and_then(Value::as_f64)
+        .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
+        .or_else(|| match kind {
+            "vm-slider-strip" | "vm-slider-bus" => Some(60.0 / 72.0),
+            "spotify-volume" => Some(0.5),
+            _ => None,
+        })
+}
+
 /// Legacy semantics that live outside the widget manifest get an
 /// explicit params hint here, so clients never need to know legacy type
 /// strings: the clock display tile announces itself as a clock widget,
@@ -277,8 +299,23 @@ fn widget_kind_for(
     params: &Value,
 ) -> (WidgetKind, Vec<Interaction>) {
     let (kind, mut interactions) = match row.mode.as_str() {
-        "slider" => (WidgetKind::Slider, vec![Interaction::Slide]),
-        "knob" => (WidgetKind::Knob, vec![Interaction::Slide]),
+        // sliders/knobs keep the drag surface for the value; a tile with
+        // a reset value (editor's `slider_default`, or the kind's
+        // built-in one - see slider_reset_value) additionally declares
+        // the double-tap reset gesture
+        "slider" | "knob" => {
+            let base = if row.mode == "slider" {
+                WidgetKind::Slider
+            } else {
+                WidgetKind::Knob
+            };
+            let interactions = if slider_reset_value(&row.kind, params).is_some() {
+                vec![Interaction::Slide, Interaction::DoubleTap]
+            } else {
+                vec![Interaction::Slide]
+            };
+            (base, interactions)
+        }
         "graph" => (WidgetKind::Graph, vec![]),
         "list" => (WidgetKind::List, vec![]),
         // ai dev-work display tiles: a read-only row list, no gestures
@@ -593,6 +630,77 @@ mod tests {
         let mut r = row("volume", "slider", None);
         r.options = Some(r#"{"gestures": ["long-press"]}"#.into());
         assert_eq!(allowed_interactions(&r), vec![Interaction::Slide]);
+    }
+
+    #[test]
+    fn slider_reset_value_resolves_option_then_builtins() {
+        // the editor's explicit option wins, must be a finite 0..1 number
+        let opts: Value = serde_json::from_str(r#"{"slider_default": 0.4}"#).unwrap();
+        assert_eq!(slider_reset_value("speaker-volume", &opts), Some(0.4));
+        for junk in [
+            serde_json::json!({ "slider_default": 1.5 }),
+            serde_json::json!({ "slider_default": -0.1 }),
+            serde_json::json!({ "slider_default": "x" }),
+            serde_json::json!({ "slider_default": null }),
+            serde_json::json!({}),
+        ] {
+            // junk reads as unset: the built-in fallback applies
+            assert_eq!(slider_reset_value("spotify-volume", &junk), Some(0.5));
+        }
+        // built-ins: VM faders snap to 0 dB on the -60..12 dB range,
+        // Spotify volume to 50%; every other kind has no reset
+        assert!(
+            (slider_reset_value("vm-slider-strip", &Value::Null).unwrap() - 60.0 / 72.0).abs()
+                < 1e-9
+        );
+        assert_eq!(
+            slider_reset_value("vm-slider-bus", &Value::Null),
+            Some(60.0 / 72.0)
+        );
+        assert_eq!(
+            slider_reset_value("spotify-volume", &Value::Null),
+            Some(0.5)
+        );
+        assert_eq!(slider_reset_value("speaker-volume", &Value::Null), None);
+        assert_eq!(slider_reset_value("media-seek", &Value::Null), None);
+    }
+
+    #[test]
+    fn sliders_with_a_reset_value_declare_double_tap() {
+        // built-in: VM sliders reset to 0 dB without any configuration
+        assert_eq!(
+            allowed_interactions(&row("vm-slider-strip", "slider", None)),
+            vec![Interaction::Slide, Interaction::DoubleTap]
+        );
+        // explicit option on an otherwise plain slider
+        let mut r = row("speaker-volume", "slider", None);
+        r.options = Some(r#"{"slider_default": 0.4}"#.into());
+        assert_eq!(
+            allowed_interactions(&r),
+            vec![Interaction::Slide, Interaction::DoubleTap]
+        );
+        // the manifest the client sees must equal the per-event gate
+        let (assets, _dir) = asset_store();
+        let engine = StateEngine::new(120);
+        let tile = build_tile(&r, &HashMap::new(), &assets, &engine);
+        assert_eq!(
+            tile.manifest.interactions,
+            vec![Interaction::Slide, Interaction::DoubleTap]
+        );
+        assert_eq!(tile.manifest.params["slider_default"], 0.4);
+        // the value reaches the knob template the same way
+        let mut k = row("vm-knob", "knob", None);
+        k.options = Some(r#"{"slider_default": 1}"#.into());
+        assert_eq!(
+            allowed_interactions(&k),
+            vec![Interaction::Slide, Interaction::DoubleTap]
+        );
+        // without a reset value the slider stays slide-only (and a
+        // double-tap from an old client is a typed error, as before)
+        assert_eq!(
+            allowed_interactions(&row("speaker-volume", "slider", None)),
+            vec![Interaction::Slide]
+        );
     }
 
     #[test]

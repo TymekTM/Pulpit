@@ -278,8 +278,8 @@ fun Tile(
                 "tool-timer" -> ToolTimerTile(tile, liveElement, titleColor, onPress = onPressEnd, onGesture = onGesture)
                 "tool-stopwatch" -> ToolStopwatchTile(tile, liveElement, titleColor, onPress = onPressEnd, onGesture = onGesture)
                 "tool-counter" -> ToolCounterTile(tile, liveElement, titleColor, onPress = onPressEnd, onGesture = onGesture)
-                "slider" -> SliderTile(tile, color, icon, iconFamily, iconColor, liveValue, onSlider)
-                "knob" -> KnobTile(tile, iconColor, titleColor, liveValue, onSlider)
+                "slider" -> SliderTile(tile, color, icon, iconFamily, iconColor, liveValue, onSlider, onGesture)
+                "knob" -> KnobTile(tile, iconColor, titleColor, liveValue, onSlider, onGesture)
                 "graph" -> GraphTile(tile, series, liveText, channel, titleColor)
                 "clock" -> ClockTile(tile, icon, iconFamily, titleColor)
                 "list" ->
@@ -533,6 +533,7 @@ private fun SliderTile(
     iconColor: Color,
     liveValue: Double?,
     onSlider: (Float) -> Unit,
+    onGesture: (String) -> Unit = {},
 ) {
     // one drag protocol with the knob template (MOB-13): see
     // SlideDragController for the live-echo and convergence policy
@@ -542,6 +543,8 @@ private fun SliderTile(
     // see ButtonTile above: the drag block outlives a live tile edit
     val live by rememberUpdatedState(liveValue)
     val sendSlide by rememberUpdatedState(onSlider)
+    val sendGesture by rememberUpdatedState(onGesture)
+    val currentTile by rememberUpdatedState(tile)
     val value = slide.current(liveValue)
     LaunchedEffect(liveValue) { slide.onLive(liveValue) }
     // The fill is the tile's colour2 when that differs from the tile colour,
@@ -577,7 +580,26 @@ private fun SliderTile(
                         slide.cancel(live, sendSlide)
                     },
                 )
-            },
+            }
+            // double-tap reset (declared only for tiles with a default
+            // value): snap the face to `params.slider_default` at once and
+            // let the server's interaction move the fader itself - the
+            // built-in kinds (VM 0 dB, Spotify 50%) ride the live echo
+            .then(
+                if (tile.interacts(V2.INT_DOUBLE_TAP)) {
+                    Modifier.pointerInput(tile.id, tile.interactions) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                haptics.heavy()
+                                currentTile.sliderDefault()?.let { slide.snap(it, live) }
+                                sendGesture(V2.INT_DOUBLE_TAP)
+                            },
+                        )
+                    }
+                } else {
+                    Modifier
+                },
+            ),
         contentAlignment = Alignment.BottomCenter,
     ) {
         Box(

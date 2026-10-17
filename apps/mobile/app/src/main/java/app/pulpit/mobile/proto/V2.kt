@@ -181,6 +181,13 @@ data class Tile(
 
     fun param(name: String): String? =
         (params as? JsonObject)?.get(name)?.contentOrNull()
+
+    /** `params.slider_default` - the fraction (0..1) a double-tap resets
+     *  the slider/knob to; null when the tile declares none. The server
+     *  applies the same value (built-in kinds included) from the
+     *  double-tap interaction, so this only drives the local snap. */
+    fun sliderDefault(): Float? =
+        param("slider_default")?.toFloatOrNull()?.takeIf { it in 0f..1f }
 }
 
 @Immutable

@@ -93,4 +93,33 @@ class SlideDragControllerTest {
         assertEquals(listOf(0.7f), sent)
         assertNull(slide.dragValue)
     }
+
+    @Test
+    fun snapHoldsUntilTheEchoMovesLive() {
+        // double-tap reset: the face jumps to the default at once...
+        val slide = controller()
+        slide.start(0.9f) {}
+        slide.end(live = 0.9, send = {})
+        slide.snap(0.5f, live = 0.9)
+        assertEquals(0.5f, slide.current(0.9))
+        slide.onLive(0.9)
+        // ...and keeps holding while live still reads what it did here
+        assertEquals(0.5f, slide.dragValue)
+        // the server's patch moves live: the widget follows it
+        assertEquals(0.5f, slide.current(0.5))
+        slide.onLive(0.5)
+        assertNull(slide.dragValue)
+    }
+
+    @Test
+    fun snapWithoutALiveChannelStillShowsTheValue() {
+        val slide = controller()
+        slide.snap(0.8333f, live = null)
+        assertEquals(0.8333f, slide.current(null))
+        // a later drag takes over from the snapped position normally
+        val sent = mutableListOf<Float>()
+        slide.start(0.2f, sent::add)
+        assertEquals(listOf(0.2f), sent)
+        assertEquals(0.2f, slide.current(null))
+    }
 }

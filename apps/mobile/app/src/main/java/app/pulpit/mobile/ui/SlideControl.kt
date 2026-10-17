@@ -163,4 +163,13 @@ class SlideDragController(
         end(live, send)
         dragValue = null
     }
+
+    /** Double-tap reset: jump to [v] and hold it with the same
+     *  hold-until-echo policy a released drag uses - the face shows [v]
+     *  at once, then follows the channel again once the server's patch
+     *  moves live off what it read here. */
+    fun snap(v: Float, live: Double?) {
+        dragValue = v
+        liveAtRelease = live
+    }
 }
