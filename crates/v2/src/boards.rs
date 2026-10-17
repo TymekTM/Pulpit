@@ -653,8 +653,14 @@ mod tests {
             (slider_reset_value("vm-slider-strip", &Value::Null).unwrap() - 60.0 / 72.0).abs()
                 < 1e-9
         );
-        assert_eq!(slider_reset_value("vm-slider-bus", &Value::Null), Some(60.0 / 72.0));
-        assert_eq!(slider_reset_value("spotify-volume", &Value::Null), Some(0.5));
+        assert_eq!(
+            slider_reset_value("vm-slider-bus", &Value::Null),
+            Some(60.0 / 72.0)
+        );
+        assert_eq!(
+            slider_reset_value("spotify-volume", &Value::Null),
+            Some(0.5)
+        );
         assert_eq!(slider_reset_value("speaker-volume", &Value::Null), None);
         assert_eq!(slider_reset_value("media-seek", &Value::Null), None);
     }
@@ -677,10 +683,10 @@ mod tests {
         let (assets, _dir) = asset_store();
         let engine = StateEngine::new(120);
         let tile = build_tile(&r, &HashMap::new(), &assets, &engine);
-        assert_eq!(tile.manifest.interactions, vec![
-            Interaction::Slide,
-            Interaction::DoubleTap
-        ]);
+        assert_eq!(
+            tile.manifest.interactions,
+            vec![Interaction::Slide, Interaction::DoubleTap]
+        );
         assert_eq!(tile.manifest.params["slider_default"], 0.4);
         // the value reaches the knob template the same way
         let mut k = row("vm-knob", "knob", None);

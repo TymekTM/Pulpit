@@ -1208,7 +1208,15 @@ async fn slider_double_tap_resets_to_the_configured_default() {
     // tile 26 carries `slider_default: 0.4`, so it declares double-tap:
     // the gesture drives the fader to that value, it never execs the
     // tile's (nonexistent) action
-    send_frame(&mut ws, &Frame::request(TYPE_INTERACTION, "d1", serde_json::json!({"board": 3, "tile": 26, "interaction": "double-tap"}))).await;
+    send_frame(
+        &mut ws,
+        &Frame::request(
+            TYPE_INTERACTION,
+            "d1",
+            serde_json::json!({"board": 3, "tile": 26, "interaction": "double-tap"}),
+        ),
+    )
+    .await;
     let ack = next_frame(&mut ws).await;
     assert_eq!(ack.ack.as_deref(), Some("d1"));
     assert_eq!(ack.kind, TYPE_INTERACTION);
@@ -1218,7 +1226,15 @@ async fn slider_double_tap_resets_to_the_configured_default() {
 
     // tile 21 has no reset value (no option, no built-in): its
     // interactions stay slide-only, so the gesture is a typed error
-    send_frame(&mut ws, &Frame::request(TYPE_INTERACTION, "d2", serde_json::json!({"board": 3, "tile": 21, "interaction": "double-tap"}))).await;
+    send_frame(
+        &mut ws,
+        &Frame::request(
+            TYPE_INTERACTION,
+            "d2",
+            serde_json::json!({"board": 3, "tile": 21, "interaction": "double-tap"}),
+        ),
+    )
+    .await;
     let err = next_frame(&mut ws).await;
     assert_eq!(err.ack.as_deref(), Some("d2"));
     let payload: ErrorPayload = serde_json::from_value(err.payload.unwrap()).unwrap();
