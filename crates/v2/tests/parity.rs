@@ -575,11 +575,13 @@ fn spotify_slider_kinds_agree_between_the_wires() {
         assert_eq!(legacy["mode"], "slider", "{kind}");
         assert_eq!(legacy["extra"], key, "{kind}");
         assert_eq!(tile.manifest.kind, WidgetKind::Slider, "{kind}");
-        assert_eq!(
-            tile.manifest.interactions,
-            vec![Interaction::Slide],
-            "{kind}"
-        );
+        // volume has the built-in double-tap reset (50%); seek does not
+        let expected = if kind == "spotify-volume" {
+            vec![Interaction::Slide, Interaction::DoubleTap]
+        } else {
+            vec![Interaction::Slide]
+        };
+        assert_eq!(tile.manifest.interactions, expected, "{kind}");
         let state = tile
             .manifest
             .state

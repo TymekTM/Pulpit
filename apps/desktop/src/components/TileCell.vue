@@ -529,8 +529,8 @@ function onTap() {
 // Touch-mode sliders: drag vertically on the tile, value 0..1 from the
 // pointer position. The value streams to the backend while dragging
 // (throttled) so the fader follows in realtime; release always sends the
-// final position. A second tap right after a tap resets Voicemeeter
-// sliders to 0 dB.
+// final position. A second tap right after a tap resets the fader to its
+// default value (see sliderResetValue).
 const SLIDER_SEND_INTERVAL = 150;
 const SLIDER_DOUBLE_TAP_MS = 350;
 // pointer travel below this counts as a tap, not a drag
@@ -540,10 +540,26 @@ const SLIDER_KEY_STEP = 0.05;
 
 const sliderVal = ref(null);
 // end time of the last tap on this slider (a pointer interaction that
-// barely moved); double-tapping a VM slider jumps to 0 dB
+// barely moved); double-tapping resets the fader to its default
 let lastTapAt = -Infinity;
 function isVmSlider() {
   return props.tile.type === "vm-slider-strip" || props.tile.type === "vm-slider-bus";
+}
+// The value a double-tap resets to: the editor's `slider_default`
+// (0..1 fraction in the options JSON) when set, else the kind's built-in -
+// VM faders snap to 0 dB (VM_SLIDER_RESET), Spotify volume to 50%. null
+// keeps the plain tap (the touched position becomes the value). Mirrors
+// pulpit_v2::boards::slider_reset_value, which declares the gesture to
+// the tablets on the same rule.
+function sliderResetValue() {
+  try {
+    const opts = JSON.parse(props.tile.options || "{}");
+    const v = Number(opts?.slider_default);
+    if (Number.isFinite(v) && v >= 0 && v <= 1) return v;
+  } catch {}
+  if (isVmSlider()) return VM_SLIDER_RESET;
+  if (props.tile.type === "spotify-volume") return 0.5;
+  return null;
 }
 function sliderValue() {
   if (sliderVal.value != null) return sliderVal.value;
@@ -590,9 +606,10 @@ function startSlider(event) {
     emit("slider", sliderVal.value ?? 0.5);
   };
   const now = performance.now();
-  if (isVmSlider() && now - lastTapAt < SLIDER_DOUBLE_TAP_MS) {
-    // double tap: jump to 0 dB instead of the tapped position
-    sliderVal.value = VM_SLIDER_RESET;
+  const reset = sliderResetValue();
+  if (reset != null && now - lastTapAt < SLIDER_DOUBLE_TAP_MS) {
+    // double tap: jump to the default value instead of the tapped position
+    sliderVal.value = reset;
   } else {
     setVal(event);
   }

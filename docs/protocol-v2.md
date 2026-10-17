@@ -333,7 +333,12 @@ Client → server, one frame per user gesture:
   Declarations: plain buttons declare `tap` (fire once on release);
   key-style commands and tiles with `params.hold.repeat` declare
   `tap` + `press-start` + `press-end` (down/up semantics, hold-to-repeat);
-  sliders/knobs declare `slide`; displays declare none. A tile may add
+  sliders/knobs declare `slide`; displays declare none. A slider/knob with
+  a reset value declares `slide` + `double-tap`: the reset value is
+  `params.slider_default` (a 0..1 fraction, the editor's per-tile default)
+  or the kind's built-in one (VM faders snap to 0 dB, Spotify volume to
+  50%), and the interaction drives the fader there instead of firing the
+  tile's action. A tile may add
   M5 custom gestures through its options JSON:
   `{"gestures": ["long-press", "double-tap", "swipe-left", "swipe-right"]}` -
   the closed set travels into `interactions` and each declared gesture

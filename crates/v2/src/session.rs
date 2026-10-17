@@ -524,9 +524,10 @@ async fn handle_interaction(state: &Arc<V2State>, session: &Arc<V2Session>, fram
         | Interaction::SwipeRight => {
             ack_ok();
             let mut target_button = button;
-            // an editor-configured `gesture_actions` override replaces the
-            // kind/command per field; without one the tile's own action fires
-            // (tool tiles execute their own gesture semantics instead)
+            // slider/knob double-tap is the reset-to-default gesture: it
+            // drives the fader to the tile's reset value (the declared
+            // `slider_default` or the kind's built-in one), it never
+            // fires the tile's action like the button gestures do
             let gesture = match payload.interaction {
                 Interaction::LongPress => "long-press",
                 Interaction::DoubleTap => "double-tap",
@@ -536,6 +537,17 @@ async fn handle_interaction(state: &Arc<V2State>, session: &Arc<V2Session>, fram
             let params: Value =
                 serde_json::from_str(target_button.options.as_deref().unwrap_or(""))
                     .unwrap_or(Value::Null);
+            if gesture == "double-tap" {
+                if let Some(reset) = crate::boards::slider_reset_value(&target_button.kind, &params)
+                {
+                    let backend = state.backend.clone();
+                    tokio::task::spawn_blocking(move || backend.slider(target_button, reset));
+                    return;
+                }
+            }
+            // an editor-configured `gesture_actions` override replaces the
+            // kind/command per field; without one the tile's own action fires
+            // (tool tiles execute their own gesture semantics instead)
             if let Some((kind, command)) = crate::boards::gesture_action_override(&params, gesture)
             {
                 target_button.kind = kind;

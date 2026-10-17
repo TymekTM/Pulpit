@@ -143,6 +143,13 @@ fn sample_backend() -> MockBackend {
         buttons: vec![
             button_row(17, "vol", "button", Some("vol_mute"), None),
             button_row(21, "speaker-volume", "slider", None, None),
+            button_row(
+                26,
+                "speaker-volume",
+                "slider",
+                None,
+                Some(r#"{"slider_default":0.4}"#.into()),
+            ),
             button_row(22, "si-cpu", "graph", None, None),
             button_row(
                 23,
@@ -1185,6 +1192,35 @@ async fn interaction_acks_execs_and_reports_unknown_tiles() {
     // Unsupported gesture -> typed error.
     send_frame(&mut ws, &Frame::request(TYPE_INTERACTION, "i4", serde_json::json!({"board": 3, "tile": 17, "interaction": "wheel", "args": {"delta": 1.0}}))).await;
     let err = next_frame(&mut ws).await;
+    let payload: ErrorPayload = serde_json::from_value(err.payload.unwrap()).unwrap();
+    assert_eq!(payload.code, error_code::UNSUPPORTED_INTERACTION);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn slider_double_tap_resets_to_the_configured_default() {
+    let backend = sample_backend();
+    let (state, _dir) = test_state(backend.clone(), |_| {});
+    let (_device, token) = state.devices.create("Tablet");
+    let addr = spawn_server(state).await;
+    let mut ws = ws_open(&format!("ws://{addr}/v2/ws?token={}", token)).await;
+    handshake(&mut ws, "pulpit-mobile", "0.2.0").await;
+
+    // tile 26 carries `slider_default: 0.4`, so it declares double-tap:
+    // the gesture drives the fader to that value, it never execs the
+    // tile's (nonexistent) action
+    send_frame(&mut ws, &Frame::request(TYPE_INTERACTION, "d1", serde_json::json!({"board": 3, "tile": 26, "interaction": "double-tap"}))).await;
+    let ack = next_frame(&mut ws).await;
+    assert_eq!(ack.ack.as_deref(), Some("d1"));
+    assert_eq!(ack.kind, TYPE_INTERACTION);
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert_eq!(backend.sliders.lock().unwrap().last(), Some(&(26, 0.4)));
+    assert!(backend.execs.lock().unwrap().is_empty());
+
+    // tile 21 has no reset value (no option, no built-in): its
+    // interactions stay slide-only, so the gesture is a typed error
+    send_frame(&mut ws, &Frame::request(TYPE_INTERACTION, "d2", serde_json::json!({"board": 3, "tile": 21, "interaction": "double-tap"}))).await;
+    let err = next_frame(&mut ws).await;
+    assert_eq!(err.ack.as_deref(), Some("d2"));
     let payload: ErrorPayload = serde_json::from_value(err.payload.unwrap()).unwrap();
     assert_eq!(payload.code, error_code::UNSUPPORTED_INTERACTION);
 }
