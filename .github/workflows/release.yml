@@ -83,3 +83,23 @@ jobs:
           # a tag push already carries the tag; a manual dispatch creates it
           if ($env:GITHUB_REF_TYPE -eq "tag") { $releaseArgs += "--verify-tag" }
           gh @releaseArgs
+
+      # the updater feed is the manifest on the default branch (raw
+      # latest.json) - without this step a published release never
+      # reaches installed apps
+      - name: Update the feed manifest on the default branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $content = [Convert]::ToBase64String(
+            [Text.Encoding]::UTF8.GetBytes((Get-Content dist/latest.json -Raw)))
+          $sha = gh api "repos/${{ github.repository }}/contents/latest.json?ref=main" `
+            --jq .sha 2>$null
+          $shaArgs = @()
+          if ($sha) { $shaArgs += @("-f", "sha=$sha") }
+          gh api --method PUT "repos/${{ github.repository }}/contents/latest.json" `
+            -f message="release: update feed to ${{ steps.ver.outputs.version }}" `
+            -f content=$content `
+            -f branch=main `
+            @shaArgs
