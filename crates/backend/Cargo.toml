@@ -20,6 +20,7 @@ pulpit-os = { path = "../os" }
 pulpit-tools = { path = "../tools" }
 pulpit-sysinfo = { path = "../sysinfo" }
 pulpit-aidev = { path = "../aidev" }
+tokio = { workspace = true }
 ureq = "3"
 
 [dev-dependencies]

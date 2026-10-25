@@ -359,6 +359,34 @@ fn obs_listener(kind: &str, raw: &str) -> Option<String> {
     }
 }
 
+/// Discord per-member kinds watch the keys the RPC actor pushes:
+/// `user-volume_<uid>` / `user-mute_<uid>`, with the snowflake lifted out
+/// of the command JSON exactly the way the producer composes the keys.
+/// An absent id falls back to the bare kind (the producer never pushes
+/// that key, so the tile just stays inert).
+fn discord_listener(kind: &str, raw: &str) -> Option<String> {
+    match kind {
+        "user-volume" | "user-mute" => {
+            // trimmed like the actor's user_id_arg, so a padded id in the
+            // command JSON still matches the pushed key
+            let uid = serde_json::from_str::<Value>(raw)
+                .ok()
+                .and_then(|v| {
+                    v.get("user_id")
+                        .and_then(Value::as_str)
+                        .map(|s| s.trim().to_string())
+                })
+                .unwrap_or_default();
+            Some(if uid.is_empty() {
+                kind.to_string()
+            } else {
+                format!("{kind}_{uid}")
+            })
+        }
+        _ => None,
+    }
+}
+
 /// The `extra` field: which state key the client watches for toggles/graphs.
 fn extra_listener(kind: &str, command: Option<&str>, mode: &str, props: &Props) -> String {
     if let Some(key) = spotify_listener(kind, command) {
@@ -369,6 +397,9 @@ fn extra_listener(kind: &str, command: Option<&str>, mode: &str, props: &Props) 
     }
     let raw = command.unwrap_or_default();
     if let Some(key) = obs_listener(kind, raw) {
+        return key;
+    }
+    if let Some(key) = discord_listener(kind, raw) {
         return key;
     }
     if props.json_key.is_some() {
@@ -661,6 +692,42 @@ mod tests {
         let basic = m.board_payload(&b, &[], false);
         assert_eq!(basic["width"], 32);
         assert_eq!(basic["shortcuts"].as_array().unwrap().len(), 4 * 3);
+    }
+
+    #[test]
+    fn discord_member_tiles_watch_the_pushed_keys() {
+        let m = Mapper::new();
+        // the volume slider watches the fraction key the RPC actor pushes
+        // for its member (uid lifted from the command JSON, like the
+        // producer composes it)
+        let mut slider = button(
+            "user-volume",
+            Some(r#"{"user_id":"411916947773587456"}"#),
+            0,
+            0,
+            1,
+            2,
+        );
+        slider.mode = "slider".into();
+        let s = m.shortcut_payload(&slider);
+        assert_eq!(s["extra"], "user-volume_411916947773587456");
+        // the mute toggle watches the ON/OFF string key
+        let s = m.shortcut_payload(&button(
+            "user-mute",
+            Some(r#"{"user_id":"456"}"#),
+            0,
+            0,
+            1,
+            1,
+        ));
+        assert_eq!(s["extra"], "user-mute_456");
+        // a missing snowflake falls back to the bare kind: the producer
+        // never pushes that key, so the tile stays inert instead of
+        // tracking the wrong member
+        let mut bare = button("user-volume", None, 0, 0, 1, 2);
+        bare.mode = "slider".into();
+        let s = m.shortcut_payload(&bare);
+        assert_eq!(s["extra"], "user-volume");
     }
 
     #[test]

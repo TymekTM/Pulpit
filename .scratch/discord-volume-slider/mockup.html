@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulpit — Discord: głośność użytkownika (mockup)</title>
+<style>
+  :root{
+    --board:#437072; --discord:#5865f2; --ink:#e8ecef; --muted:#9fb0b3;
+    --accent:#1abc9c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:#14181b;color:var(--ink);min-height:100vh;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    padding:36px 28px 60px;
+  }
+  h1{font-size:22px;font-weight:700;letter-spacing:.2px}
+  h1 small{display:block;font-size:13px;color:var(--muted);font-weight:400;margin-top:6px}
+  h2{font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1.4px;margin:34px 0 12px}
+  .board{
+    display:grid;grid-template-columns:repeat(3,96px);grid-auto-rows:100px;gap:0;
+    background:var(--board);width:max-content;padding:14px;border-radius:10px;
+    box-shadow:0 12px 40px rgba(0,0,0,.45);
+  }
+  .cell{width:96px;height:100px;padding:0}
+  .tile{
+    position:relative;width:96px;height:96px;margin:2px;border-radius:8px;overflow:hidden;
+    background:var(--discord);border:2px solid transparent;
+    box-shadow:0 2px 6px rgba(0,0,0,.25);
+    display:flex;align-items:center;justify-content:center;
+    transition:filter .12s ease-out, box-shadow .12s ease-out;
+  }
+  .tile:hover{filter:brightness(1.08);box-shadow:0 4px 10px rgba(0,0,0,.3)}
+  .tile.dragging{box-shadow:0 10px 26px rgba(0,0,0,.5);filter:brightness(1.05)}
+  .icon{width:30px;height:30px;color:#fff;filter:drop-shadow(0 1px 3px rgba(0,0,0,.3));pointer-events:none}
+  .tile-title{
+    position:absolute;left:0;right:0;bottom:0;padding:2px 5px;
+    font-size:11.5px;font-weight:500;text-align:center;line-height:1.3;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;
+    text-shadow:0 1px 2px rgba(0,0,0,.45);pointer-events:none;
+  }
+  .tile-badge{position:absolute;top:4px;right:6px;opacity:.85;color:#fff}
+  .tile-badge svg{width:12px;height:12px}
+  .slider-fill{position:absolute;left:0;right:0;bottom:0;background:rgba(255,255,255,.28);pointer-events:none}
+  .slider-thumb{position:absolute;left:0;right:0;height:3px;transform:translateY(-50%);background:rgba(255,255,255,.85);pointer-events:none}
+  .slider-capture{position:absolute;inset:0;cursor:ns-resize;touch-action:none}
+
+  /* android look */
+  .android-frame{
+    background:#0f1215;border:10px solid #23282d;border-radius:26px;padding:18px 12px;
+    width:max-content;box-shadow:0 12px 40px rgba(0,0,0,.5);
+  }
+  .android-frame .screen{background:var(--board);border-radius:14px;padding:8px;display:grid;grid-template-columns:repeat(3,104px);grid-auto-rows:108px}
+  .acell{width:104px;height:108px;padding:2px}
+  .atile{
+    position:relative;width:100px;height:104px;border-radius:12px;overflow:hidden;
+    background:var(--discord);box-shadow:2px 3px 0 rgba(0,0,0,.35), 0 4px 10px rgba(0,0,0,.3);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .atile .a-icon{width:24px;height:24px;color:#fff}
+  .atile .a-fill{position:absolute;left:0;right:0;bottom:0;background:rgba(255,255,255,.28)}
+  .atile .a-thumb{position:absolute;left:0;right:0;height:3px;transform:translateY(-50%);background:rgba(255,255,255,.85)}
+  .atile .a-caption{
+    position:absolute;top:0;left:0;right:0;padding:3px 6px;font-size:11px;font-weight:500;
+    color:rgba(255,255,255,.9);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .atile .a-title{
+    position:absolute;bottom:3px;left:0;right:0;font-size:10px;color:rgba(255,255,255,.75);
+    text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px;
+  }
+
+  /* states + copy */
+  .cols{display:flex;gap:34px;flex-wrap:wrap;align-items:flex-start}
+  .note{max-width:430px;font-size:13.5px;line-height:1.65;color:#c6d1d4}
+  .note b{color:#fff}
+  .note code{background:#1e2429;border:1px solid #2c343a;border-radius:5px;padding:1px 6px;font-size:12px;color:#8ee6d2}
+  .legend{margin-top:14px;font-size:12.5px;color:var(--muted);line-height:2}
+  .legend .k{display:inline-block;background:#1e2429;border:1px solid #2c343a;border-radius:5px;padding:0 7px;color:#8ee6d2;font-size:11.5px;margin-right:6px}
+  .flow{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;margin-top:6px}
+  .step{background:#1a2024;border:1px solid #2c343a;border-radius:10px;padding:12px 14px;font-size:12.5px;color:#c6d1d4;max-width:230px}
+  .step b{display:block;color:#fff;font-size:12.5px;margin-bottom:4px}
+  .hint{margin-top:10px;font-size:12px;color:var(--muted)}
+  .tag{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.8px;color:#0f1215;background:var(--accent);border-radius:4px;padding:2px 7px;margin-bottom:8px}
+</style>
+</head>
+<body>
+<h1>Discord: głośność użytkownika — jak wyglądają kafelki
+  <small>mockup na podstawie realnych stylów <code>TileCell.vue</code> i <code>Tile.kt</code> · label = nazwa członka + % z krzywej percepcyjnej Discorda (0.5 = 100%)</small>
+</h1>
+
+<h2>Desktop / tablet — grid 96×100 (tło planszy jak w edytorze)</h2>
+<div class="cols">
+  <div class="board" id="board"></div>
+  <div>
+    <div class="note">
+      <span class="tag">user-volume</span> slider przypięty do jednego bota
+      (<code>user_id</code> w komendzie). Suwak zwiększa <b>lokalną głośność</b> tego
+      członka w Twoim kliencie Discorda — ten sam suwak, co PPM na użytkowniku.
+      Label pod kafelkiem żyje w obie strony: przeciągnij w Discordzie, kafelek podąży.
+    </div>
+    <div class="legend">
+      <div><span class="k">user-volume_&lt;uid&gt;</span> ułamek 0..1 (0.5 = 100%)</div>
+      <div><span class="k">user-volume-label_&lt;uid&gt;</span> „Jockie Music · 85%" / „… · offline"</div>
+      <div><span class="k">user-mute_&lt;uid&gt;</span> ON / OFF („Mute User" z PPM)</div>
+    </div>
+    <div class="hint" id="hint">Przeciągnij pierwszy suwak pionowo — label przelicza realną krzywą z <code>crates/discord</code>.</div>
+  </div>
+</div>
+
+<h2>Android (Compose) — caption z <code>text_state</code> na górze</h2>
+<div class="cols">
+  <div class="android-frame"><div class="screen" id="ascreen"></div></div>
+  <div class="note">
+    Caption pojawia się <b>tylko</b>, gdy kafelek deklaruje kanał
+    <code>text_state</code> — istniejące slidery (Spotify, speaker, VM) renderują się
+    dokładnie jak wcześniej. Gdy bot wyjdzie z kanału, label zmienia się na
+    „… · offline", a wypełnienie spada do zera; po powrocie kafelek sam wraca do live.
+  </div>
+</div>
+
+<h2>Cykl życia</h2>
+<div class="flow">
+  <div class="step"><b>1 · Dodaj kafelek</b>Katalog → Discord → „User Volume"; wklej snowflake bota w pole <i>user_id</i>.</div>
+  <div class="step"><b>2 · Wejdź na kanał</b>Aktor subskrybuje VOICE_STATE i od razu wypycha nazwę + głośność wszystkich członków.</div>
+  <div class="step"><b>3 · Steruj</b>Przeciągnięcie → SET_USER_VOICE_SETTINGS; double-tap → 100%; wyciszenie w Discordzie → kafelek gaśnie.</div>
+  <div class="step"><b>4 · Bot wychodzi</b>Label „offline", suwak martwy bez spamu błędów; powrót bota przywraca kafelek.</div>
+</div>
+
+<script>
+/* the exact curve from crates/discord (perceptual <-> amplitude) */
+function amplitudeToPerceptual(a){
+  if(a<=0) return 0;
+  const db=20*Math.log10(a/100);
+  return db>0 ? Math.min(200,100*(1+db/6)) : Math.min(200,100*(1+db/50));
+}
+function sliderToAmplitude(v){
+  const p=Math.min(200,Math.max(0,v*200));
+  if(p<=0) return 0;
+  const db=p>100?((p-100)/100)*6:((p/100)-1)*50;
+  return Math.round(Math.min(200,Math.max(1,100*Math.pow(10,db/20))));
+}
+const ICONS={
+  vol:'<svg class="icon" viewBox="0 0 512 512" fill="currentColor"><path d="M215.03 72.04L126.06 161H64c-35.35 0-64 28.65-64 64v64c0 35.35 28.65 64 64 64h62.06l88.97 88.95c18.75 18.74 49.03 18.74 67.88 0 9.37-9.37 9.37-24.57 0-33.94L189.94 336H64c-8.84 0-16-7.16-16-16v-64c0-8.84 7.16-16 16-16h125.94l70.06-70.06c9.37-9.37 9.37-24.57 0-33.94-18.85-18.85-49.13-18.85-67.88-.01zM425.9 256.9c0-41.4-20.4-78.1-51.7-100.5-7.6-5.4-18.2-3.6-23.6 4-5.4 7.6-3.6 18.2 4 23.6 22.9 16.3 37.3 43 37.3 73 0 30-14.4 56.7-37.3 73-7.6 5.4-9.4 16-4 23.6 5.4 7.6 16 9.4 23.6 4 31.3-22.4 51.7-59.1 51.7-100.6v-.1zM333.3 105.5c-7.6-5.4-18.2-3.6-23.6 4-5.4 7.6-3.6 18.2 4 23.6 41.5 29.5 65.3 75.3 65.3 123.9 0 48.6-23.8 94.4-65.3 123.9-7.6 5.4-9.4 16-4 23.6 5.4 7.6 16 9.4 23.6 4 50.1-35.7 77.7-91.5 77.7-151.5s-27.6-115.8-77.7-151.5z"/></svg>',
+  mic:'<svg class="icon" viewBox="0 0 640 512" fill="currentColor"><path d="M633.8 458.1L362.4 248.5c5.3-9.3 8.6-19.9 8.6-31.4V64c0-35.3-28.7-64-64-64s-64 28.7-64 64v153.6c0 5.2.8 10.1 1.9 15L67.6 123.3c-2-1.5-4.4-2.3-6.8-2.3-3.3 0-6.6 1.5-8.7 4.3l-19.6 25.3c-1.8 2.3-2.6 5.2-2.3 8.1.3 2.9 1.7 5.6 3.9 7.5l566.2 442.9c2 1.5 4.4 2.3 6.8 2.3 3.3 0 6.6-1.5 8.7-4.3l19.6-25.3c3.7-4.8 2.9-11.7-1.6-15.6v-.1zM400 384h-16c-8.8 0-16-7.2-16-16v-57.2l-48-37.7V448h-64v-96h-48v112c0 8.8-7.2 16-16 16h-16c-8.8 0-16 7.2-16 16v16c0 8.8 7.2 16 16 16h272c3.2 0 6.2-.9 8.7-2.6L400 448v-64zM320 256c35.3 0 64-28.7 64-64v-19.5L283.5 86.1C275.9 68.5 259.4 56 240 56c-5.5 0-10.9 1-15.9 2.8V192c0 35.3 28.7 64 64 64h31.9z"/></svg>',
+  sliders:'<svg viewBox="0 0 512 512" fill="currentColor"><path d="M488 128H312v-40c0-13.3-10.7-24-24-24h-48c-13.3 0-24 10.7-24 24v40H24c-13.3 0-24 10.7-24 24v32c0 13.3 10.7 24 24 24h192v40c0 13.3 10.7 24 24 24h48c13.3 0 24-10.7 24-24v-40h176c13.3 0 24-10.7 24-24v-32c0-13.3-10.7-24-24-24zm0 224H248v-40c0-13.3-10.7-24-24-24h-48c-13.3 0-24 10.7-24 24v40H24c-13.3 0-24 10.7-24 24v32c0 13.3 10.7 24 24 24h128v40c0 13.3 10.7 24 24 24h48c13.3 0 24-10.7 24-24v-40h240c13.3 0 24-10.7 24-24v-32c0-13.3-10.7-24-24-24z"/></svg>',
+  phone:'<svg class="icon" viewBox="0 0 512 512" fill="currentColor"><path d="M493.4 24.6l-104-24c-11.3-2.6-22.9 3.3-27.5 13.9l-48 112c-4.2 9.8-1.4 21.3 6.9 28l60.6 49.6c-36 76.7-98.9 140.5-177.2 177.2l-49.6-60.6c-6.8-8.3-18.2-11.1-28-6.9l-112 48C3.9 366.5-2 378.1.6 389.4l24 104C27.1 504.2 36.7 512 48 512c256.1 0 464-207.5 464-464 0-11.2-7.7-20.9-18.6-23.4z"/></svg>'
+};
+function desktopTile(parent, opts){
+  const cell=document.createElement('div');cell.className='cell';
+  const t=document.createElement('div');t.className='tile';
+  if(opts.fill!=null){
+    const f=document.createElement('div');f.className='slider-fill';f.style.height=(opts.fill*100)+'%';t.appendChild(f);
+    const th=document.createElement('div');th.className='slider-thumb';th.style.top=(100-opts.fill*100)+'%';t.appendChild(th);
+  }
+  t.insertAdjacentHTML('beforeend', '<span class="icon" style="display:flex">'+(opts.icon||ICONS.vol)+'</span>');
+  const badge=document.createElement('span');badge.className='tile-badge';badge.innerHTML=ICONS.sliders;t.appendChild(badge);
+  const title=document.createElement('span');title.className='tile-title';title.textContent=opts.label||'';t.appendChild(title);
+  if(opts.capture) {
+    const cap=document.createElement('div');cap.className='slider-capture';t.appendChild(cap);
+    cap.addEventListener('pointerdown', (e)=>{
+      t.classList.add('dragging');
+      const move=(ev)=>{
+        const r=t.getBoundingClientRect();
+        const v=Math.min(1,Math.max(0,1-(ev.clientY-r.top)/r.height));
+        setSlider(t,v,opts);
+      };
+      const up=()=>{t.classList.remove('dragging');window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);};
+      window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);
+      e.preventDefault();
+    });
+  }
+  cell.appendChild(t);parent.appendChild(cell);
+  if(opts.fill!=null) setSlider(t,opts.fill,opts);
+  return t;
+}
+function setSlider(t,v,opts){
+  const amp=sliderToAmplitude(v);
+  const pct=Math.round(amplitudeToPerceptual(amp));
+  t.querySelector('.slider-fill').style.height=(v*100)+'%';
+  t.querySelector('.slider-thumb').style.top=(100-v*100)+'%';
+  t.querySelector('.tile-title').textContent=opts.name+' · '+(amp===0?'0%':pct+'%');
+}
+const board=document.getElementById('board');
+desktopTile(board,{name:'Jockie Music (1)',label:'Jockie Music (1) · 85%',fill:.425,capture:true});
+desktopTile(board,{name:'FredBoat',label:'FredBoat · 100%',fill:.5,capture:true});
+desktopTile(board,{icon:ICONS.mic,label:'Jockie Music (1)'});
+desktopTile(board,{name:'Jockie Music (1)',label:'Jockie Music (1) · offline',fill:0});
+desktopTile(board,{name:'Green-bot',label:'Green-bot · 35%',fill:.175,capture:true});
+desktopTile(board,{icon:ICONS.phone,label:'Dołącz: Music'});
+
+function androidTile(parent,opts){
+  const cell=document.createElement('div');cell.className='acell';
+  const t=document.createElement('div');t.className='atile';
+  const f=document.createElement('div');f.className='a-fill';f.style.height=(opts.fill*100)+'%';t.appendChild(f);
+  const th=document.createElement('div');th.className='a-thumb';th.style.top=(100-opts.fill*100)+'%';t.appendChild(th);
+  t.insertAdjacentHTML('beforeend','<span style="display:flex">'+(opts.icon||ICONS.vol)+'</span>');
+  const cap=document.createElement('div');cap.className='a-caption';cap.textContent=opts.label;cap.style.top='0';cap.style.position='absolute';t.appendChild(cap);
+  if(opts.title){const ti=document.createElement('div');ti.className='a-title';ti.textContent=opts.title;t.appendChild(ti);}
+  cell.appendChild(t);parent.appendChild(cell);
+}
+const ascreen=document.getElementById('ascreen');
+androidTile(ascreen,{label:'Jockie Music (1) · 85%',fill:.425});
+androidTile(ascreen,{label:'FredBoat · 100%',fill:.5});
+androidTile(ascreen,{icon:ICONS.mic,label:'OFF',fill:0});
+</script>
+</body>
+</html>

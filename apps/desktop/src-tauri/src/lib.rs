@@ -488,12 +488,16 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
         }
     });
 
+    // Per-member Discord voice state (volume/label/mute keys): the
+    // backend's keep-alive RPC actor pushes snapshots once connected.
+    let (discord_push_tx, discord_push_rx) = tokio::sync::mpsc::unbounded_channel();
     let backend = Arc::new(
         SqlBackend::new(db)
             .with_extensions(ext_manager.clone())
             .with_discord(
                 pulpit_discord::DiscordConfig::from_settings(&settings),
                 data_dir.join("settings.json"),
+                Some(discord_push_tx),
             )
             .with_voicemeeter_override(pulpit_vm::load_dll_override(&settings))
             .with_spotify(spotify.clone())
@@ -501,6 +505,9 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
             .with_obs(Some(obs_handle.clone())),
     );
     let broadcaster = EditorBroadcaster::new(hub.clone(), backend.clone());
+    // Warm the Discord actor at startup (no-op when unconfigured): the
+    // per-member tiles are live without waiting for the first action.
+    backend.warm_discord();
 
     // Lazy GC: drop tools.json entries whose tile no longer exists
     // (AUTOINCREMENT ids are never reused, so a kept entry is dead
@@ -622,6 +629,7 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
         backend.clone() as Arc<dyn Backend>,
     ));
     tauri::async_runtime::spawn(pulpit_host::forward_producer(feed.clone(), tools_rx));
+    tauri::async_runtime::spawn(pulpit_host::forward_producer(feed.clone(), discord_push_rx));
 
     // Spotify (when its config is readable): the poller's consumers
     // signal counts connected legacy + v2 clients plus this host's extra

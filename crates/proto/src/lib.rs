@@ -384,6 +384,12 @@ pub struct WidgetManifest {
     /// State channel this widget reads (e.g. `"vm.volume"`), with shape.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<StateRef>,
+    /// Optional second channel carrying a text label (e.g. a member
+    /// volume slider's "Name · 85%"): rendered alongside the widget
+    /// value. Scalars only; clients without the field keep rendering the
+    /// static style title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_state: Option<StateRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub interactions: Vec<Interaction>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -600,6 +606,7 @@ mod tests {
                 kind: WidgetKind::Button,
                 params: serde_json::Value::Null,
                 state: None,
+                text_state: None,
                 interactions: vec![Interaction::Tap],
                 style: None,
                 web_package: None,

@@ -135,6 +135,24 @@ fn boards_sync() {
         seek.manifest.state.as_ref().unwrap().channel,
         "ext.media-progress"
     );
+    // Discord per-member volume slider: the value rides the pushed
+    // `user-volume_<uid>` fraction and the second channel carries the
+    // "Name · 85%" label; the double-tap reset (0.5 = 100%) is declared
+    let member = &board.tiles[5];
+    assert_eq!(member.id, 41);
+    assert_eq!(member.manifest.kind, WidgetKind::Slider);
+    assert_eq!(
+        member.manifest.state.as_ref().unwrap().channel,
+        "ext.user-volume_411916947773587456"
+    );
+    assert_eq!(
+        member.manifest.text_state.as_ref().unwrap().channel,
+        "ext.user-volume-label_411916947773587456"
+    );
+    assert_eq!(
+        member.manifest.interactions,
+        vec![Interaction::Slide, Interaction::DoubleTap]
+    );
     // style parity fields (012 C5): border/icon/title colors travel as
     // optional pairs; state 2 falls back to state 1 per field client-side
     let style = button.manifest.style.as_ref().unwrap();
