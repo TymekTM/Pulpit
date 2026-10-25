@@ -166,6 +166,9 @@ data class Tile(
     val kind: String = V2.KIND_BUTTON,
     val params: JsonElement? = null,
     val state: StateRef? = null,
+    /** Optional second channel carrying a text label (e.g. a member
+     *  volume slider's "Name · 85%"); null keeps the static title. */
+    @SerialName("text_state") val textState: StateRef? = null,
     val interactions: List<String> = emptyList(),
     val style: Style? = null,
     @SerialName("web_package") val webPackage: String? = null,

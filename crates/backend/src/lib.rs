@@ -38,6 +38,10 @@ pub struct SqlBackend {
     /// authenticated pipe for the process lifetime instead of a fresh
     /// ~450 ms session per click.
     discord_client: Mutex<Option<pulpit_discord::DiscordClient>>,
+    /// Live-state snapshot sink handed to the Discord actor (per-member
+    /// volume/label/mute keys); the host fans the snapshots out through
+    /// the shared producer pump. None in tests that never wire one.
+    discord_push: Option<tokio::sync::mpsc::UnboundedSender<serde_json::Value>>,
     /// Native Spotify integration handle, injected by the host when
     /// `spotify.json` provides a login; None leaves Spotify actions
     /// claimed-but-logged-out (the design's NeedsLogin surface).
@@ -76,6 +80,7 @@ impl SqlBackend {
             discord_settings_path: None,
             discord_settings_mtime: Mutex::new(None),
             discord_client: Mutex::new(None),
+            discord_push: None,
             spotify: None,
             obs: None,
             spotify_last_error: std::sync::Mutex::new(None),
@@ -92,6 +97,7 @@ impl SqlBackend {
         mut self,
         config: Option<DiscordConfig>,
         settings_path: std::path::PathBuf,
+        push: Option<tokio::sync::mpsc::UnboundedSender<serde_json::Value>>,
     ) -> Self {
         let mtime = settings_path
             .metadata()
@@ -100,6 +106,7 @@ impl SqlBackend {
         self.discord = Mutex::new(config);
         self.discord_settings_path = Some(settings_path);
         self.discord_settings_mtime = Mutex::new(mtime);
+        self.discord_push = push;
         self
     }
 
@@ -542,6 +549,7 @@ impl Backend for SqlBackend {
             || self.exec_obs(&cmd, Some(value))
             || self.exec_speaker_volume(&cmd, value)
             || self.exec_media(&cmd, Some(value))
+            || self.exec_discord_slider(&cmd, value)
         {
             return;
         }
@@ -915,33 +923,83 @@ impl SqlBackend {
         }
     }
 
+    /// Connect the Discord actor now instead of on the first action, so
+    /// the per-member volume tiles are live right after startup. No-op
+    /// without a configured Discord app.
+    pub fn warm_discord(&self) {
+        self.maybe_reload_hot_settings();
+        let Some(config) = self.discord.lock().unwrap().clone() else {
+            return;
+        };
+        if config.client_id.is_empty() {
+            return;
+        }
+        let mut clients = self.discord_client.lock().unwrap();
+        let client = clients.get_or_insert_with(|| {
+            pulpit_discord::DiscordClient::spawn_push(self.discord_push.clone())
+        });
+        client.warm_up(&config);
+    }
+
     fn exec_discord(&self, cmd: &pulpit_actions::Command, sink: &mut dyn EventSink) -> bool {
         if !pulpit_discord::is_discord_action(&cmd.kind) {
             return false;
         }
+        let args = Self::command_args(cmd);
+        match self.run_discord_action(&cmd.kind, &args) {
+            Ok(Some(outcome)) => sink.app_value(&outcome.key, &outcome.label),
+            Ok(None) => {}
+            Err(e) => tracing::warn!(kind = %cmd.kind, error = %e, "discord action failed"),
+        }
+        true
+    }
+
+    /// Slider-tap dispatch for the per-member volume kind (`user-volume`,
+    /// including the double-tap reset, which arrives as a slider too).
+    /// No sink: the Discord actor pushes the authoritative volume/label
+    /// keys itself once the SET lands, so a drag never spams one-shot
+    /// pushes.
+    fn exec_discord_slider(&self, cmd: &pulpit_actions::Command, value: f64) -> bool {
+        if cmd.kind != "user-volume" {
+            return false;
+        }
+        let mut args = Self::command_args(cmd);
+        if !args.is_object() {
+            args = serde_json::Value::Object(Default::default());
+        }
+        args["value"] = serde_json::json!(value);
+        if let Err(e) = self.run_discord_action(&cmd.kind, &args) {
+            tracing::warn!(kind = %cmd.kind, error = %e, "discord slider action failed");
+        }
+        true
+    }
+
+    /// The shared Discord exec path: hot-reload the settings, resolve the
+    /// OAuth config, lazily spawn the keep-alive actor and run one action
+    /// (with the silent-refresh / consent-popup retry on AuthRejected).
+    fn run_discord_action(
+        &self,
+        kind: &str,
+        args: &serde_json::Value,
+    ) -> Result<Option<pulpit_discord::ExecOutcome>, pulpit_discord::DiscordError> {
         self.maybe_reload_hot_settings();
         let Some(config) = self.discord.lock().unwrap().clone() else {
-            tracing::warn!(kind = %cmd.kind, "discord not configured (no client id in settings)");
-            return true;
+            tracing::warn!(kind, "discord not configured (no client id in settings)");
+            return Ok(None);
         };
-        let args = Self::command_args(cmd);
         // The client lock is held for the whole action on purpose: Discord
         // actions queue up instead of racing the pipe. Worst case is a
         // consent-popup re-authorization blocking later actions until it
         // resolves - the same blocking the popup itself imposes.
         let mut clients = self.discord_client.lock().unwrap();
-        let client = clients.get_or_insert_with(pulpit_discord::DiscordClient::spawn);
-        let mut run = |config: &DiscordConfig| {
+        let client = clients.get_or_insert_with(|| {
+            pulpit_discord::DiscordClient::spawn_push(self.discord_push.clone())
+        });
+        let run = |config: &DiscordConfig| {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
-            client
-                .execute(config, &cmd.kind, &args, deadline)
-                .inspect(|o| {
-                    if let Some(o) = o {
-                        sink.app_value(&o.key, &o.label);
-                    }
-                })
+            client.execute(config, kind, args, deadline)
         };
-        let result = match run(&config) {
+        match run(&config) {
             Err(pulpit_discord::DiscordError::AuthRejected) => {
                 match self.reauthorize_discord(&config) {
                     Ok(fresh) => {
@@ -952,11 +1010,7 @@ impl SqlBackend {
                 }
             }
             other => other,
-        };
-        if let Err(e) = result {
-            tracing::warn!(kind = %cmd.kind, error = %e, "discord action failed");
         }
-        true
     }
 
     /// Refresh or re-authorize the Discord token and persist it. The

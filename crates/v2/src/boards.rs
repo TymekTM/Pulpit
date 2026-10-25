@@ -137,6 +137,7 @@ pub fn build_tile(
     let (kind, interactions) =
         widget_kind_for(row, legacy.get("app").and_then(Value::as_str), &params);
     let state = state_ref(row, &legacy, engine);
+    let text_state = text_state_ref(row, engine);
     let asset_hash = row
         .img
         .as_deref()
@@ -163,6 +164,7 @@ pub fn build_tile(
             kind,
             params,
             state,
+            text_state,
             interactions,
             style: Some(style(row, &legacy, names)),
             web_package: None,
@@ -218,6 +220,9 @@ pub fn slider_reset_value(kind: &str, params: &Value) -> Option<f64> {
         .or_else(|| match kind {
             "vm-slider-strip" | "vm-slider-bus" => Some(60.0 / 72.0),
             "spotify-volume" => Some(0.5),
+            // Discord's per-member range is 0..200%, so the midpoint is
+            // the 100% unity default
+            "user-volume" => Some(0.5),
             _ => None,
         })
 }
@@ -465,6 +470,42 @@ fn state_ref(row: &ButtonRow, legacy: &Value, engine: &StateEngine) -> Option<St
     Some(StateRef { channel, shape })
 }
 
+/// Optional second channel carrying a text label: the Discord per-member
+/// volume renders "Name · 85%" out of `user-volume-label_<uid>` pushes
+/// while the value channel carries the slider fraction. None without a
+/// pinned user id (an unpinned tile has nothing to label) and for every
+/// other kind.
+fn text_state_ref(row: &ButtonRow, engine: &StateEngine) -> Option<StateRef> {
+    if !matches!(row.kind.as_str(), "user-volume" | "user-mute") {
+        return None;
+    }
+    let uid = discord_user_id(row.command.as_deref());
+    if uid.is_empty() {
+        return None;
+    }
+    // registered like state_ref, so the label channel shows up in
+    // `welcome` before the first push
+    let channel = ext_channel(&format!("user-volume-label_{uid}"));
+    engine.register(&channel, StateShape::Scalar, None);
+    Some(StateRef {
+        channel,
+        shape: StateShape::Scalar,
+    })
+}
+
+/// The `user_id` snowflake out of a per-member Discord command JSON
+/// (`{"user_id": "..."}`); empty when absent or unparsable.
+fn discord_user_id(command: Option<&str>) -> String {
+    command
+        .and_then(|c| serde_json::from_str::<Value>(c).ok())
+        .and_then(|v| {
+            v.get("user_id")
+                .and_then(Value::as_str)
+                .map(|s| s.trim().to_string())
+        })
+        .unwrap_or_default()
+}
+
 fn style(row: &ButtonRow, legacy: &Value, names: &HashMap<i64, String>) -> Style {
     let color = legacy.get("color").and_then(Value::as_str);
     let unicode = legacy.get("unicode").and_then(Value::as_str);
@@ -663,6 +704,54 @@ mod tests {
         );
         assert_eq!(slider_reset_value("speaker-volume", &Value::Null), None);
         assert_eq!(slider_reset_value("media-seek", &Value::Null), None);
+        // Discord's range is 0..200%, so the midpoint is 100% unity
+        assert_eq!(slider_reset_value("user-volume", &Value::Null), Some(0.5));
+    }
+
+    #[test]
+    fn discord_member_tiles_carry_value_and_label_channels() {
+        let uid = r#"{"user_id":"411916947773587456"}"#;
+        let engine = StateEngine::new(120);
+        // the slider declares the double-tap reset out of the box
+        assert_eq!(
+            allowed_interactions(&row("user-volume", "slider", Some(uid))),
+            vec![Interaction::Slide, Interaction::DoubleTap]
+        );
+        // the label channel rides text_state, keyed by the same snowflake
+        let label = text_state_ref(&row("user-volume", "slider", Some(uid)), &engine).unwrap();
+        assert_eq!(label.channel, "ext.user-volume-label_411916947773587456");
+        assert_eq!(label.shape, StateShape::Scalar);
+        // the mute toggle carries the same label channel (the name is the
+        // only cue it has - there is no color2 by default)
+        let mute_label = text_state_ref(&row("user-mute", "button", Some(uid)), &engine).unwrap();
+        assert_eq!(
+            mute_label.channel,
+            "ext.user-volume-label_411916947773587456"
+        );
+        // other kinds are untouched; without a pinned uid there is no
+        // label channel either (the tile has nothing to label)
+        assert!(text_state_ref(&row("user-volume", "slider", None), &engine).is_none());
+        assert!(text_state_ref(&row("user-volume", "slider", Some("not-json")), &engine).is_none());
+        // the full manifest matches the per-event gate (oracle)
+        let (assets, _dir) = asset_store();
+        let tile = build_tile(
+            &row("user-volume", "slider", Some(uid)),
+            &HashMap::new(),
+            &assets,
+            &engine,
+        );
+        assert_eq!(
+            tile.manifest.state.as_ref().unwrap().channel,
+            "ext.user-volume_411916947773587456"
+        );
+        assert_eq!(
+            tile.manifest.text_state.as_ref().unwrap().channel,
+            "ext.user-volume-label_411916947773587456"
+        );
+        assert_eq!(
+            tile.manifest.interactions,
+            vec![Interaction::Slide, Interaction::DoubleTap]
+        );
     }
 
     #[test]

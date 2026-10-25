@@ -126,6 +126,10 @@ fun Tile(
      *  one: tool tiles (timer/stopwatch/counter) read their compact
      *  server state object out of it. */
     liveElement: JsonElement? = null,
+    /** Live label from the tile's `text_state` channel (e.g. a Discord
+     *  member volume slider's "Name · 85%"); sliders render it as a
+     *  caption, other templates ignore it. */
+    labelText: String? = null,
     onPressStart: () -> Unit,
     onPressEnd: () -> Unit,
     onSlider: (Float) -> Unit,
@@ -278,7 +282,7 @@ fun Tile(
                 "tool-timer" -> ToolTimerTile(tile, liveElement, titleColor, onPress = onPressEnd, onGesture = onGesture)
                 "tool-stopwatch" -> ToolStopwatchTile(tile, liveElement, titleColor, onPress = onPressEnd, onGesture = onGesture)
                 "tool-counter" -> ToolCounterTile(tile, liveElement, titleColor, onPress = onPressEnd, onGesture = onGesture)
-                "slider" -> SliderTile(tile, color, icon, iconFamily, iconColor, liveValue, onSlider, onGesture)
+                "slider" -> SliderTile(tile, color, icon, iconFamily, iconColor, liveValue, labelText, onSlider, onGesture)
                 "knob" -> KnobTile(tile, iconColor, titleColor, liveValue, onSlider, onGesture)
                 "graph" -> GraphTile(tile, series, liveText, channel, titleColor)
                 "clock" -> ClockTile(tile, icon, iconFamily, titleColor)
@@ -532,6 +536,7 @@ private fun SliderTile(
     iconFamily: FontFamily,
     iconColor: Color,
     liveValue: Double?,
+    labelText: String?,
     onSlider: (Float) -> Unit,
     onGesture: (String) -> Unit = {},
 ) {
@@ -623,6 +628,22 @@ private fun SliderTile(
                 fontFamily = iconFamily,
                 fontSize = 22.sp,
                 color = iconColor,
+            )
+        }
+        // a text_state label (e.g. the member name + percent on a Discord
+        // volume slider) sits above the value surface; tiles without the
+        // second channel keep the icon-only face
+        if (!labelText.isNullOrEmpty()) {
+            Text(
+                text = labelText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.9f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
             )
         }
     }

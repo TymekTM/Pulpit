@@ -122,6 +122,9 @@ async fn main() -> anyhow::Result<()> {
     };
     let (obs_push_tx, obs_push_rx) = tokio::sync::mpsc::unbounded_channel();
     let obs = pulpit_obs::Obs::new(obs_config, Some(obs_path.clone()), obs_push_tx);
+    // Per-member Discord voice state (volume/label/mute keys) rides the
+    // same producer pump once the backend lazily spawns the RPC actor.
+    let (discord_push_tx, discord_push_rx) = tokio::sync::mpsc::unbounded_channel();
     if !obs.status().await.enabled {
         tracing::info!("OBS not enabled in obs.json - OBS integration idle");
     }
@@ -131,12 +134,17 @@ async fn main() -> anyhow::Result<()> {
             .with_discord(
                 pulpit_discord::DiscordConfig::from_settings(&settings),
                 data_dir.join("settings.json"),
+                Some(discord_push_tx),
             )
             .with_voicemeeter_override(pulpit_vm::load_dll_override(&settings))
             .with_spotify(spotify.clone())
             .with_tools(Some(tools.clone()))
             .with_obs(Some(obs)),
     );
+
+    // Warm the Discord actor at startup: per-member tiles are live
+    // without waiting for the first action (no-op when unconfigured).
+    backend.warm_discord();
 
     let concrete_backend = backend.clone();
     let state = Arc::new(AppState {
@@ -252,6 +260,9 @@ async fn main() -> anyhow::Result<()> {
     // the shared producer pump (same lanes and change-gating as every
     // other producer).
     tokio::spawn(pulpit_host::forward_producer(feed.clone(), obs_push_rx));
+    // Discord per-member voice state (volume/label/mute keys), pushed by
+    // the backend's keep-alive RPC actor once it connects.
+    tokio::spawn(pulpit_host::forward_producer(feed.clone(), discord_push_rx));
     // Spotify poller: consumers = connected legacy + v2 clients (no
     // host-local UI on the headless server). Snapshots ride the shared
     // spotify pump (internal art key stripped, album art imported).

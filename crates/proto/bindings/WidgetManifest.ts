@@ -12,7 +12,14 @@ export type WidgetManifest = { kind: WidgetKind, params: JsonValue,
 /**
  * State channel this widget reads (e.g. `"vm.volume"`), with shape.
  */
-state: StateRef | null, interactions?: Array<Interaction>, style: Style | null, 
+state: StateRef | null, 
+/**
+ * Optional second channel carrying a text label (e.g. a member
+ * volume slider's "Name · 85%"): rendered alongside the widget
+ * value. Scalars only; clients without the field keep rendering the
+ * static style title.
+ */
+text_state?: StateRef | null, interactions?: Array<Interaction>, style: Style | null, 
 /**
  * Web widgets only: package id of the HTML bundle to render.
  */

@@ -5,6 +5,8 @@
 //! etc.) via Windows Global System Media Transport Controls
 //! (Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager).
 
+#[cfg(not(windows))]
+use crate::OsError;
 use crate::Result;
 use serde_json::{json, Value};
 use std::sync::Arc;

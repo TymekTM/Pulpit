@@ -240,6 +240,20 @@ Boards are data. One board:
   leaves the tile visually unchanged between states; a partially set
   one changes only the fields that are set.
 - `interactions` lists the gestures the tile accepts (section 6).
+- `text_state` (optional, added 2026-10 with the Discord per-member
+  volume): a second scalar channel carrying a text label rendered
+  alongside the widget value — e.g. a member volume slider's
+  `Name · 85%`. Clients without the field ignore it; clients render it
+  only for widgets that have a place for text (a slider caption), and
+  tiles without the channel keep the static `style.title`.
+- Discord per-member kinds (added 2026-10): `user-volume` (slider; the
+  0..1 fraction rides the pushed `user-volume_<uid>` key, 0.5 = 100%
+  unity, double-tap resets there) and `user-mute` (toggle; the ON/OFF
+  string rides `user-mute_<uid>`). Both pin one member through the
+  command JSON's `user_id` snowflake (a string — never coerce to a
+  number), and the slider adds the `user-volume-label_<uid>` label
+  channel through `text_state`. The producer keys are pushed by the
+  server's Discord RPC actor.
 
 ### boards.sync (server → client, full snapshot)
 

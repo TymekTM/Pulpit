@@ -223,6 +223,18 @@ Saving hot-reloads the running app — no restart. The headless server re-reads
 the file (mtime check) before its next Discord action, so edits made in the
 desktop reach it without a restart too. Secrets and tokens are never logged.
 
+**Per-member volume** (music bots): *Discord: User Volume* (slider) and
+*Discord: Mute User* (toggle) control the local per-user volume override
+the Discord client applies to one voice-channel member — the same slider
+Discord's right-click menu shows, so it works on every bot regardless of
+premium tiers, and only you hear the change. Set the member's `user_id`
+snowflake in the tile's field; the actor tracks the selected voice
+channel and keeps name + volume live both ways (drag in Discord, the
+tile follows; drag the tile, Discord follows). The slider spans Discord's
+0–200% with double-tap snapping back to 100%; RPC-set volumes revert when
+Pulpit exits, and only one app at a time may hold Discord's voice-write
+lock (a running Stream Deck Discord plugin will conflict).
+
 ## Voicemeeter
 
 Voicemeeter tiles drive the `VoicemeeterRemote64.dll` remote API directly

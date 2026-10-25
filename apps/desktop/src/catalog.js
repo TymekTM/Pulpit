@@ -690,6 +690,22 @@ export const CATALOG = [
     color: "#5865f2",
     dual: true,
   },
+  {
+    value: "user-volume",
+    label: "Discord: User Volume",
+    mode: "slider",
+    icon: "volume-up",
+    color: "#5865f2",
+    fields: [{ key: "user_id", label: "Discord user id" }],
+  },
+  {
+    value: "user-mute",
+    label: "Discord: Mute User",
+    icon: "microphone-slash",
+    color: "#5865f2",
+    dual: true,
+    fields: [{ key: "user_id", label: "Discord user id" }],
+  },
 ];
 
 // State bindings, ported from the original's buttonStyles + TOGGLE_BUTTONS
@@ -743,6 +759,10 @@ export const STATE_BINDINGS = {
   "discord-voice-channel": {},
   "discord-toggle-mute": {},
   "discord-toggle-deaf": {},
+  // Discord per-member kinds: the mute toggle's ON/OFF string rides the
+  // per-member `user-mute_<uid>` key (stateActive resolves it from the
+  // command), the slider watches `user-volume_<uid>` - no static binding
+  "user-mute": {},
   // vmod-* tiles arrive as runtime extension inputs, not catalog rows;
   // same tap-flip decision
   "vmod-voice": {},
@@ -775,6 +795,13 @@ export function stateActive(tile, cmd, customValues, typeMeta) {
     // select tracks the pushed playing state; next/prev/vol_* never do
     if (tile.command !== "play") return null;
     value = customValues["spotify-playing"];
+  } else if (tile.type === "user-mute") {
+    // Discord per-member mute: the ON/OFF string rides the per-member
+    // key (crates/discord), so the watch is command-scoped like vol_mute;
+    // trimmed like the server trims it
+    const uid = String(cmd?.user_id ?? "").trim();
+    if (!uid) return null;
+    value = customValues[`user-mute_${uid}`];
   } else if (binding?.watch) {
     value = customValues[binding.watch];
   } else if (typeMeta?.[tile.type]?.mode === "custom-value") {

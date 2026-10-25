@@ -104,7 +104,7 @@ class ProtoFixturesTest {
         val board = sync.boards[0]
         assertEquals(3L, board.id)
         assertEquals(Background.color("#2c3e50"), board.background)
-        assertEquals(5, board.tiles.size)
+        assertEquals(6, board.tiles.size)
 
         val button = board.tiles[0]
         assertEquals(17L, button.id)
@@ -183,6 +183,26 @@ class ProtoFixturesTest {
         assertEquals(23L, seek.id)
         assertEquals(V2.KIND_SLIDER, seek.kind)
         assertEquals("ext.media-progress", seek.state!!.channel)
+
+        // Discord per-member volume slider: the fraction rides the value
+        // channel, the "Name · 85%" label the second text_state channel,
+        // and the double-tap reset is declared alongside the slide
+        val member = board.tiles[5]
+        assertEquals(41L, member.id)
+        assertEquals(V2.KIND_SLIDER, member.kind)
+        assertEquals(
+            "ext.user-volume_411916947773587456",
+            member.state!!.channel,
+        )
+        assertEquals(
+            "ext.user-volume-label_411916947773587456",
+            member.textState!!.channel,
+        )
+        assertEquals(V2.SHAPE_SCALAR, member.textState!!.shape)
+        assertEquals(
+            listOf(V2.INT_SLIDE, V2.INT_DOUBLE_TAP),
+            member.interactions,
+        )
     }
 
     @Test

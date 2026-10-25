@@ -38,6 +38,10 @@ pub enum DiscordError {
     Network(&'static str),
     #[error("Discord RPC call failed: {0}")]
     Call(&'static str),
+    #[error("Discord rejected the call: {0}")]
+    /// Semantic rejection (rpc ERROR reply, target member not in the
+    /// channel): the pipe is healthy, so the session is worth keeping.
+    Rpc(&'static str),
     #[error("bad payload for {0}: {1}")]
     BadPayload(&'static str, String),
 }
@@ -227,7 +231,7 @@ pub fn authorize(config: &DiscordConfig, deadline: Instant) -> Result<AuthTokens
     };
 
     // step 2: AUTHORIZE over the pipe - Discord shows the consent popup
-    let mut session = Conn::handshake(&config.client_id, deadline)?;
+    let mut session = Conn::handshake(&config.client_id, deadline, None)?;
     let mut args = json!({
         "scopes": SCOPES,
         "client_id": config.client_id,
@@ -528,6 +532,8 @@ pub fn is_discord_action(kind: &str) -> bool {
             | "disconnect-voice"
             | "connect-voice"
             | "change-input"
+            | "user-volume"
+            | "user-mute"
     )
 }
 
@@ -556,6 +562,155 @@ pub fn input_declarations() -> Vec<(
         ("disconnect-voice", "phone-slash", "#5865F2", None),
         ("connect-voice", "phone", "#5865F2", None),
         ("change-input", "wave-square", "#5865F2", None),
+        // per-member volume slider + local mute toggle (the tile's command
+        // JSON carries the member's `user_id`)
+        ("user-volume", "volume-up", "#5865F2", Some("slider")),
+        (
+            "user-mute",
+            "microphone-slash",
+            "#5865F2",
+            Some("custom-value"),
+        ),
+    ]
+}
+
+// --------------------------------------------------- voice members + curve
+
+/// One remote member of the selected voice channel, as the local client
+/// sees it: display name, bot flag, and the per-user local volume/mute
+/// overrides (`SET_USER_VOICE_SETTINGS` territory). Snowflakes stay
+/// strings end to end - they are 64-bit and overflow f64 precision.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MemberVoice {
+    pub user_id: String,
+    /// Server nick, else global_name, else username - the same resolution
+    /// order the Discord client uses.
+    pub name: String,
+    pub is_bot: bool,
+    /// Local receive-volume override in RPC amplitude units (0..=200,
+    /// 100 = unity). Fractional - Discord's own UI slider writes f64s.
+    pub amplitude: f64,
+    /// Local "Mute User" override for this member.
+    pub muted: bool,
+    /// False once VOICE_STATE_DELETE removed the member: the last name is
+    /// kept so tiles can say "offline" instead of forgetting the bot.
+    pub present: bool,
+    /// The exact slider fraction we last sent for this member. Sub-unity
+    /// amplitudes quantize hard (perceptual ~1..20% all round to
+    /// amplitude 1), so until Discord echoes an authoritative state the
+    /// tiles show what the user set, not the quantized read-back that
+    /// would snap the thumb on release.
+    pub sent: Option<f64>,
+}
+
+impl MemberVoice {
+    /// `RPCVoiceState` dispatch payload -> member; None without a user id.
+    fn parse(data: &Value) -> Option<MemberVoice> {
+        let user = data.get("user")?;
+        let user_id = user.get("id").and_then(Value::as_str)?.to_string();
+        let name = ["nick", "global_name"]
+            .iter()
+            .filter_map(|k| data.get(*k).and_then(Value::as_str))
+            .find(|s| !s.is_empty())
+            .or_else(|| {
+                user.get("username")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+            })
+            .unwrap_or(&user_id)
+            .to_string();
+        Some(MemberVoice {
+            user_id,
+            name,
+            is_bot: user.get("bot").and_then(Value::as_bool).unwrap_or(false),
+            amplitude: data.get("volume").and_then(Value::as_f64).unwrap_or(100.0),
+            muted: data.get("mute").and_then(Value::as_bool).unwrap_or(false),
+            present: true,
+            sent: None,
+        })
+    }
+
+    /// The perceptual UI percentage (0..=200) this member's volume reads
+    /// as in Discord's own right-click slider.
+    pub fn perceptual_percent(&self) -> u32 {
+        amplitude_to_perceptual(self.amplitude)
+            .round()
+            .clamp(0.0, 200.0) as u32
+    }
+
+    /// The 0..1 fraction a volume slider positions itself at (0.5 = 100%,
+    /// the unity default - Discord's range is 0..200%).
+    pub fn slider_fraction(&self) -> f64 {
+        amplitude_to_perceptual(self.amplitude) / 200.0
+    }
+}
+
+/// Perceptual UI percent (0..=200, what Discord's slider shows) -> RPC
+/// amplitude multiplier. Mirrors `@discordapp/perceptual`: 0..100% spans
+/// a 50 dB exponential curve, 100..200% a +6 dB boost. Rounded because
+/// `SET_USER_VOICE_SETTINGS` validates `volume` as an integer.
+pub fn perceptual_to_amplitude(percent: f64) -> f64 {
+    let percent = percent.clamp(0.0, 200.0);
+    if percent <= 0.0 {
+        return 0.0;
+    }
+    let db = if percent > 100.0 {
+        (percent - 100.0) / 100.0 * 6.0
+    } else {
+        (percent / 100.0 - 1.0) * 50.0
+    };
+    let amp = 100.0 * 10f64.powf(db / 20.0);
+    // sub-unity amplitudes quantize hard near the floor (perceptual 1..20%
+    // all round to 0 = mute); a non-zero slider position must stay audible
+    amp.round().clamp(1.0, 200.0)
+}
+
+/// RPC amplitude multiplier (what voice states carry, e.g. 5.62) ->
+/// perceptual UI percent. Exact inverse of [`perceptual_to_amplitude`]
+/// away from the integer rounding.
+pub fn amplitude_to_perceptual(amplitude: f64) -> f64 {
+    if amplitude <= 0.0 {
+        return 0.0;
+    }
+    let db = 20.0 * (amplitude / 100.0).log10();
+    if db > 0.0 {
+        (100.0 * (1.0 + db / 6.0)).clamp(0.0, 200.0)
+    } else {
+        (100.0 * (1.0 + db / 50.0)).clamp(0.0, 200.0)
+    }
+}
+
+/// Slider fraction (0..1, 0.5 = unity) -> integer RPC amplitude.
+pub fn slider_to_amplitude(value: f64) -> u32 {
+    perceptual_to_amplitude(value.clamp(0.0, 1.0) * 200.0) as u32
+}
+
+/// Live state keys pushed to the producer lanes (all three surfaces ride
+/// `forward_producer`): the volume fraction, the "Name · 85%" label, and
+/// the mute toggle string ("ON" unmuted / "OFF" muted, matching the
+/// `_labelMuteDeaf` convention).
+pub fn member_state_keys(member: &MemberVoice) -> Vec<(String, Value)> {
+    let percent = member.perceptual_percent();
+    let label = if member.present {
+        format!("{} · {percent}%", member.name)
+    } else {
+        format!("{} · offline", member.name)
+    };
+    let volume = if member.present {
+        Value::from(member.sent.unwrap_or_else(|| member.slider_fraction()))
+    } else {
+        Value::from(0.0)
+    };
+    vec![
+        (format!("user-volume_{}", member.user_id), volume),
+        (
+            format!("user-volume-label_{}", member.user_id),
+            Value::from(label),
+        ),
+        (
+            format!("user-mute_{}", member.user_id),
+            Value::from(if member.muted { "OFF" } else { "ON" }),
+        ),
     ]
 }
 
@@ -644,6 +799,13 @@ enum Incoming {
     /// Discord pushed the current voice settings (mute/deaf changed,
     /// including changes made inside Discord itself).
     VoiceSettings(Value),
+    /// A member joined (`CREATE`), changed state (`UPDATE` - also fired
+    /// when someone's local volume/mute is edited), or left (`DELETE`).
+    /// The string is the Discord event name; the value is `data`.
+    VoiceState(&'static str, Value),
+    /// The local user joined, switched, or left a voice channel
+    /// (`channel_id: null` on leave).
+    ChannelSelect(Value),
     /// Keepalive ping; answered by echoing the payload back as a pong.
     Ping(Value),
     /// READY, activity dispatches, frames for other nonces: ignore.
@@ -659,10 +821,26 @@ fn classify(op: u32, frame: &Value, nonce: Option<&str>) -> Incoming {
     if nonce.is_some() && frame.get("nonce").and_then(Value::as_str) == nonce {
         return Incoming::Reply;
     }
-    if frame["cmd"].as_str() == Some("DISPATCH")
-        && frame["evt"].as_str() == Some("VOICE_SETTINGS_UPDATE")
-    {
-        return Incoming::VoiceSettings(frame["data"].clone());
+    if frame["cmd"].as_str() == Some("DISPATCH") {
+        match frame["evt"].as_str() {
+            Some("VOICE_SETTINGS_UPDATE") => {
+                return Incoming::VoiceSettings(frame["data"].clone());
+            }
+            Some("VOICE_STATE_CREATE")
+            | Some("VOICE_STATE_UPDATE")
+            | Some("VOICE_STATE_DELETE") => {
+                let evt = match frame["evt"].as_str() {
+                    Some("VOICE_STATE_CREATE") => "VOICE_STATE_CREATE",
+                    Some("VOICE_STATE_DELETE") => "VOICE_STATE_DELETE",
+                    _ => "VOICE_STATE_UPDATE",
+                };
+                return Incoming::VoiceState(evt, frame["data"].clone());
+            }
+            Some("VOICE_CHANNEL_SELECT") => {
+                return Incoming::ChannelSelect(frame["data"].clone());
+            }
+            _ => {}
+        }
     }
     Incoming::Other
 }
@@ -982,12 +1160,33 @@ struct Conn {
     /// pushes so toggles can send SET without a GET round trip.
     cache: Option<Value>,
     username: Option<String>,
+    /// The local user's snowflake - excluded from the member map (you
+    /// cannot set your own receive volume).
+    self_user_id: Option<String>,
+    /// Voice channel the subscriptions currently point at.
+    channel_id: Option<String>,
+    /// Remote members of that channel, keyed by user id (ordered, so
+    /// labels and any future cycling stay stable across updates).
+    members: std::collections::BTreeMap<String, MemberVoice>,
+    /// Live-state snapshot sink (server + desktop producer pumps). None
+    /// in the probe/authorize paths, which never track members.
+    push: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
+    /// A VOICE_CHANNEL_SELECT dispatch arrived while a request was in
+    /// flight: the channel re-attach must run OUTSIDE any pending
+    /// request (its own round trips would swallow the caller's
+    /// nonce-matched reply), so absorb only flags it and the actor
+    /// flushes between requests.
+    resync: bool,
 }
 
 impl Conn {
     /// Open the pipe, send the handshake and consume the READY dispatch -
     /// Discord ignores commands sent before READY.
-    fn handshake(client_id: &str, deadline: Instant) -> Result<Conn> {
+    fn handshake(
+        client_id: &str,
+        deadline: Instant,
+        push: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
+    ) -> Result<Conn> {
         let mut conn = Conn {
             pipe: Pipe::open()?,
             nonce: 0,
@@ -995,6 +1194,11 @@ impl Conn {
             inbox: VecDeque::new(),
             cache: None,
             username: None,
+            self_user_id: None,
+            channel_id: None,
+            members: Default::default(),
+            push,
+            resync: false,
         };
         conn.pipe.write_all(&encode_frame(
             OP_HANDSHAKE,
@@ -1007,6 +1211,18 @@ impl Conn {
     /// Handshake + authenticate. Returns the connection with its cache
     /// seeded from Discord's current voice settings.
     fn connect(config: &DiscordConfig, deadline: Instant) -> Result<Conn> {
+        Self::connect_with_push(config, deadline, None)
+    }
+
+    /// [`Conn::connect`] plus the live-state push channel: after the
+    /// auth round trips this subscribes to the voice events, seeds the
+    /// member map from the selected channel and keeps both fresh for the
+    /// connection's lifetime.
+    fn connect_with_push(
+        config: &DiscordConfig,
+        deadline: Instant,
+        push: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
+    ) -> Result<Conn> {
         if config.client_id.is_empty() || config.client_secret.is_empty() {
             // no OAuth app configured - nothing to authenticate with
             return Err(DiscordError::BadPayload(
@@ -1018,7 +1234,7 @@ impl Conn {
             // configured but never (re)authorized - the popup flow applies
             return Err(DiscordError::AuthRejected);
         }
-        let mut conn = Conn::handshake(&config.client_id, deadline)?;
+        let mut conn = Conn::handshake(&config.client_id, deadline, push)?;
         let reply = conn.request_until(
             deadline,
             "AUTHENTICATE",
@@ -1034,12 +1250,164 @@ impl Conn {
             .or_else(|| reply.pointer("/data/user/username").and_then(Value::as_str))
             .map(str::to_string);
         conn.username = user;
+        conn.self_user_id = reply
+            .pointer("/data/user/id")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         let reply = conn.request_until(deadline, "GET_VOICE_SETTINGS", json!({}))?;
         require_ok(&reply)?;
         if let Some(data) = reply.get("data").filter(|v| v.is_object()) {
             conn.cache = Some(data.clone());
         }
+        // voice tracking is best-effort: a failed subscribe or snapshot
+        // must not break the toggles and joins that predate this feature
+        if let Err(e) = conn.subscribe(deadline, true, "VOICE_CHANNEL_SELECT", json!({})) {
+            tracing::warn!(error = %e, "discord voice tracking unavailable (select subscribe failed)");
+            return Ok(conn);
+        }
+        if let Err(e) = conn.attach_selected_channel(deadline) {
+            tracing::warn!(error = %e, "discord voice tracking unavailable (initial attach failed)");
+            conn.channel_id = None;
+            conn.members.clear();
+        }
         Ok(conn)
+    }
+
+    /// SUBSCRIBE/UNSUBSCRIBE need the event name at the TOP LEVEL of the
+    /// frame (`request_until` only writes cmd/args/nonce).
+    fn subscribe(&mut self, deadline: Instant, on: bool, evt: &str, args: Value) -> Result<()> {
+        let nonce = self.next_nonce();
+        let cmd = if on { "SUBSCRIBE" } else { "UNSUBSCRIBE" };
+        let frame = json!({ "cmd": cmd, "evt": evt, "args": args, "nonce": nonce });
+        self.pipe
+            .write_all(&encode_frame(OP_FRAME, &frame.to_string()))?;
+        loop {
+            let Some((op, frame)) = self.wait_frame(
+                deadline,
+                Duration::from_secs(1),
+                WakeHandle(std::ptr::null_mut()),
+            )?
+            else {
+                return Err(DiscordError::Call("timeout"));
+            };
+            if let Some(reply) = self.absorb(op, frame, Some(&nonce))? {
+                require_ok(&reply)?;
+                return Ok(());
+            }
+        }
+    }
+
+    /// Point the member tracking at the currently selected voice channel:
+    /// seed from `GET_SELECTED_VOICE_CHANNEL`'s voice_states snapshot,
+    /// then subscribe the channel-scoped member events. Idempotent - a
+    /// member update racing the snapshot upserts by user id.
+    fn attach_selected_channel(&mut self, deadline: Instant) -> Result<()> {
+        let reply = self.request_until(deadline, "GET_SELECTED_VOICE_CHANNEL", json!({}))?;
+        require_ok(&reply)?;
+        let data = reply.get("data").filter(|v| v.is_object());
+        let channel = data
+            .and_then(|d| d.get("id"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        if self.channel_id == channel {
+            return Ok(());
+        }
+        if let Some(old) = self.channel_id.take() {
+            let args = json!({ "channel_id": old });
+            for evt in [
+                "VOICE_STATE_CREATE",
+                "VOICE_STATE_UPDATE",
+                "VOICE_STATE_DELETE",
+            ] {
+                // a failed unsubscribe is not fatal: the old subscription
+                // dies with the connection anyway
+                let _ = self.subscribe(deadline, false, evt, args.clone());
+            }
+            // the old members just went out of reach: flip them to the
+            // offline faces (volume 0, "Name · offline") BEFORE dropping
+            // the map, or tiles would keep stale live values forever
+            for member in self.members.values_mut() {
+                member.present = false;
+            }
+            self.push_members();
+            self.members.clear();
+        }
+        if let Some(channel) = channel.clone() {
+            // voice_states rides every live-channel payload; tolerate its
+            // absence (seed nothing) but ALWAYS subscribe - channel_id
+            // may only move once the channel-scoped events are up, or a
+            // later attach would short-circuit on the equality check
+            let states = data
+                .and_then(|d| d.get("voice_states"))
+                .and_then(Value::as_array)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            for state in states {
+                if let Some(member) = MemberVoice::parse(state) {
+                    if Some(&member.user_id) != self.self_user_id.as_ref() {
+                        self.members.insert(member.user_id.clone(), member);
+                    }
+                }
+            }
+            let args = json!({ "channel_id": channel });
+            for evt in [
+                "VOICE_STATE_CREATE",
+                "VOICE_STATE_UPDATE",
+                "VOICE_STATE_DELETE",
+            ] {
+                self.subscribe(deadline, true, evt, args.clone())?;
+            }
+        }
+        self.channel_id = channel;
+        self.push_members();
+        Ok(())
+    }
+
+    /// Apply one member dispatch. UPDATE/CREATE upsert (skipping the
+    /// local user), DELETE keeps the last name but flags the member gone
+    /// so tiles show "offline" instead of silently keeping a live value.
+    fn apply_voice_state(&mut self, evt: &str, data: &Value) {
+        let Some(user_id) = data
+            .pointer("/user/id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+        else {
+            return;
+        };
+        if Some(&user_id) == self.self_user_id.as_ref() {
+            return;
+        }
+        match evt {
+            "VOICE_STATE_DELETE" => {
+                if let Some(member) = self.members.get_mut(&user_id) {
+                    member.present = false;
+                    member.muted = false;
+                }
+            }
+            _ => {
+                if let Some(member) = MemberVoice::parse(data) {
+                    self.members.insert(user_id, member);
+                }
+            }
+        }
+        self.push_members();
+    }
+
+    /// Fan the member map out as one flat snapshot; the producer lanes
+    /// change-gate per key, so repeats are cheap.
+    fn push_members(&self) {
+        let Some(push) = &self.push else {
+            return;
+        };
+        let mut map = serde_json::Map::new();
+        for member in self.members.values() {
+            for (key, value) in member_state_keys(member) {
+                map.insert(key, value);
+            }
+        }
+        if !map.is_empty() {
+            let _ = push.send(Value::Object(map));
+        }
     }
 
     fn wait_for_ready(&mut self, deadline: Instant) -> Result<()> {
@@ -1099,8 +1467,9 @@ impl Conn {
         }
     }
 
-    /// Answer sideband traffic (pings, voice-settings pushes); Ok(Some)
-    /// returns the nonce-matched reply frame the caller is waiting for.
+    /// Answer sideband traffic (pings, voice-settings pushes, voice
+    /// state); Ok(Some) returns the nonce-matched reply frame the caller
+    /// is waiting for.
     fn absorb(&mut self, op: u32, frame: Value, nonce: Option<&str>) -> Result<Option<Value>> {
         match classify(op, &frame, nonce) {
             Incoming::Reply => Ok(Some(frame)),
@@ -1111,6 +1480,19 @@ impl Conn {
             }
             Incoming::VoiceSettings(v) => {
                 self.cache = Some(v);
+                Ok(None)
+            }
+            Incoming::VoiceState(evt, data) => {
+                self.apply_voice_state(evt, &data);
+                Ok(None)
+            }
+            Incoming::ChannelSelect(_) => {
+                // never run round trips inside absorb: a select dispatch
+                // racing an in-flight request would consume the caller's
+                // nonce-matched reply (classify sees a nonce mismatch
+                // first) and the outer request would time out. Flag it;
+                // the actor flushes between requests (see flush_resync).
+                self.resync = true;
                 Ok(None)
             }
             Incoming::Other => Ok(None),
@@ -1151,6 +1533,22 @@ impl Conn {
                 return Ok(());
             };
             self.absorb(op, frame, None)?;
+            self.flush_resync();
+        }
+    }
+
+    /// Run a pending channel re-attach outside any pending request (see
+    /// the `ChannelSelect` arm of `absorb`). Soft-fails on purpose:
+    /// tracking problems must never kill the toggles and joins that
+    /// worked before this feature existed.
+    fn flush_resync(&mut self) {
+        if !self.resync {
+            return;
+        }
+        self.resync = false;
+        let deadline = Instant::now() + Duration::from_secs(8);
+        if let Err(e) = self.attach_selected_channel(deadline) {
+            tracing::warn!(error = %e, "discord voice channel resync failed");
         }
     }
 }
@@ -1160,7 +1558,7 @@ impl Conn {
 /// fake a successful action.
 fn require_ok(frame: &Value) -> Result<()> {
     if frame.get("evt").and_then(Value::as_str) == Some("ERROR") {
-        Err(DiscordError::Call("rpc error"))
+        Err(DiscordError::Rpc("rpc error"))
     } else {
         Ok(())
     }
@@ -1188,6 +1586,36 @@ pub enum Plan {
     ConnectChannel(String),
     Disconnect,
     SetInputMode(String),
+    /// Per-user local receive volume: `value` is the tile's 0..1 slider
+    /// fraction (0.5 = Discord's 100% unity).
+    SetUserVolume {
+        user_id: String,
+        value: f64,
+    },
+    /// Per-user local mute toggle (the same override Discord's right-click
+    /// "Mute User" checkbox writes).
+    FlipUserMute {
+        user_id: String,
+    },
+}
+
+/// Extracts the member snowflake out of a per-user action's command JSON.
+/// Snowflakes are unsigned 64-bit numbers serialized as strings - the
+/// digit check catches a pasted username or a truncated id before it
+/// becomes a confusing rpc ERROR.
+fn user_id_arg(args: &Value) -> Result<String> {
+    let id = args
+        .get("user_id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(DiscordError::BadPayload(
+            "user_id",
+            "missing or malformed member snowflake".into(),
+        ));
+    }
+    Ok(id.to_string())
 }
 
 pub fn plan(action: &str, args: &Value) -> Result<Plan> {
@@ -1225,6 +1653,25 @@ pub fn plan(action: &str, args: &Value) -> Result<Plan> {
             "voice_activity" => Ok(Plan::SetInputMode("VOICE_ACTIVITY".into())),
             other => Err(DiscordError::BadPayload("action", other.into())),
         },
+        "user-volume" => {
+            // the value is required: a tap or "Run now" on a slider tile
+            // carries none, and defaulting it would silently slam the
+            // member's volume to 100%
+            let value =
+                args.get("value")
+                    .and_then(Value::as_f64)
+                    .ok_or(DiscordError::BadPayload(
+                        "value",
+                        "slider value missing (a tap carries none - use the slider)".into(),
+                    ))?;
+            Ok(Plan::SetUserVolume {
+                user_id: user_id_arg(args)?,
+                value: value.clamp(0.0, 1.0),
+            })
+        }
+        "user-mute" => Ok(Plan::FlipUserMute {
+            user_id: user_id_arg(args)?,
+        }),
         other => Err(DiscordError::BadPayload("action", other.into())),
     }
 }
@@ -1286,6 +1733,9 @@ pub fn apply_flip(current: &Value, what: &Plan) -> Result<Option<FlipOutcome>> {
             })
         }
         Plan::ConnectChannel(_) | Plan::Disconnect => None,
+        // per-user actions run in `run_connected` straight off the
+        // member cache - they need no self-state flip
+        Plan::SetUserVolume { .. } | Plan::FlipUserMute { .. } => None,
     })
 }
 
@@ -1306,6 +1756,12 @@ enum Job {
         args: Value,
         deadline: Instant,
         reply: std::sync::mpsc::SyncSender<Result<Option<ExecOutcome>>>,
+    },
+    /// Connect now (startup warm-up) instead of on the first action, so
+    /// per-member tiles are live right away. Fire-and-forget: failures
+    /// retry on the actor's idle reconnect cadence.
+    Warm {
+        config: DiscordConfig,
     },
     Close,
 }
@@ -1373,16 +1829,28 @@ impl Drop for WakeEvent {
 /// blocks on the job queue outright - so neither state burns wakeups.
 const IDLE_TICK: Duration = Duration::from_secs(10);
 
+/// How often the disconnected actor retries a warm-configured connect.
+/// Covers Discord restarts and the gap after a transport failure: the
+/// per-member tiles come back (and go live) without any user action.
+const RECONNECT_EVERY: Duration = Duration::from_secs(15);
+
 impl DiscordClient {
     /// Spawn the keep-alive actor. The first action pays the ~400 ms
     /// session setup; every later one is a single round trip.
     pub fn spawn() -> DiscordClient {
+        Self::spawn_push(None)
+    }
+
+    /// [`DiscordClient::spawn`] plus a live-state snapshot channel: the
+    /// actor pushes the tracked voice members' volume/label/mute keys
+    /// through it (the host fans them out via `forward_producer`).
+    pub fn spawn_push(push: Option<tokio::sync::mpsc::UnboundedSender<Value>>) -> DiscordClient {
         let (tx, rx) = std::sync::mpsc::channel();
         let wake = std::sync::Arc::new(WakeEvent::new());
         let thread_wake = wake.clone();
         std::thread::Builder::new()
             .name("discord-rpc".into())
-            .spawn(move || actor_loop(rx, thread_wake, None))
+            .spawn(move || actor_loop(rx, thread_wake, None, push))
             .expect("spawn discord rpc actor");
         DiscordClient {
             jobs: std::sync::Mutex::new(tx),
@@ -1418,6 +1886,16 @@ impl DiscordClient {
             .recv()
             .map_err(|_| DiscordError::Call("discord actor stopped"))?
     }
+
+    /// Connect now (not on the first action): per-member tiles go live
+    /// right after startup. Fire-and-forget - connect failures are logged
+    /// by the actor and retried on its idle reconnect cadence.
+    pub fn warm_up(&self, config: &DiscordConfig) {
+        let _ = self.jobs.lock().unwrap().send(Job::Warm {
+            config: config.clone(),
+        });
+        self.wake.set();
+    }
 }
 
 impl Drop for DiscordClient {
@@ -1431,10 +1909,35 @@ impl Drop for DiscordClient {
 }
 
 /// One queued action, or None if the actor should stop. The reply is
-/// always sent back (the API thread blocks on it).
-fn handle_job(conn: &mut Option<Conn>, job: Job) -> bool {
+/// always sent back for Exec (the API thread blocks on it).
+#[allow(clippy::too_many_arguments)]
+fn handle_job(
+    conn: &mut Option<Conn>,
+    push: &Option<tokio::sync::mpsc::UnboundedSender<Value>>,
+    last_config: &mut Option<DiscordConfig>,
+    job: Job,
+) -> bool {
     match job {
         Job::Close => false,
+        Job::Warm { config } => {
+            *last_config = Some(config.clone());
+            if conn.is_none() {
+                match Conn::connect_with_push(
+                    &config,
+                    Instant::now() + Duration::from_secs(8),
+                    push.clone(),
+                ) {
+                    Ok(c) => *conn = Some(c),
+                    Err(e) => {
+                        tracing::info!(error = %e, "discord warm-up connect failed - will retry")
+                    }
+                }
+            }
+            if let Some(c) = conn.as_mut() {
+                c.flush_resync();
+            }
+            true
+        }
         Job::Exec {
             config,
             action,
@@ -1442,7 +1945,10 @@ fn handle_job(conn: &mut Option<Conn>, job: Job) -> bool {
             deadline,
             reply,
         } => {
-            let outcome = run_exec(conn, &config, &action, &args, deadline);
+            // remember the credentials so the idle reconnect (and the
+            // warm-up retry) can restore the session without a click
+            *last_config = Some(config.clone());
+            let outcome = run_exec(conn, push, &config, &action, &args, deadline);
             let _ = reply.send(outcome);
             true
         }
@@ -1453,27 +1959,42 @@ fn actor_loop(
     rx: std::sync::mpsc::Receiver<Job>,
     wake: std::sync::Arc<WakeEvent>,
     mut conn: Option<Conn>,
+    push: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
 ) {
+    let mut last_config: Option<DiscordConfig> = None;
     loop {
         if conn.is_none() {
-            // No connection, nothing to serve: block on the queue. A tick
-            // here would be a pure wakeup tax - with Discord closed the
-            // old loop still woke ~50x/s for literally nothing.
-            match rx.recv() {
+            // No connection: wait for a job, but keep retrying a
+            // warm-configured connect on the reconnect cadence so a
+            // Discord restart (or startup warm-up) heals without a click.
+            match rx.recv_timeout(RECONNECT_EVERY) {
                 Ok(job) => {
-                    if !handle_job(&mut conn, job) {
+                    if !handle_job(&mut conn, &push, &mut last_config, job) {
                         break;
                     }
                 }
-                Err(_) => break,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if let Some(config) = last_config.clone() {
+                        // the next tick tries again; connect failures
+                        // already logged their reason
+                        if let Ok(c) = Conn::connect_with_push(
+                            &config,
+                            Instant::now() + Duration::from_secs(8),
+                            push.clone(),
+                        ) {
+                            conn = Some(c);
+                        }
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             }
             continue;
         }
         // Connected: keep the session honest (answer pings, absorb
-        // voice-settings pushes). `wake` ends the serve the moment
-        // execute() queues a job, so the long tick costs no action
-        // latency. A transport failure drops the session so the next
-        // action reconnects instead of failing.
+        // voice-settings and voice-state pushes). `wake` ends the serve
+        // the moment execute() queues a job, so the long tick costs no
+        // action latency. A transport failure drops the session so the
+        // idle loop reconnects instead of failing.
         if conn
             .as_mut()
             .unwrap()
@@ -1488,7 +2009,7 @@ fn actor_loop(
         loop {
             match rx.try_recv() {
                 Ok(job) => {
-                    if !handle_job(&mut conn, job) {
+                    if !handle_job(&mut conn, &push, &mut last_config, job) {
                         return;
                     }
                     if conn.is_none() {
@@ -1509,6 +2030,7 @@ fn actor_loop(
 /// and goes through the caller's re-authorization path).
 fn run_exec(
     conn: &mut Option<Conn>,
+    push: &Option<tokio::sync::mpsc::UnboundedSender<Value>>,
     config: &DiscordConfig,
     action: &str,
     args: &Value,
@@ -1516,11 +2038,19 @@ fn run_exec(
 ) -> Result<Option<ExecOutcome>> {
     let what = plan(action, args)?;
     if conn.is_none() {
-        *conn = Some(Conn::connect(config, deadline)?);
+        *conn = Some(Conn::connect_with_push(config, deadline, push.clone())?);
     }
     let outcome = run_connected(conn.as_mut().unwrap(), &what, deadline);
-    if outcome.is_err() {
-        *conn = None;
+    if let Err(e) = &outcome {
+        if matches!(e, DiscordError::Call(_) | DiscordError::Network(_)) {
+            // transport-level: the pipe is gone or wedged - the session
+            // is not worth saving (the actor reconnects on its own
+            // cadence, see the idle loop in actor_loop)
+            *conn = None;
+        }
+        // semantic rejections (rpc ERROR, member not in the channel)
+        // keep the session: the pipe is healthy and the voice-state
+        // stream keeps the tiles live
     }
     outcome
 }
@@ -1534,6 +2064,10 @@ fn run_connected(conn: &mut Conn, what: &Plan, deadline: Instant) -> Result<Opti
                 json!({ "channel_id": id, "timeout": 30i32 }),
             )?;
             require_ok(&reply)?;
+            // member tracking follows on its own: the SELECT dispatch
+            // fires next and `attach_selected_channel` (the only place
+            // `channel_id` moves) re-seeds the map and the channel-scoped
+            // subscriptions for the new channel.
             Ok(None)
         }
         Plan::Disconnect => {
@@ -1545,7 +2079,51 @@ fn run_connected(conn: &mut Conn, what: &Plan, deadline: Instant) -> Result<Opti
             require_ok(&reply)?;
             Ok(None)
         }
-        _ => {
+        Plan::SetUserVolume { user_id, value } => {
+            let amplitude = slider_to_amplitude(*value);
+            let reply = conn.request_until(
+                deadline,
+                "SET_USER_VOICE_SETTINGS",
+                json!({ "user_id": user_id, "volume": amplitude }),
+            )?;
+            require_ok(&reply)?;
+            // the sent fraction is the display truth until Discord echoes
+            // an authoritative voice state (the quantized read-back would
+            // snap the thumb below ~20%)
+            if let Some(member) = conn.members.get_mut(user_id) {
+                member.sent = Some(*value);
+            }
+            adopt_user_voice_settings(conn, user_id, reply.get("data"));
+            conn.push_members();
+            Ok(None)
+        }
+        Plan::FlipUserMute { user_id } => {
+            // the mute flip reads the cached member state - a fresh
+            // connection seeded it, and VOICE_STATE_UPDATE keeps it fresh
+            let muted = conn
+                .members
+                .get(user_id)
+                .filter(|m| m.present)
+                .map(|m| m.muted)
+                .ok_or(DiscordError::Rpc("member not in the voice channel"))?;
+            let reply = conn.request_until(
+                deadline,
+                "SET_USER_VOICE_SETTINGS",
+                json!({ "user_id": user_id, "mute": !muted }),
+            )?;
+            require_ok(&reply)?;
+            adopt_user_voice_settings(conn, user_id, reply.get("data"));
+            conn.push_members();
+            Ok(Some(ExecOutcome {
+                key: format!("user-mute_{user_id}"),
+                label: if !muted { "OFF" } else { "ON" }.to_string(),
+            }))
+        }
+        Plan::SetMic(_)
+        | Plan::SetDeaf(_)
+        | Plan::FlipMic
+        | Plan::FlipDeaf
+        | Plan::SetInputMode(_) => {
             // Flip-style plans need the current state. The cache kept fresh
             // by VOICE_SETTINGS_UPDATE pushes avoids a GET round trip; only
             // a cold cache (fresh connection) pays for one.
@@ -1581,6 +2159,24 @@ fn run_connected(conn: &mut Conn, what: &Plan, deadline: Instant) -> Result<Opti
                 label: outcome.label.to_string(),
             }))
         }
+    }
+}
+
+/// Fold a `SET_USER_VOICE_SETTINGS` reply (or any payload carrying the
+/// per-user volume/mute) back into the member map so the next flip and
+/// the pushed tiles read the authoritative state.
+fn adopt_user_voice_settings(conn: &mut Conn, user_id: &str, data: Option<&Value>) {
+    let Some(data) = data else {
+        return;
+    };
+    let Some(member) = conn.members.get_mut(user_id) else {
+        return;
+    };
+    if let Some(volume) = data.get("volume").and_then(Value::as_f64) {
+        member.amplitude = volume;
+    }
+    if let Some(mute) = data.get("mute").and_then(Value::as_bool) {
+        member.muted = mute;
     }
 }
 
@@ -2079,11 +2675,16 @@ mod tests {
             inbox: VecDeque::new(),
             cache: None,
             username: None,
+            self_user_id: None,
+            channel_id: None,
+            members: Default::default(),
+            push: None,
+            resync: false,
         };
         let (tx, rx) = std::sync::mpsc::channel();
         let wake = std::sync::Arc::new(WakeEvent::new());
         let thread_wake = wake.clone();
-        std::thread::spawn(move || actor_loop(rx, thread_wake, Some(conn)));
+        std::thread::spawn(move || actor_loop(rx, thread_wake, Some(conn), None));
         let client = DiscordClient {
             jobs: std::sync::Mutex::new(tx),
             wake,
@@ -2187,6 +2788,343 @@ mod tests {
             println!("click {}: {:?}", round + 1, t.elapsed());
             std::thread::sleep(Duration::from_millis(300));
         }
+    }
+
+    #[test]
+    fn classify_routes_voice_events_and_channel_selects() {
+        let update =
+            json!({"cmd":"DISPATCH","evt":"VOICE_STATE_UPDATE","data":{"user":{"id":"7"}}});
+        match classify(OP_FRAME, &update, None) {
+            Incoming::VoiceState(evt, data) => {
+                assert_eq!(evt, "VOICE_STATE_UPDATE");
+                assert_eq!(data.pointer("/user/id").unwrap(), "7");
+            }
+            other => panic!("expected voice state, got {other:?}"),
+        }
+        let leave = json!({"cmd":"DISPATCH","evt":"VOICE_STATE_DELETE","data":{"user":{"id":"7"}}});
+        assert!(matches!(
+            classify(OP_FRAME, &leave, None),
+            Incoming::VoiceState("VOICE_STATE_DELETE", _)
+        ));
+        let select =
+            json!({"cmd":"DISPATCH","evt":"VOICE_CHANNEL_SELECT","data":{"channel_id":"5"}});
+        match classify(OP_FRAME, &select, None) {
+            Incoming::ChannelSelect(data) => assert_eq!(data["channel_id"], "5"),
+            other => panic!("expected channel select, got {other:?}"),
+        }
+        // unrelated dispatches stay noise
+        let ready = json!({"cmd":"DISPATCH","evt":"READY"});
+        assert_eq!(classify(OP_FRAME, &ready, None), Incoming::Other);
+    }
+
+    #[test]
+    fn member_parse_resolves_names_and_flags() {
+        let state = json!({
+            "nick": "Jockie Music (1)",
+            "mute": false,
+            "volume": 5.623413251903491,
+            "user": {
+                "id": "411916947773587456",
+                "username": "jockie",
+                "global_name": null,
+                "bot": true
+            }
+        });
+        let member = MemberVoice::parse(&state).unwrap();
+        assert_eq!(member.user_id, "411916947773587456");
+        // nick wins over the empty global_name and the username
+        assert_eq!(member.name, "Jockie Music (1)");
+        assert!(member.is_bot);
+        assert!(member.present);
+        // a member without a user id is unusable
+        assert!(MemberVoice::parse(&json!({"nick": "x"})).is_none());
+        // fallback chain: username when nick/global_name are missing
+        let bare = json!({"user": {"id": "1", "username": "fred", "bot": false}});
+        let member = MemberVoice::parse(&bare).unwrap();
+        assert_eq!(member.name, "fred");
+        assert!(!member.is_bot);
+    }
+
+    #[test]
+    fn perceptual_curve_matches_discords_table() {
+        // anchors from the @discordapp/perceptual curve (api-docs §3.1):
+        // UI percent -> RPC amplitude (integer, as SET_USER_VOICE_SETTINGS
+        // validates it)
+        let table = [
+            (0.0, 0.0),
+            (25.0, 1.0),  // -37.5 dB -> 1.33 -> 1
+            (50.0, 6.0),  // -25 dB -> 5.62 -> 6
+            (75.0, 24.0), // -12.5 dB -> 23.7 -> 24
+            (100.0, 100.0),
+            (150.0, 141.0), // +3 dB -> 141.25 -> 141
+            (200.0, 200.0), // +6 dB
+        ];
+        for (percent, amplitude) in table {
+            let got = perceptual_to_amplitude(percent);
+            assert!(
+                (got - amplitude).abs() <= 1.0,
+                "perceptual {percent}% -> amplitude {got}, want {amplitude}"
+            );
+            // and the way back lands within a perceptual point
+            let back = amplitude_to_perceptual(amplitude);
+            assert!(
+                (back - percent).abs() <= 1.5,
+                "amplitude {amplitude} -> perceptual {back}%, want {percent}%"
+            );
+        }
+        // 0% means mute and nothing else
+        assert_eq!(perceptual_to_amplitude(0.0), 0.0);
+        assert_eq!(amplitude_to_perceptual(0.0), 0.0);
+    }
+
+    #[test]
+    fn slider_fraction_round_trips_through_amplitude() {
+        // 0.5 = 100% unity: the reset default must be identity
+        assert_eq!(slider_to_amplitude(0.5), 100);
+        for sample in [0.3, 0.5, 0.7, 0.9, 1.0] {
+            let amplitude = slider_to_amplitude(sample) as f64;
+            let back = amplitude_to_perceptual(amplitude) / 200.0;
+            assert!(
+                (back - sample).abs() < 0.01,
+                "slider {sample} -> amplitude {amplitude} -> slider {back}"
+            );
+        }
+        // the input clamps
+        assert_eq!(slider_to_amplitude(-1.0), 0);
+        assert_eq!(slider_to_amplitude(2.0), 200);
+        // a hair above zero stays audible (amplitude 1, not a mute)
+        assert_eq!(slider_to_amplitude(0.001), 1);
+    }
+
+    #[test]
+    fn member_state_keys_carry_volume_label_and_mute() {
+        let live = MemberVoice {
+            user_id: "411916947773587456".into(),
+            name: "Jockie Music (1)".into(),
+            is_bot: true,
+            amplitude: 100.0,
+            muted: false,
+            present: true,
+            sent: None,
+        };
+        let keys = member_state_keys(&live);
+        let get = |needle: &str| {
+            keys.iter()
+                .find(|(k, _)| k.starts_with(needle))
+                .map(|(_, v)| v.clone())
+                .unwrap()
+        };
+        assert_eq!(get("user-volume_"), serde_json::json!(0.5));
+        assert_eq!(
+            get("user-volume-label_"),
+            serde_json::json!("Jockie Music (1) · 100%")
+        );
+        assert_eq!(get("user-mute_"), serde_json::json!("ON"));
+        // muted pushes the toggle string the OFF face lights on
+        let muted = MemberVoice {
+            muted: true,
+            amplitude: 5.62,
+            ..live
+        };
+        let keys = member_state_keys(&muted);
+        let get = |needle: &str| {
+            keys.iter()
+                .find(|(k, _)| k.starts_with(needle))
+                .map(|(_, v)| v.clone())
+                .unwrap()
+        };
+        assert_eq!(get("user-mute_"), serde_json::json!("OFF"));
+        // and a departed member drops to an inert volume with an
+        // "offline" label instead of vanishing
+        let gone = MemberVoice {
+            present: false,
+            ..muted
+        };
+        let keys = member_state_keys(&gone);
+        let volume = keys
+            .iter()
+            .find(|(k, _)| k.starts_with("user-volume_4119"))
+            .map(|(_, v)| v.clone())
+            .unwrap();
+        assert_eq!(volume, serde_json::json!(0.0));
+        let label = keys
+            .iter()
+            .find(|(k, _)| k.starts_with("user-volume-label_"))
+            .map(|(_, v)| v.clone())
+            .unwrap();
+        assert_eq!(label, serde_json::json!("Jockie Music (1) · offline"));
+    }
+
+    #[test]
+    fn per_user_plans_parse_tile_commands() {
+        assert_eq!(
+            plan(
+                "user-volume",
+                &json!({ "user_id": "411916947773587456", "value": 0.25 })
+            )
+            .unwrap(),
+            Plan::SetUserVolume {
+                user_id: "411916947773587456".into(),
+                value: 0.25
+            }
+        );
+        // the slider value clamps and defaults to unity
+        assert_eq!(
+            plan("user-volume", &json!({ "user_id": "7", "value": 9.0 })).unwrap(),
+            Plan::SetUserVolume {
+                user_id: "7".into(),
+                value: 1.0
+            }
+        );
+        assert_eq!(
+            plan("user-mute", &json!({ "user_id": "7" })).unwrap(),
+            Plan::FlipUserMute {
+                user_id: "7".into()
+            }
+        );
+        // a missing snowflake is a payload error, never a panic
+        assert!(plan("user-volume", &json!({})).is_err());
+        assert!(plan("user-mute", &json!({ "user_id": "  " })).is_err());
+        assert!(plan("user-volume", &json!({ "value": 0.5 })).is_err());
+        // a tap / "Run now" carries no slider value: it must error instead
+        // of silently slamming the member to 100%
+        assert!(plan("user-volume", &json!({ "user_id": "7" })).is_err());
+        // non-digit ids (pasted usernames) are payload errors too
+        assert!(plan("user-mute", &json!({ "user_id": "jockie" })).is_err());
+        for kind in ["user-volume", "user-mute"] {
+            assert!(is_discord_action(kind));
+        }
+    }
+
+    #[test]
+    fn voice_states_update_members_and_push_snapshots() {
+        let name = format!(
+            "\\\\.\\pipe\\pulpit-discord-voice-test-{}-{}",
+            std::process::id(),
+            line!()
+        );
+        spawn_silent_pipe_server(&name);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut conn = Conn {
+            pipe: open_test_pipe(&name),
+            nonce: 0,
+            buf: Vec::new(),
+            inbox: VecDeque::new(),
+            cache: None,
+            username: None,
+            self_user_id: Some("1".into()),
+            channel_id: None,
+            members: Default::default(),
+            push: Some(tx),
+            resync: false,
+        };
+
+        // a bot joins: the member lands in the map with its display name
+        let member = json!({
+            "nick": "Jockie (1)",
+            "volume": 100.0,
+            "mute": false,
+            "user": { "id": "42", "username": "jockie", "bot": true }
+        });
+        conn.apply_voice_state("VOICE_STATE_CREATE", &member);
+        assert_eq!(conn.members["42"].name, "Jockie (1)");
+        assert!(conn.members["42"].is_bot);
+        assert!(conn.members["42"].present);
+        // the local user never enters the map (no self-volume control)
+        conn.apply_voice_state(
+            "VOICE_STATE_CREATE",
+            &json!({ "user": { "id": "1" }, "nick": "me" }),
+        );
+        assert!(!conn.members.contains_key("1"));
+
+        // a volume/mute change (from Discord's UI or an RPC set) flows in
+        conn.apply_voice_state(
+            "VOICE_STATE_UPDATE",
+            &json!({
+                "nick": "Jockie (1)",
+                "volume": 5.62,
+                "mute": true,
+                "user": { "id": "42", "username": "jockie", "bot": true }
+            }),
+        );
+        assert_eq!(conn.members["42"].amplitude, 5.62);
+        assert!(conn.members["42"].muted);
+        // and the pushed lane carries the muted face + quantized label
+        let snap = rx.try_recv().unwrap();
+        assert_eq!(snap["user-mute_42"], "OFF");
+        assert_eq!(snap["user-volume-label_42"], "Jockie (1) · 50%");
+
+        // leaving keeps the name but flips to the inert offline face
+        conn.apply_voice_state("VOICE_STATE_DELETE", &json!({ "user": { "id": "42" } }));
+        assert!(!conn.members["42"].present);
+        let snap = rx.try_recv().unwrap();
+        assert_eq!(snap["user-volume_42"], serde_json::json!(0.0));
+        assert_eq!(snap["user-volume-label_42"], "Jockie (1) · offline");
+    }
+
+    #[test]
+    fn set_volume_stores_the_sent_fraction_over_the_quantized_read_back() {
+        let name = format!(
+            "\\\\.\\pipe\\pulpit-discord-adopt-test-{}-{}",
+            std::process::id(),
+            line!()
+        );
+        spawn_silent_pipe_server(&name);
+        let mut conn = Conn {
+            pipe: open_test_pipe(&name),
+            nonce: 0,
+            buf: Vec::new(),
+            inbox: VecDeque::new(),
+            cache: None,
+            username: None,
+            self_user_id: None,
+            channel_id: None,
+            members: Default::default(),
+            push: None,
+            resync: false,
+        };
+        conn.members.insert(
+            "42".into(),
+            MemberVoice {
+                user_id: "42".into(),
+                name: "Jockie (1)".into(),
+                is_bot: true,
+                amplitude: 100.0,
+                muted: false,
+                present: true,
+                sent: None,
+            },
+        );
+
+        // the SET reply folds the authoritative amplitude back into the map
+        let reply = json!({ "user_id": "42", "volume": 6.0, "mute": false });
+        conn.members.get_mut("42").unwrap().sent = Some(0.25);
+        adopt_user_voice_settings(&mut conn, "42", Some(&reply));
+        assert_eq!(conn.members["42"].amplitude, 6.0);
+        // amplitude 6 quantizes hard at the low end (reads back as 50%
+        // only because 6 sits exactly on the 50% point); the sent fraction
+        // is what the user set and what the tiles must show
+        assert_eq!(conn.members["42"].sent, Some(0.25));
+        let keys = member_state_keys(&conn.members["42"]);
+        let volume = keys
+            .iter()
+            .find(|(k, _)| k.starts_with("user-volume_42"))
+            .map(|(_, v)| v.clone())
+            .unwrap();
+        assert_eq!(volume, serde_json::json!(0.25));
+    }
+
+    #[test]
+    fn voice_state_update_resets_the_sent_fraction() {
+        // a fresh VOICE_STATE_UPDATE is Discord's authoritative word: the
+        // sent-fraction display override must not survive it
+        let parsed = MemberVoice::parse(&json!({
+            "nick": "x", "volume": 100.0, "mute": false,
+            "user": { "id": "42", "username": "x", "bot": true }
+        }))
+        .unwrap();
+        assert_eq!(parsed.sent, None);
+        assert_eq!(parsed.slider_fraction(), 0.5);
     }
 
     fn saved_config() -> DiscordConfig {

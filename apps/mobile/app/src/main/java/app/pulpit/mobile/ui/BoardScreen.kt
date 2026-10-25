@@ -364,6 +364,12 @@ private fun TileCell(
     val live by remember(values, watchChannel) {
         derivedStateOf(structuralEqualityPolicy()) { watchChannel?.let { values.value[it] } }
     }
+    // the second channel carries a text label (e.g. a Discord member
+    // volume slider's "Name · 85%")
+    val watchTextChannel = t.textState?.channel
+    val liveLabel by remember(values, watchTextChannel) {
+        derivedStateOf(structuralEqualityPolicy()) { watchTextChannel?.let { values.value[it] } }
+    }
     val points by remember(series, watchChannel) {
         derivedStateOf(structuralEqualityPolicy()) {
             watchChannel?.let { series.value[it] } ?: emptyList()
@@ -412,6 +418,7 @@ private fun TileCell(
         statusImage = statusImage,
         statusReceivedAtMs = statusReceivedAtMs,
         liveElement = live,
+        labelText = displayText(liveLabel),
         onPressStart = { vm.pressStart(boardId, t) },
         onPressEnd = {
             if (t.kind == V2.KIND_TOGGLE || templateFor(t) == "toggle") {

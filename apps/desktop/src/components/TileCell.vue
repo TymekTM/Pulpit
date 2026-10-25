@@ -380,6 +380,17 @@ function sparkPoints(values, close) {
 
 // board tiles without a title show the target board's name
 const boardTileTitle = computed(() => {
+  // Discord per-member tiles: the live "Name · 85%" label the actor
+  // pushes wins over the static title once it arrives (the uid is empty
+  // on an unpinned tile - nothing was ever pushed for it)
+  if (props.tile.type === "user-volume" || props.tile.type === "user-mute") {
+    const uid = String(cmd.value.user_id ?? "").trim();
+    if (uid) {
+      const label = props.customValues[`user-volume-label_${uid}`];
+      if (typeof label === "string" && label) return label;
+    }
+    return props.tile.title || "";
+  }
   if (props.tile.title) return props.tile.title;
   if (props.tile.type === "board") return props.boardNames?.[cmd.value.id] || "";
   return "";
@@ -559,6 +570,9 @@ function sliderResetValue() {
   } catch {}
   if (isVmSlider()) return VM_SLIDER_RESET;
   if (props.tile.type === "spotify-volume") return 0.5;
+  // Discord's per-member range is 0..200%, so the midpoint is the 100%
+  // unity default (mirrors boards::slider_reset_value)
+  if (props.tile.type === "user-volume") return 0.5;
   return null;
 }
 function sliderValue() {
@@ -579,6 +593,16 @@ function sliderValue() {
     const device = cmd.value.device || cmd.value.source;
     if (device) {
       const live = Number(props.customValues[`obs-audio-slider_${device}`]);
+      if (Number.isFinite(live)) return Math.min(1, Math.max(0, live));
+    }
+  }
+  // Discord per-member volume: the fraction rides the pushed
+  // user-volume_<uid> key (crates/discord member snapshot); trimmed like
+  // the server trims it
+  if (props.tile.type === "user-volume") {
+    const uid = String(cmd.value.user_id ?? "").trim();
+    if (uid) {
+      const live = Number(props.customValues[`user-volume_${uid}`]);
       if (Number.isFinite(live)) return Math.min(1, Math.max(0, live));
     }
   }
