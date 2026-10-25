@@ -1,0 +1,81 @@
+# Release build: tag push (v*) or manual dispatch builds the desktop exe
+# on Windows and publishes it with the updater manifest (latest.json).
+# AGENTS.md: a distributable pulpit-desktop.exe must come from
+# `npx tauri build` run in apps/desktop - this is that command, automated.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      # the single version source (workspace Cargo.toml)
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $line = Get-Content Cargo.toml |
+            Where-Object { $_ -match '^version = "(.+)"' } |
+            Select-Object -First 1
+          if (-not $line) { throw "no workspace version found in Cargo.toml" }
+          $version = $Matches[1]
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "tag $($env:GITHUB_REF_NAME) does not match the workspace version $version"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build exe
+        working-directory: apps/desktop
+        run: npx tauri build --no-bundle
+
+      - name: Stage artifacts
+        shell: pwsh
+        run: |
+          $version = "${{ steps.ver.outputs.version }}"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $exe = Get-ChildItem -Recurse -Filter pulpit-desktop.exe `
+            -Path target, apps/desktop/src-tauri/target -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $exe) { throw "pulpit-desktop.exe not found after the build" }
+          Copy-Item $exe.FullName "dist/pulpit-desktop-$version.exe"
+          $hash = (Get-FileHash "dist/pulpit-desktop-$version.exe" -Algorithm SHA256).Hash.ToLower()
+          @{
+            sha256 = $hash
+            version = $version
+            url = "https://github.com/${{ github.repository }}/releases/download/v$version/pulpit-desktop-$version.exe"
+          } | ConvertTo-Json | Set-Content dist/latest.json
+          Get-Content dist/latest.json
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $version = "${{ steps.ver.outputs.version }}"
+          $releaseArgs = @(
+            "release", "create", "v$version",
+            "dist/pulpit-desktop-$version.exe", "dist/latest.json",
+            "--title", "v$version",
+            "--notes", "Pulpit desktop $version - see the commit history for changes."
+          )
+          # a tag push already carries the tag; a manual dispatch creates it
+          if ($env:GITHUB_REF_TYPE -eq "tag") { $releaseArgs += "--verify-tag" }
+          gh @releaseArgs

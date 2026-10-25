@@ -2865,10 +2865,14 @@ mod tests {
                 (got - amplitude).abs() <= 1.0,
                 "perceptual {percent}% -> amplitude {got}, want {amplitude}"
             );
-            // and the way back lands within a perceptual point
+            // and the way back lands within a perceptual point - except
+            // the sub-unity amplitudes, which quantize hard (everything
+            // under ~22% rounds to amplitude 1 and reads back as ~20%);
+            // that floor is documented api-docs §3.1, not a curve error
             let back = amplitude_to_perceptual(amplitude);
+            let tol = if amplitude < 6.0 { 6.0 } else { 1.5 };
             assert!(
-                (back - percent).abs() <= 1.5,
+                (back - percent).abs() <= tol,
                 "amplitude {amplitude} -> perceptual {back}%, want {percent}%"
             );
         }
@@ -3049,7 +3053,10 @@ mod tests {
         );
         assert_eq!(conn.members["42"].amplitude, 5.62);
         assert!(conn.members["42"].muted);
-        // and the pushed lane carries the muted face + quantized label
+        // two snapshots are queued (one per state change): drain the
+        // CREATE one, then assert the UPDATE's muted face + label
+        let create_snap = rx.try_recv().unwrap();
+        assert_eq!(create_snap["user-mute_42"], "ON");
         let snap = rx.try_recv().unwrap();
         assert_eq!(snap["user-mute_42"], "OFF");
         assert_eq!(snap["user-volume-label_42"], "Jockie (1) · 50%");

@@ -637,7 +637,7 @@ private fun SliderTile(
             Text(
                 text = labelText,
                 fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                 color = Color.White.copy(alpha = 0.9f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
