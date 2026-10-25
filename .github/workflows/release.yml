@@ -42,6 +42,10 @@ jobs:
           }
           "version=$version" >> $env:GITHUB_OUTPUT
 
+      - name: Install frontend deps
+        working-directory: apps/desktop
+        run: npm ci
+
       - name: Build exe
         working-directory: apps/desktop
         run: npx tauri build --no-bundle
