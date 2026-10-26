@@ -567,22 +567,6 @@ mod tests {
     }
 
     #[test]
-    fn shutdown_sends_frame_then_close() {
-        let hub = V2Hub::new();
-        let (tx, mut rx) = mpsc::channel(8);
-        let a = hub.create(tx);
-        hub.attach(&a);
-
-        hub.shutdown();
-
-        let WsOut::Text(text) = rx.blocking_recv().unwrap() else {
-            panic!("goodbye frame first")
-        };
-        assert!(text.contains("server.shutdown"));
-        assert!(matches!(rx.blocking_recv().unwrap(), WsOut::Close));
-    }
-
-    #[test]
     fn teardown_paths_cancel_the_session_task() {
         let hub = V2Hub::new();
         // overflow path

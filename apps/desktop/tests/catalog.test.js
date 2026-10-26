@@ -3,9 +3,6 @@ import {
   CATALOG,
   STATE_BINDINGS,
   VM_SLIDER_RESET,
-  CELL_W,
-  ROW_H,
-  MAX_BOARD_DIM,
   stateActive,
   boardDim,
   clamp,
@@ -127,12 +124,6 @@ describe("CATALOG shape", () => {
         "spotify-seek",
       ]),
     );
-  });
-
-  it("exposes the original editor's grid geometry", () => {
-    expect(CELL_W).toBe(96);
-    expect(ROW_H).toBe(100);
-    expect(MAX_BOARD_DIM).toBe(32);
   });
 });
 

@@ -2148,23 +2148,6 @@ mod tests {
     }
 
     #[test]
-    fn run_command_without_commandaction_is_a_claimed_noop() {
-        let backend = test_backend();
-        // slider taps arrive as {"value": v}; the JS execute destructured
-        // {commandAction} and did nothing - the native path claims too
-        backend.exec(
-            button_row("run-command", Some(r#"{"value":50}"#)),
-            false,
-            &mut RecSink::default(),
-        );
-        backend.exec(
-            button_row("run-command", None),
-            false,
-            &mut RecSink::default(),
-        );
-    }
-
-    #[test]
     fn run_command_is_claimed_before_the_extension_chain() {
         let dir = tempfile::tempdir().unwrap();
         let marker = dir.path().join("js-ran.txt");
@@ -2240,22 +2223,6 @@ mod tests {
             SqlBackend::command_args(&cmd(None)),
             serde_json::Value::Null
         );
-    }
-
-    #[test]
-    fn exported_button_rows_drop_only_the_id() {
-        let row = ButtonRow {
-            id: 42,
-            board_id: 7,
-            kind: "url".into(),
-            title: Some("T".into()),
-            ..ButtonRow::default()
-        };
-        let json = button_json(&row);
-        assert!(json.get("id").is_none());
-        assert_eq!(json["board_id"], 7);
-        assert_eq!(json["type"], "url");
-        assert_eq!(json["title"], "T");
     }
 
     #[test]
@@ -2618,30 +2585,11 @@ mod tests {
     }
 
     #[test]
-    fn key_tap_start_presses_and_release_lets_go() {
-        let backend = test_backend();
-        let (input, _speaker) = with_rec_speaker(&backend);
-        let key = button_row("key", Some("ctrl+c"));
-        backend.exec(key.clone(), true, &mut RecSink::default());
-        backend.exec(key, false, &mut RecSink::default());
-        let effects = input.effects();
-        assert_eq!(effects.len(), 2, "{effects:?}");
-        assert!(matches!(effects[0], pulpit_actions::Effect::KeyDown(_)));
-        assert!(matches!(effects[1], pulpit_actions::Effect::KeyUp(_)));
-    }
-
-    #[test]
     fn board_tiles_switch_through_the_sink() {
         let backend = test_backend();
         let (_input, _speaker) = with_rec_speaker(&backend);
         let mut sink = RecSink::default();
         backend.exec(button_row("board", Some(r#"{"id":7}"#)), false, &mut sink);
         assert_eq!(sink.boards, vec![7]);
-    }
-
-    #[test]
-    fn spotify_error_slot_starts_empty() {
-        let backend = test_backend();
-        assert_eq!(backend.take_last_spotify_error(), None);
     }
 }

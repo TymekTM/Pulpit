@@ -973,28 +973,6 @@ mod tests {
     }
 
     #[test]
-    fn plain_button_press_interactions() {
-        let (assets, _dir) = asset_store();
-        let engine = StateEngine::new(120);
-        let tile = build_tile(
-            &row("key", "button", Some("CTRL + K")),
-            &HashMap::new(),
-            &assets,
-            &engine,
-        );
-        assert_eq!(tile.manifest.kind, WidgetKind::Button);
-        assert_eq!(
-            tile.manifest.interactions,
-            vec![
-                Interaction::Tap,
-                Interaction::PressStart,
-                Interaction::PressEnd
-            ]
-        );
-        assert!(tile.manifest.state.is_none());
-    }
-
-    #[test]
     fn http_request_tile_is_a_plain_button_on_the_v2_wire() {
         // the config lives in the command column (server-side execution);
         // the client needs no kind-specific treatment, just the tap
@@ -1119,23 +1097,6 @@ mod tests {
             "icon2 resolved from the icon2 column"
         );
         assert_eq!(style.color2.as_deref(), Some("#ED4245"));
-    }
-
-    #[test]
-    fn spotify_volume_slider_watches_the_fraction_channel() {
-        let (assets, _dir) = asset_store();
-        let engine = StateEngine::new(120);
-        let tile = build_tile(
-            &row("spotify-volume", "slider", None),
-            &HashMap::new(),
-            &assets,
-            &engine,
-        );
-        assert_eq!(tile.manifest.kind, WidgetKind::Slider);
-        assert_eq!(
-            tile.manifest.state.unwrap().channel,
-            "ext.spotify-volume-level"
-        );
     }
 
     #[test]

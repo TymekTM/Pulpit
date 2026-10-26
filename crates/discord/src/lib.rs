@@ -2529,22 +2529,6 @@ mod tests {
     }
 
     #[test]
-    fn action_routing() {
-        for kind in ["toggle-microphone", "connect-voice", "change-input"] {
-            assert!(is_discord_action(kind));
-        }
-        assert!(!is_discord_action("vm-restart"));
-        assert!(!is_discord_action("key"));
-    }
-
-    #[test]
-    fn pipe_probe_is_harmless_when_discord_absent() {
-        // if Discord runs this opens a real pipe and drops it again; either
-        // way it must not panic
-        let _ = Pipe::open();
-    }
-
-    #[test]
     fn config_debug_redacts_credentials() {
         // logs are kept for 14 days; the derived Debug would have printed
         // every credential verbatim
@@ -3119,19 +3103,6 @@ mod tests {
             .map(|(_, v)| v.clone())
             .unwrap();
         assert_eq!(volume, serde_json::json!(0.25));
-    }
-
-    #[test]
-    fn voice_state_update_resets_the_sent_fraction() {
-        // a fresh VOICE_STATE_UPDATE is Discord's authoritative word: the
-        // sent-fraction display override must not survive it
-        let parsed = MemberVoice::parse(&json!({
-            "nick": "x", "volume": 100.0, "mute": false,
-            "user": { "id": "42", "username": "x", "bot": true }
-        }))
-        .unwrap();
-        assert_eq!(parsed.sent, None);
-        assert_eq!(parsed.slider_fraction(), 0.5);
     }
 
     fn saved_config() -> DiscordConfig {

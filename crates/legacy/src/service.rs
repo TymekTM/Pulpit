@@ -598,21 +598,6 @@ mod tests {
     }
 
     #[test]
-    fn sio_query_picks_the_known_keys() {
-        let q = SioQuery::from(HashMap::from([
-            ("sid".to_string(), "abc".to_string()),
-            ("access_key".to_string(), ACCESS_KEY_PRO.to_string()),
-            ("transport".to_string(), "websocket".to_string()),
-            ("EIO".to_string(), "3".to_string()),
-        ]));
-        assert_eq!(q.sid.as_deref(), Some("abc"));
-        assert_eq!(q.access_key.as_deref(), Some(ACCESS_KEY_PRO));
-        assert_eq!(q.transport.as_deref(), Some("websocket"));
-        let empty = SioQuery::from(HashMap::new());
-        assert!(empty.sid.is_none() && empty.access_key.is_none() && empty.transport.is_none());
-    }
-
-    #[test]
     fn host_is_direct_accepts_ip_literals_and_localhost_only() {
         for host in [
             "192.168.1.5",

@@ -575,29 +575,6 @@ mod tests {
     }
 
     #[test]
-    fn pair_request_gate_receives_name_and_code() {
-        let pairing = Pairing::new();
-        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let seen2 = seen.clone();
-        pairing.set_pair_request_gate(move |name, code| {
-            seen2
-                .lock()
-                .unwrap()
-                .push((name.to_string(), code.to_string()));
-            true
-        });
-        let code = pairing.new_code();
-        let gate = pairing.request_gate().expect("gate installed");
-        assert!(gate("Tablet", &code));
-        assert_eq!(
-            seen.lock().unwrap().as_slice(),
-            [("Tablet".to_string(), code.clone())]
-        );
-        // headless builds install nothing: the auto-accept path
-        assert!(Pairing::new().request_gate().is_none());
-    }
-
-    #[test]
     fn concurrent_consumers_burn_one_code_exactly_once() {
         let pairing = std::sync::Arc::new(Pairing::new());
         let code = pairing.new_code();

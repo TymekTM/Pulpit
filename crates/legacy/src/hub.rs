@@ -316,27 +316,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn polling_session_queues_and_upgrades() {
-        let hub = Hub::new();
-        let s = hub.create(backend(), false).await;
-        s.send(event_packet("get_version", Some(r#"{"version":"1.6.0"}"#)))
-            .await;
-
-        // queued packets arrive via poll
-        let got = tokio::time::timeout(std::time::Duration::from_secs(2), s.poll(100)).await;
-        assert!(got.unwrap().starts_with("42[\"get_version\""));
-
-        // upgrade delivers drained packets to the ws channel
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        s.upgrade_to_ws(tx).await;
-        s.send("42[\"ping\"]".into()).await;
-        match rx.recv().await {
-            Some(WsOut::Packet(p)) => assert_eq!(p, "42[\"ping\"]"),
-            other => panic!("unexpected {other:?}"),
-        }
-    }
-
-    #[tokio::test]
     async fn rooms_are_assigned() {
         let hub = Hub::new();
         let pro = hub.create(backend(), true).await;

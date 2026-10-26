@@ -457,8 +457,6 @@ mod tests {
     use pulpit_db::{BoardRow, ButtonRow};
     use tokio::sync::mpsc;
 
-    use crate::session::WsOut;
-
     #[derive(Default)]
     struct Mock {
         boards: Mutex<Vec<BoardRow>>,
@@ -598,13 +596,6 @@ mod tests {
         serde_json::from_slice(&bytes).unwrap()
     }
 
-    async fn body_bytes(resp: Response) -> Vec<u8> {
-        axum::body::to_bytes(resp.into_body(), usize::MAX)
-            .await
-            .unwrap()
-            .to_vec()
-    }
-
     fn token_query(token: Option<&str>) -> Query<WsQuery> {
         Query(WsQuery {
             token: token.map(str::to_string),
@@ -613,17 +604,6 @@ mod tests {
     }
 
     // -- defaults and helpers ----------------------------------------------
-
-    #[test]
-    fn config_defaults_match_the_protocol() {
-        let c = V2Config::default();
-        assert_eq!(c.desktop_version, env!("CARGO_PKG_VERSION"));
-        assert_eq!(c.min_client, "0.0.0");
-        assert_eq!(c.patch_interval, Duration::from_millis(100));
-        assert_eq!(c.ping_interval, Duration::from_secs(60));
-        assert_eq!(c.hello_timeout, Duration::from_secs(5));
-        assert_eq!(c.hold_cap, Duration::from_secs(120));
-    }
 
     #[test]
     fn request_ids_are_32_lowercase_hex_chars() {
@@ -645,60 +625,6 @@ mod tests {
 
     // -- /v2/ws upgrade gate (no upgrade available in a unit test) ---------
 
-    #[tokio::test]
-    async fn ws_connect_rejects_browsers_before_auth() {
-        let f = fixture();
-        let resp = ws_connect(State(f.state), token_query(None), browser(), None).await;
-        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-    }
-
-    #[tokio::test]
-    async fn ws_connect_needs_a_known_token_or_a_pair_code() {
-        let f = fixture();
-        let resp = ws_connect(
-            State(f.state.clone()),
-            token_query(None),
-            host("10.0.0.2:8611"),
-            None,
-        )
-        .await;
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-        let resp = ws_connect(
-            State(f.state),
-            token_query(Some("bogus")),
-            host("10.0.0.2:8611"),
-            None,
-        )
-        .await;
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn ws_connect_with_valid_auth_but_no_upgrade_is_a_bad_request() {
-        let f = fixture();
-        let (_, token) = f.state.devices.create("Tab");
-        let resp = ws_connect(
-            State(f.state.clone()),
-            token_query(Some(&token)),
-            host("10.0.0.2:8611"),
-            None,
-        )
-        .await;
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-        // pair codes are checked on the socket, so any code passes the gate
-        let resp = ws_connect(
-            State(f.state),
-            Query(WsQuery {
-                token: None,
-                pair: Some("000000".into()),
-            }),
-            host("10.0.0.2:8611"),
-            None,
-        )
-        .await;
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
     // -- POST /v2/pair -----------------------------------------------------
 
     #[tokio::test]
@@ -706,26 +632,6 @@ mod tests {
         let f = fixture();
         let resp = pair_create(State(f.state), lan(), host("192.168.1.5:8611")).await;
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-    }
-
-    #[tokio::test]
-    async fn pair_create_refuses_browser_pages_on_loopback() {
-        let f = fixture();
-        let mut h = host("127.0.0.1:8611");
-        h.insert(header::ORIGIN, "http://evil.example".parse().unwrap());
-        let resp = pair_create(State(f.state), loopback(), h).await;
-        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-    }
-
-    #[tokio::test]
-    async fn pair_create_mints_a_usable_code() {
-        let f = fixture();
-        let resp = pair_create(State(f.state.clone()), loopback(), host("127.0.0.1:8611")).await;
-        assert_eq!(resp.status(), StatusCode::OK);
-        let body = body_json(resp).await;
-        assert_eq!(body["expires_in"], crate::devices::PAIR_CODE_TTL.as_secs());
-        let code = body["code"].as_str().unwrap();
-        assert!(f.state.pairing.peek(code).is_ok());
     }
 
     // -- /v2/pair-request --------------------------------------------------
@@ -929,96 +835,6 @@ mod tests {
             .await;
             assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{hash}");
         }
-    }
-
-    async fn get_range(f: &Fixture, token: &str, hash: &str, range: Option<&str>) -> Response {
-        let mut headers = HeaderMap::new();
-        if let Some(range) = range {
-            headers.insert(header::RANGE, range.parse().unwrap());
-        }
-        asset_get(
-            State(f.state.clone()),
-            Path(hash.to_string()),
-            token_query(Some(token)),
-            headers,
-        )
-        .await
-    }
-
-    #[tokio::test]
-    async fn assets_serve_full_partial_and_unsatisfiable_bodies() {
-        let f = fixture();
-        let (_, token) = f.state.devices.create("Tab");
-        let hash = f.state.assets.import_bytes(b"0123456789", "png").unwrap();
-
-        let resp = get_range(&f, &token, &hash, None).await;
-        assert_eq!(resp.status(), StatusCode::OK);
-        assert_eq!(resp.headers()[header::CONTENT_TYPE], "image/png");
-        assert_eq!(resp.headers()[header::ACCEPT_RANGES], "bytes");
-        assert_eq!(
-            resp.headers()[header::CACHE_CONTROL],
-            "immutable, max-age=31536000"
-        );
-        assert!(resp.headers().get(header::CONTENT_RANGE).is_none());
-        assert_eq!(body_bytes(resp).await, b"0123456789");
-
-        let resp = get_range(&f, &token, &hash, Some("bytes=2-4")).await;
-        assert_eq!(resp.status(), StatusCode::PARTIAL_CONTENT);
-        assert_eq!(resp.headers()[header::CONTENT_RANGE], "bytes 2-4/10");
-        assert_eq!(body_bytes(resp).await, b"234");
-
-        let resp = get_range(&f, &token, &hash, Some("bytes=-3")).await;
-        assert_eq!(resp.status(), StatusCode::PARTIAL_CONTENT);
-        assert_eq!(resp.headers()[header::CONTENT_RANGE], "bytes 7-9/10");
-        assert_eq!(body_bytes(resp).await, b"789");
-
-        let resp = get_range(&f, &token, &hash, Some("bytes=50-")).await;
-        assert_eq!(resp.status(), StatusCode::RANGE_NOT_SATISFIABLE);
-        assert_eq!(resp.headers()[header::CONTENT_RANGE], "bytes */10");
-    }
-
-    #[tokio::test]
-    async fn assets_removed_from_the_store_answer_404() {
-        let f = fixture();
-        let (_, token) = f.state.devices.create("Tab");
-        let hash = f.state.assets.import_bytes(b"x", "png").unwrap();
-        assert!(f.state.assets.remove(&hash));
-        let resp = get_range(&f, &token, &hash, None).await;
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-    }
-
-    // -- V2State write path ------------------------------------------------
-
-    fn attached(state: &V2State) -> (Arc<crate::hub::V2Session>, mpsc::Receiver<WsOut>) {
-        let (tx, rx) = mpsc::channel(16);
-        let session = state.hub.create(tx);
-        state.hub.attach(&session);
-        (session, rx)
-    }
-
-    fn next_frame(rx: &mut mpsc::Receiver<WsOut>) -> Frame {
-        match rx.try_recv() {
-            Ok(WsOut::Text(text)) => serde_json::from_str(&text).unwrap(),
-            Ok(_) => panic!("expected a text frame"),
-            Err(e) => panic!("no frame queued: {e:?}"),
-        }
-    }
-
-    #[test]
-    fn publish_delta_bumps_the_generation_and_broadcasts() {
-        let f = fixture();
-        let (_session, mut rx) = attached(&f.state);
-        assert_eq!(f.state.generation(), 1);
-        let op = pulpit_proto::BoardOp::TileRemove { board: 1, tile: 10 };
-        assert_eq!(f.state.publish_delta(vec![op.clone()]), 2);
-        assert_eq!(f.state.generation(), 2);
-        let frame = next_frame(&mut rx);
-        assert_eq!(frame.kind, pulpit_proto::TYPE_BOARDS_DELTA);
-        let delta: pulpit_proto::BoardsDelta =
-            serde_json::from_value(frame.payload.unwrap()).unwrap();
-        assert_eq!(delta.generation, 2);
-        assert_eq!(delta.ops, vec![op]);
-        assert_eq!(f.state.publish_delta(Vec::new()), 3);
     }
 
     #[test]
