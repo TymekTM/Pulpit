@@ -72,7 +72,7 @@ describe("api", () => {
   });
 
   it("covers every method in the table above", () => {
-    expect(Object.keys(api)).toHaveLength(58);
+    expect(Object.keys(api)).toHaveLength(59);
   });
 
   it("passes the command's result through", async () => {
