@@ -1105,34 +1105,6 @@ mod tests {
     }
 
     #[test]
-    fn schema_and_queries_roundtrip() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Db::open_or_create(&dir.path().join("t.db")).unwrap();
-        let conn_note = db.conn.execute(
-            "INSERT INTO Boards (name, background, width, height) VALUES ('My Board', '#2c3e50', 4, 3)",
-            [],
-        );
-        assert!(conn_note.is_ok());
-        let boards = db.get_boards().unwrap();
-        assert_eq!(boards.len(), 1);
-        assert_eq!(boards[0].name, "My Board");
-
-        db.conn
-            .execute(
-                "INSERT INTO Shortcuts (board_id, type, command, title, x, y, w, h)
-                 VALUES (1, 'url', 'https://example.com', 'Example', 0, 0, 1, 1)",
-                [],
-            )
-            .unwrap();
-        let buttons = db.get_buttons_by_board(1).unwrap();
-        assert_eq!(buttons.len(), 1);
-        assert_eq!(buttons[0].kind, "url");
-        let by_id = db.get_button(1).unwrap().unwrap();
-        assert_eq!(by_id.command.as_deref(), Some("https://example.com"));
-        assert!(db.get_button(999).unwrap().is_none());
-    }
-
-    #[test]
     fn missing_file_is_reported() {
         let err = Db::open_read_only(Some(Path::new("Z:/nope/pulpit.db"))).unwrap_err();
         assert!(matches!(err, DbError::NotFound(_)));

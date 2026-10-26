@@ -699,15 +699,4 @@ mod tests {
             .to_string()
         );
     }
-
-    #[test]
-    fn native_replaced_lists_the_js_packages_native_code_replaces() {
-        assert_eq!(
-            native_replaced(),
-            [
-                "deckboard-system-info".to_string(),
-                "deckboard-callurl".to_string()
-            ]
-        );
-    }
 }

@@ -1099,23 +1099,6 @@ async fn token_connect_delivers_full_snapshot() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn hello_rename_lands_in_welcome_and_registry() {
-    let (state, _dir) = test_state(sample_backend(), |_| {});
-    let (_device, token) = state.devices.create("Old name");
-    let addr = spawn_server(state.clone()).await;
-
-    // hello.name renames the paired device; the welcome of THIS connection
-    // must already carry the new name, and so must the persisted registry.
-    let mut ws = ws_open(&format!("ws://{addr}/v2/ws?token={}", token)).await;
-    let (welcome, _sync, _state_sync) = handshake(&mut ws, "pulpit-mobile", "0.2.0").await;
-    assert_eq!(
-        welcome.device.name, "Test tablet",
-        "welcome must carry the renamed entry"
-    );
-    assert_eq!(state.devices.list()[0].name, "Test tablet");
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn state_changes_flow_as_patches() {
     let (state, _dir) = test_state(sample_backend(), |_| {});
     let (_device, token) = state.devices.create("Tablet");

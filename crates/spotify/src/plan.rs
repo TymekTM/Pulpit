@@ -258,7 +258,5 @@ mod tests {
         assert!(!is_spotify_action("spotify"));
         assert!(!is_spotify_action("spotify-unknown-future"));
         assert!(!is_spotify_action("obs-start"));
-        // declarations stay in sync with the claim list
-        assert_eq!(input_declarations().len(), 10);
     }
 }

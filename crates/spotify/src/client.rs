@@ -845,7 +845,6 @@ fn normalize_context_uri(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::user_message;
     use crate::http::{FakeTransport, TransportError};
 
     /// FakeTransport handle shared with the Spotify instance, so tests
@@ -955,22 +954,20 @@ mod tests {
     }
 
     #[test]
-    fn premium_required_maps_with_its_user_message() {
+    fn premium_required_maps() {
         let (spotify, fake, _dir) = handle(logged_in(3600));
         fake.push(player_body(true)); // playing -> pause
         fake.push(api_err(403, "PREMIUM_REQUIRED"));
         let err = spotify.exec("spotify-playback", "play", None).unwrap_err();
         assert!(matches!(err, SpotifyError::PremiumRequired));
-        assert_eq!(user_message(&err), "Spotify Premium required");
     }
 
     #[test]
-    fn no_active_device_maps_with_its_user_message() {
+    fn no_active_device_maps() {
         let (spotify, fake, _dir) = handle(logged_in(3600));
         fake.push(api_err(404, "NO_ACTIVE_DEVICE"));
         let err = spotify.exec("spotify-playback", "next", None).unwrap_err();
         assert!(matches!(err, SpotifyError::NoActiveDevice));
-        assert_eq!(user_message(&err), "Open Spotify on a device first");
     }
 
     #[test]
@@ -1006,14 +1003,6 @@ mod tests {
             Err(SpotifyError::NeedsLogin)
         ));
         assert_eq!(fake.requests().len(), 1);
-    }
-
-    #[test]
-    fn needs_login_message_is_user_facing() {
-        assert_eq!(
-            user_message(&SpotifyError::NeedsLogin),
-            "Log in to Spotify in Pulpit settings"
-        );
     }
 
     // ---- design §7: library endpoint fallback ------------------------

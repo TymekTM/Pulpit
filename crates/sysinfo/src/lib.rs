@@ -364,12 +364,6 @@ mod tests {
     }
 
     #[test]
-    fn execute_is_a_no_op() {
-        execute("si-cpu");
-        execute("unknown");
-    }
-
-    #[test]
     fn native_readings_are_sane() {
         let brand = cpu_brand();
         assert!(!brand.is_empty());

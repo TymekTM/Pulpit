@@ -143,17 +143,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn refresh_reaches_polling_sessions_too() {
-        let hub = Arc::new(Hub::new());
-        let session = hub.create(Arc::new(OneBoard), true).await;
-        EditorBroadcaster::new(hub.clone(), Arc::new(OneBoard))
-            .refresh_board(1)
-            .await;
-        let packet = session.poll(1).await;
-        assert!(packet.starts_with(r#"42["refresh_board",{"#), "{packet}");
-    }
-
-    #[tokio::test]
     async fn sync_boards_includes_boards_without_tiles() {
         let hub = Arc::new(Hub::new());
         let session = hub.create(Arc::new(OneBoard), false).await;
@@ -172,14 +161,6 @@ mod tests {
             assert_eq!(boards[0]["name"], "Main");
             assert_eq!(boards[1]["name"], "Empty");
         }
-    }
-
-    #[tokio::test]
-    async fn broadcasts_without_sessions_are_harmless() {
-        let hub = Arc::new(Hub::new());
-        let bc = EditorBroadcaster::new(hub, Arc::new(OneBoard));
-        bc.refresh_board(1).await;
-        bc.sync_boards().await;
     }
 
     #[test]

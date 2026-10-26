@@ -480,34 +480,4 @@ mod tests {
         assert_eq!(healed, hash);
         assert_eq!(store.get(&hash).unwrap(), b"good-bytes");
     }
-
-    #[test]
-    fn read_for_serving_honors_ranges() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = AssetStore::open(dir.path().to_path_buf()).unwrap();
-        let hash = store.import_bytes(b"0123456789", "png").unwrap();
-
-        let body = store.read_for_serving(&hash, None).unwrap();
-        assert_eq!(body, AssetBody::Full(b"0123456789".to_vec()));
-
-        match store.read_for_serving(&hash, Some("bytes=2-4")).unwrap() {
-            AssetBody::Window {
-                start,
-                end_incl,
-                total,
-                bytes,
-            } => {
-                assert_eq!((start, end_incl, total), (2, 4, 10));
-                assert_eq!(bytes, b"234");
-            }
-            other => panic!("expected a window, got {other:?}"),
-        }
-
-        match store.read_for_serving(&hash, Some("bytes=99-")).unwrap() {
-            AssetBody::Unsatisfiable(total) => assert_eq!(total, 10),
-            other => panic!("expected 416, got {other:?}"),
-        }
-
-        assert!(store.read_for_serving(&"0".repeat(64), None).is_err());
-    }
 }

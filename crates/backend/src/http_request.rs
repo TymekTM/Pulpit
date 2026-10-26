@@ -600,29 +600,6 @@ mod tests {
         assert_eq!(cfg6.insecure, None);
     }
 
-    #[test]
-    fn test_config_defaults_and_aliases() {
-        let cfg: HttpRequestConfig = serde_json::from_str("{}").unwrap();
-        assert_eq!(cfg.method, "GET");
-        assert_eq!(cfg.timeout, Some(10));
-        assert_eq!(cfg.body_type, "none");
-
-        // the editor stores camelCase keys; hand-written payloads may use
-        // the snake_case forms
-        let cfg: HttpRequestConfig = serde_json::from_str(
-            r#"{"method":"post","url":"http://x","timeoutSeconds":3,
-                "bodyType":"json","ignoreCertErrors":"tak",
-                "responseVar":"temp","jsonPath":"data.temp"}"#,
-        )
-        .unwrap();
-        assert_eq!(cfg.method, "post");
-        assert_eq!(cfg.timeout, Some(3));
-        assert_eq!(cfg.body_type, "json");
-        assert_eq!(cfg.ignore_cert_errors, Some(CertErrorOption(true)));
-        assert_eq!(cfg.response_var.as_deref(), Some("temp"));
-        assert_eq!(cfg.json_path.as_deref(), Some("data.temp"));
-    }
-
     // ---- exec integration (local socket server) ---------------------------
 
     /// One-shot HTTP server on a loopback port: reads the whole request

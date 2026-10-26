@@ -1,6 +1,25 @@
 import { vi, beforeEach } from "vitest";
 import { handle, resetTauri } from "./tauri.js";
 
+// happy-dom does not expose `localStorage` as a global on every Node
+// version (works on 22, undefined on 26); tests only use it for the
+// "recently used" group, so an in-memory Storage is enough.
+if (typeof localStorage === "undefined") {
+  const store = new Map();
+  const storage = {
+    getItem: (k) => (store.has(String(k)) ? store.get(String(k)) : null),
+    setItem: (k, v) => void store.set(String(k), String(v)),
+    removeItem: (k) => void store.delete(String(k)),
+    clear: () => store.clear(),
+    key: (i) => Array.from(store.keys())[i] ?? null,
+    get length() {
+      return store.size;
+    },
+  };
+  vi.stubGlobal("localStorage", storage);
+}
+
+
 vi.mock("@tauri-apps/api/core", async () => {
   const t = await import("./tauri.js");
   return { invoke: t.invoke };

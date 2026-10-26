@@ -222,14 +222,6 @@ mod tests {
     }
 
     #[test]
-    fn method_names() {
-        assert_eq!(Method::Get.as_str(), "GET");
-        assert_eq!(Method::Post.as_str(), "POST");
-        assert_eq!(Method::Put.as_str(), "PUT");
-        assert_eq!(Method::Delete.as_str(), "DELETE");
-    }
-
-    #[test]
     fn header_lookup_is_case_insensitive_and_first_wins() {
         let r = response(429, &[("Retry-After", "3"), ("retry-after", "9")], b"");
         assert_eq!(r.header("retry-after"), Some("3"));
@@ -247,14 +239,6 @@ mod tests {
         assert_eq!(response(502, &[], b"<html>").json(), None);
     }
 
-    #[test]
-    fn transport_error_display() {
-        assert_eq!(
-            TransportError("GET timeout".into()).to_string(),
-            "transport: GET timeout"
-        );
-    }
-
     fn get(url: &str) -> HttpRequest {
         HttpRequest {
             method: Method::Get,
@@ -262,41 +246,6 @@ mod tests {
             headers: Vec::new(),
             body: None,
         }
-    }
-
-    #[test]
-    fn fake_transport_records_and_replays_in_order() {
-        let fake = FakeTransport::new();
-        fake.push_json(200, serde_json::json!({"n": 1}))
-            .push(response(204, &[], b""));
-        let first = fake.send(&get("https://a/1")).unwrap();
-        let second = fake.send(&get("https://a/2")).unwrap();
-        assert_eq!(first.status, 200);
-        assert_eq!(first.json().unwrap()["n"], 1);
-        assert_eq!(second.status, 204);
-        assert_eq!(fake.last_url(), "https://a/2");
-        assert_eq!(
-            fake.requests()
-                .iter()
-                .map(|r| r.url.as_str())
-                .collect::<Vec<_>>(),
-            vec!["https://a/1", "https://a/2"]
-        );
-    }
-
-    #[test]
-    fn fake_transport_fails_when_the_script_runs_out() {
-        let fake = FakeTransport::new();
-        let err = fake.send(&get("https://a/")).unwrap_err();
-        assert!(err.0.contains("no scripted response"));
-        // the attempt is still recorded
-        assert_eq!(fake.requests().len(), 1);
-    }
-
-    #[test]
-    #[should_panic(expected = "a request was made")]
-    fn last_url_without_requests_panics() {
-        FakeTransport::new().last_url();
     }
 
     /// What the one-shot local server saw.

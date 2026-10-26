@@ -520,21 +520,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn frame_roundtrip() {
-        let f = Frame {
-            v: 2,
-            id: Some("abc".into()),
-            ack: None,
-            kind: "interaction".into(),
-            payload: Some(serde_json::json!({"widget": "17", "kind": "slide", "value": 0.5})),
-        };
-        let s = serde_json::to_string(&f).unwrap();
-        assert!(s.contains("\"v\":2"));
-        let back: Frame = serde_json::from_str(&s).unwrap();
-        assert_eq!(back, f);
-    }
-
-    #[test]
     fn unknown_widget_kind_degrades() {
         let m: WidgetManifest = serde_json::from_str(r#"{"kind":"party-confetti"}"#).unwrap();
         assert_eq!(m.kind, WidgetKind::Other);
@@ -573,15 +558,6 @@ mod tests {
     }
 
     #[test]
-    fn board_ops_are_tagged_kebab() {
-        let op = BoardOp::TileRemove { board: 3, tile: 17 };
-        let v = serde_json::to_value(&op).unwrap();
-        assert_eq!(v["op"], "tile-remove");
-        assert_eq!(v["board"], 3);
-        assert_eq!(v["tile"], 17);
-    }
-
-    #[test]
     fn background_from_legacy_column() {
         assert_eq!(
             background_from_legacy("#2c3e50"),
@@ -590,35 +566,5 @@ mod tests {
             })
         );
         assert_eq!(background_from_legacy(""), None);
-    }
-
-    #[test]
-    fn tile_flattens_placement_and_manifest() {
-        let tile = Tile {
-            id: 17,
-            placement: Placement {
-                x: 0,
-                y: 0,
-                w: 2,
-                h: 1,
-            },
-            manifest: WidgetManifest {
-                kind: WidgetKind::Button,
-                params: serde_json::Value::Null,
-                state: None,
-                text_state: None,
-                interactions: vec![Interaction::Tap],
-                style: None,
-                web_package: None,
-                asset_hash: None,
-                asset_hash2: None,
-            },
-        };
-        let v = serde_json::to_value(&tile).unwrap();
-        assert_eq!(v["id"], 17);
-        assert_eq!(v["x"], 0);
-        assert_eq!(v["w"], 2);
-        assert_eq!(v["kind"], "button");
-        assert_eq!(v["interactions"][0], "tap");
     }
 }

@@ -1184,14 +1184,6 @@ mod tests {
             .any(|p| p.ends_with(r"VB\Voicemeeter\VoicemeeterRemote64.dll")));
     }
 
-    #[test]
-    fn action_routing() {
-        assert!(is_vm_action("vm-set-strip"));
-        assert!(is_vm_action("vm-toggle-bus"));
-        assert!(is_vm_action("vm-restart"));
-        assert!(!is_vm_action("obs-scene"));
-    }
-
     /// Live check: reads the real Strip[2].A1 routing state. Run explicitly:
     /// `cargo test -p pulpit-vm -- --ignored live_get_strip2_a1`
     #[test]

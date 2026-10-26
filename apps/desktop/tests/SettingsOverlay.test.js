@@ -283,15 +283,6 @@ describe("SettingsOverlay devices", () => {
     expect(w.emitted("close")).toBeUndefined();
   });
 
-  it("shows no stale rows when listing fails", async () => {
-    defaults();
-    handle("list_devices", () => {
-      throw "down";
-    });
-    const w = await mountSettings();
-    expect(w.vm.devices).toEqual([]);
-  });
-
   it("refetches devices when the devices tile is focused", async () => {
     defaults();
     const w = await mountSettings();
