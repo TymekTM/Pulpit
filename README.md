@@ -92,6 +92,13 @@ The discovery pairing flow, step by step:
 - Self-updater: the desktop checks a `latest.json` feed, downloads the
   release asset over HTTPS, verifies its sha256 and swaps itself with an
   automatic restart (Settings → Aktualizacje).
+- Tablet updater: the same feed carries the release APK (`apk_url` +
+  `apk_sha256`). Settings → "Aktualizuj tablet" downloads it, verifies the
+  sha256 and runs `adb install -r` on every USB-attached tablet that is
+  behind, then starts the app. The release workflow builds the APK only
+  when the `ANDROID_DEBUG_KEYSTORE_B64` secret (base64 of the
+  `~/.android/debug.keystore` the tablet's current install was signed with)
+  is set; any other key is refused by the tablet.
 - Tray, close-to-tray, autostart, single instance, daily-rotated logs.
 - User extensions: original Deckboard `.asar` packages run in an embedded JS
   engine; system info, callurl, Discord and Voicemeeter have native Rust

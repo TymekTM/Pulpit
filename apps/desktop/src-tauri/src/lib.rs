@@ -245,6 +245,7 @@ pub fn run() {
             take_pending_touch_toggle,
             adb_devices,
             adb_install_apk,
+            install_tablet_update,
             check_for_updates,
             export_boards,
             import_boards,
@@ -1477,38 +1478,70 @@ struct DeviceInfo {
 
 // ---- M8: APK sideload + update check ----------------------------------
 
+/// The tablet app's package and launcher activity (apps/mobile).
+const TABLET_PACKAGE: &str = "app.pulpit.mobile";
+const TABLET_ACTIVITY: &str = "app.pulpit.mobile/.MainActivity";
+
+/// Runs adb and returns its stdout+stderr, trimmed, plus the exit
+/// success. A missing binary is the one error worth its own message.
+fn run_adb(args: &[&str]) -> Result<(bool, String), String> {
+    let out = std::process::Command::new("adb")
+        .args(args)
+        .output()
+        .map_err(|e| format!("adb nie znaleziony w PATH: {e}"))?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    )
+    .trim()
+    .to_string();
+    Ok((out.status.success(), text))
+}
+
+/// `(serial, state)` pairs from `adb devices` output; the header and the
+/// daemon start-up chatter (`* daemon ...`) are skipped.
+fn parse_adb_devices(text: &str) -> Vec<(String, String)> {
+    text.lines()
+        .filter(|line| !line.starts_with('*'))
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            (parts.len() == 2 && parts[1] != "devices")
+                .then(|| (parts[0].to_string(), parts[1].to_string()))
+        })
+        .collect()
+}
+
 /// One adb device for the sideload UI (`serial (state)`).
 #[tauri::command]
 async fn adb_devices() -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        let out = std::process::Command::new("adb")
-            .args(["devices"])
-            .output()
-            .map_err(|e| format!("adb nie znaleziony w PATH: {e}"))?;
-        let text = format!(
-            "{}{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let devices = text
-            .lines()
-            .filter(|line| {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                parts.len() == 2 && parts[1] != "devices" && !line.starts_with('*')
-            })
-            .map(|line| {
-                let mut parts = line.split_whitespace();
-                format!(
-                    "{} ({})",
-                    parts.next().unwrap_or("?"),
-                    parts.next().unwrap_or("?")
-                )
-            })
-            .collect();
-        Ok(devices)
+        let (_, text) = run_adb(&["devices"])?;
+        Ok(parse_adb_devices(&text)
+            .into_iter()
+            .map(|(serial, state)| format!("{serial} ({state})"))
+            .collect())
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// `adb install -r` on one device (keep-data reinstall); `serial: None`
+/// lets adb pick the only device. Returns adb's own output.
+fn adb_install(serial: Option<&str>, path: &str) -> Result<String, String> {
+    let mut args = Vec::new();
+    if let Some(serial) = serial {
+        args.extend(["-s", serial]);
+    }
+    args.extend(["install", "-r", path]);
+    let (ok, text) = run_adb(&args)?;
+    if ok && text.contains("Success") {
+        Ok(text)
+    } else if text.is_empty() {
+        Err("adb install nie powiodł się (brak wyjścia)".to_string())
+    } else {
+        Err(text)
+    }
 }
 
 /// Installs an APK on a connected device (`adb install -r`, keep-data
@@ -1523,30 +1556,23 @@ async fn adb_install_apk(path: String) -> Result<String, String> {
     if !std::path::Path::new(&path).exists() {
         return Err(format!("Plik nie istnieje: {path}"));
     }
-    tauri::async_runtime::spawn_blocking(move || {
-        let out = std::process::Command::new("adb")
-            .args(["install", "-r", &path])
-            .output()
-            .map_err(|e| format!("adb nie znaleziony w PATH: {e}"))?;
-        let text = format!(
-            "{}{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        )
-        .trim()
-        .to_string();
-        if out.status.success() && text.contains("Success") {
-            Ok(text)
-        } else {
-            Err(if text.is_empty() {
-                "adb install nie powiodł się (brak wyjścia)".to_string()
-            } else {
-                text
-            })
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || adb_install(None, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// `versionName` of the tablet app on `serial` (`None`: not installed).
+fn tablet_version(serial: &str) -> Result<Option<String>, String> {
+    let (_, text) = run_adb(&["-s", serial, "shell", "dumpsys", "package", TABLET_PACKAGE])?;
+    Ok(parse_version_name(&text))
+}
+
+fn parse_version_name(dumpsys: &str) -> Option<String> {
+    dumpsys
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("versionName="))
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
 }
 
 /// Default update feed: a `latest.json` in the public repo
@@ -1573,6 +1599,19 @@ struct UpdateManifest {
     version: String,
     url: String,
     sha256: String,
+    /// The tablet APK of the same release, when the feed carries one.
+    /// Both fields or neither - a url without a digest is refused like
+    /// the exe is.
+    apk: Option<ApkAsset>,
+}
+
+struct ApkAsset {
+    url: String,
+    sha256: String,
+}
+
+fn is_sha256_hex(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 fn parse_update_manifest(text: &str) -> Result<UpdateManifest, String> {
@@ -1599,15 +1638,38 @@ fn parse_update_manifest(text: &str) -> Result<UpdateManifest, String> {
         .and_then(|v| v.as_str())
         .ok_or("Manifest nie ma pola \"sha256\" - bez sumy kontrolnej odmowa instalacji.")?
         .to_string();
-    if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+    if !is_sha256_hex(&sha256) {
         return Err(
             "Pole \"sha256\" manifestu nie jest sumą kontrolną (64 znaki hex).".to_string(),
         );
     }
+    let apk = match manifest.get("apk_url").and_then(|v| v.as_str()) {
+        None => None,
+        Some(apk_url) => {
+            if !apk_url.starts_with("https://") {
+                return Err("Adres APK musi być HTTPS.".to_string());
+            }
+            let apk_sha = manifest
+                .get("apk_sha256")
+                .and_then(|v| v.as_str())
+                .ok_or("Manifest ma \"apk_url\" bez \"apk_sha256\" - odmowa instalacji.")?;
+            if !is_sha256_hex(apk_sha) {
+                return Err(
+                    "Pole \"apk_sha256\" manifestu nie jest sumą kontrolną (64 znaki hex)."
+                        .to_string(),
+                );
+            }
+            Some(ApkAsset {
+                url: apk_url.to_string(),
+                sha256: apk_sha.to_string(),
+            })
+        }
+    };
     Ok(UpdateManifest {
         version,
         url,
         sha256,
+        apk,
     })
 }
 
@@ -1674,6 +1736,7 @@ async fn check_for_updates(state: State<'_, DesktopState>) -> Result<serde_json:
         "latest": manifest.version,
         "update_available": update_available,
         "url": manifest.url,
+        "apk_available": manifest.apk.is_some(),
     }))
 }
 
@@ -1855,6 +1918,93 @@ async fn install_update(
         });
     }
     result
+}
+
+/// Tablet update from the same feed: download the release APK, verify
+/// its sha256, then `adb install -r` it on every attached device (data
+/// stays) and start the app again. Devices already on the feed's version
+/// are skipped. Returns one human line per device.
+#[tauri::command]
+async fn install_tablet_update(state: State<'_, DesktopState>) -> Result<String, String> {
+    let (url, staging_dir) = {
+        let path = state
+            .settings_path
+            .as_ref()
+            .ok_or("Brak ścieżki ustawień (uruchomienie awaryjne).")?;
+        let stored: serde_json::Value = std::fs::read_to_string(path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or(serde_json::Value::Null);
+        let feed = resolve_update_url(stored.get("update_url").and_then(|v| v.as_str()))
+            .ok_or("Sprawdzanie aktualizacji jest wyłączone (update_url: \"off\").")?;
+        let dir = path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("updates");
+        (feed, dir)
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let manifest = fetch_manifest(&url)?;
+        let apk = manifest
+            .apk
+            .as_ref()
+            .ok_or("Ten release nie zawiera APK dla tabletu.")?;
+        let (_, listing) = run_adb(&["devices"])?;
+        let ready: Vec<String> = parse_adb_devices(&listing)
+            .into_iter()
+            .filter(|(_, st)| st == "device")
+            .map(|(serial, _)| serial)
+            .collect();
+        if ready.is_empty() {
+            return Err(
+                "Brak tabletu w adb (podłącz po USB i zaakceptuj debugowanie).".to_string(),
+            );
+        }
+        // Decide before downloading: nothing to fetch when every tablet is current.
+        let mut todo = Vec::new();
+        let mut lines = Vec::new();
+        for serial in ready {
+            match tablet_version(&serial)? {
+                Some(v) if !version_newer(&manifest.version, &v) => {
+                    lines.push(format!("{serial}: już v{v}"));
+                }
+                _ => todo.push(serial),
+            }
+        }
+        if !todo.is_empty() {
+            std::fs::create_dir_all(&staging_dir).map_err(|e| e.to_string())?;
+            let staged = staging_dir.join(format!("pulpit-{}.apk", manifest.version));
+            let _ = std::fs::remove_file(&staged);
+            download_update(&apk.url, &staged)?;
+            if !sha256_matches(&staged, &apk.sha256)? {
+                let _ = std::fs::remove_file(&staged);
+                return Err("Suma kontrolna APK się nie zgadza - instalacja przerwana.".to_string());
+            }
+            let staged_path = staged.to_string_lossy().to_string();
+            for serial in todo {
+                match adb_install(Some(&serial), &staged_path) {
+                    Ok(_) => {
+                        // adb install kills the app; bring the deck back up
+                        let _ = run_adb(&[
+                            "-s",
+                            &serial,
+                            "shell",
+                            "am",
+                            "start",
+                            "-n",
+                            TABLET_ACTIVITY,
+                        ]);
+                        lines.push(format!("{serial}: zainstalowano v{}", manifest.version));
+                    }
+                    Err(e) => lines.push(format!("{serial}: błąd - {e}")),
+                }
+            }
+            let _ = std::fs::remove_file(&staged);
+        }
+        Ok(lines.join("\n"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn device_infos(devices: &pulpit_v2::DeviceStore) -> Vec<DeviceInfo> {
@@ -2103,6 +2253,48 @@ mod tests {
         // version compare unchanged
         assert!(version_newer("1.3.0", "1.2.9"));
         assert!(!version_newer("1.3.0", "1.3.0"));
+    }
+
+    #[test]
+    fn manifest_apk_fields_come_as_a_pair_over_https() {
+        let digest = "b".repeat(64);
+        let base = |extra: &str| {
+            parse_update_manifest(&format!(
+                r#"{{"version":"1.3.0","url":"https://x/y.exe","sha256":"{digest}"{extra}}}"#
+            ))
+        };
+        // old feeds carry no APK: still a valid manifest
+        assert!(base("").expect("parses").apk.is_none());
+        let m = base(&format!(
+            r#","apk_url":"https://x/p.apk","apk_sha256":"{digest}""#
+        ))
+        .expect("parses");
+        let apk = m.apk.expect("apk");
+        assert_eq!(apk.url, "https://x/p.apk");
+        assert_eq!(apk.sha256, digest);
+        // a url without a digest, a bad digest or plain http never install
+        assert!(base(r#","apk_url":"https://x/p.apk""#).is_err());
+        assert!(base(r#","apk_url":"https://x/p.apk","apk_sha256":"abc""#).is_err());
+        assert!(base(&format!(
+            r#","apk_url":"http://x/p.apk","apk_sha256":"{digest}""#
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn adb_listing_and_dumpsys_parse() {
+        let listing = "* daemon not running; starting now at tcp:5037\n* daemon started successfully\n\
+                       List of devices attached\nR52T1234ABC\tdevice\n192.168.0.5:5555\toffline\n\n";
+        assert_eq!(
+            parse_adb_devices(listing),
+            vec![
+                ("R52T1234ABC".to_string(), "device".to_string()),
+                ("192.168.0.5:5555".to_string(), "offline".to_string()),
+            ]
+        );
+        let dump = "Packages:\n  Package [app.pulpit.mobile] (abc):\n    versionCode=10502\n    versionName=1.5.2\n";
+        assert_eq!(parse_version_name(dump).as_deref(), Some("1.5.2"));
+        assert_eq!(parse_version_name("Unable to find package"), None);
     }
 
     #[test]

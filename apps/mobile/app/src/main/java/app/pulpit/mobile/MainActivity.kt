@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.pulpit.mobile.state.Plog
 import app.pulpit.mobile.state.PulpitViewModel
 import app.pulpit.mobile.state.keepsScreenOn
 import app.pulpit.mobile.state.showsBoard
@@ -69,6 +70,11 @@ class MainActivity : ComponentActivity() {
                     val board = showsBoard(conn, boards.isNotEmpty(), serverDown, menuOpen)
                     val keepOn = keepsScreenOn(board, linkStandby)
                     DisposableEffect(keepOn) {
+                        Plog.i(
+                            "MainActivity",
+                            "keep-screen-on=$keepOn (board=$board serverDown=$serverDown " +
+                                "standby=$linkStandby conn=${conn::class.simpleName})",
+                        )
                         if (keepOn) {
                             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                         } else {

@@ -331,6 +331,24 @@ async function installApk() {
   }
 }
 
+// Tablet update: the same feed carries the release APK; the backend
+// downloads it, checks the sha256 and runs adb install -r on every
+// attached tablet that is behind.
+async function updateTablet() {
+  adbBusy.value = true;
+  adbNote.value = "Pobieram APK z GitHuba i instaluję na tablecie...";
+  adbNoteBad.value = false;
+  try {
+    adbNote.value = (await api.installTabletUpdate()) || "Gotowe.";
+    await refreshAdb();
+  } catch (e) {
+    adbNote.value = String(e);
+    adbNoteBad.value = true;
+  } finally {
+    adbBusy.value = false;
+  }
+}
+
 // M8 updates: the feed check shows what's available; the install button
 // downloads, verifies the sha256 and swaps the exe, then the app
 // restarts itself
@@ -906,12 +924,15 @@ onUnmounted(() => {
                     <span class="ctl-name">Instalacja APK (sideload)</span>
                     <span class="ctl-note">
                       Tablet podłączony po USB z adb; instalacja z zachowaniem danych
-                      (adb install -r). Urządzenia: {{ adbList.length ? adbList.join(", ") : "brak" }}
+                      (adb install -r). „Aktualizuj tablet” pobiera APK z tego samego feedu
+                      co aktualizacje desktopu (GitHub), sprawdza sha256 i uruchamia aplikację
+                      po instalacji. Urządzenia: {{ adbList.length ? adbList.join(", ") : "brak" }}
                     </span>
                   </div>
                   <span style="display: flex; gap: 8px; flex: none">
                     <button class="act" :disabled="adbBusy" @click="refreshAdb">Odśwież</button>
-                    <button class="act accent" :disabled="adbBusy" @click="installApk">Zainstaluj APK…</button>
+                    <button class="act" :disabled="adbBusy" @click="installApk">Zainstaluj APK…</button>
+                    <button class="act accent" :disabled="adbBusy" @click="updateTablet">Aktualizuj tablet</button>
                   </span>
                 </div>
                 <p v-if="adbNote" :class="adbNoteBad ? 'err' : 'note pending'">{{ adbNote }}</p>

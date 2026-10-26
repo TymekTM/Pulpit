@@ -13,7 +13,69 @@ permissions:
   contents: write
 
 jobs:
+  # The tablet APK rides in the same release and feed: the desktop's
+  # "Aktualizuj tablet" downloads it and runs `adb install -r`. That only
+  # works when the APK is signed with the key already on the tablet, and
+  # the release build signs with the debug keystore - so the owner's
+  # ~/.android/debug.keystore goes in the ANDROID_DEBUG_KEYSTORE_B64
+  # secret (base64). Without the secret this job builds nothing and the
+  # release ships the exe alone; a CI-generated key would be rejected
+  # by the tablet (INSTALL_FAILED_UPDATE_INCOMPATIBLE).
+  apk:
+    runs-on: ubuntu-latest
+    outputs:
+      built: ${{ steps.flag.outputs.built }}
+    env:
+      KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+    steps:
+      - id: flag
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::ANDROID_DEBUG_KEYSTORE_B64 is not set - the release will not include a tablet APK"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.flag.outputs.built == 'true'
+
+      - uses: actions/setup-java@v4
+        if: steps.flag.outputs.built == 'true'
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v6
+        if: steps.flag.outputs.built == 'true'
+        with:
+          gradle-version: 8.7
+          cache-provider: basic
+
+      - uses: android-actions/setup-android@v4
+        if: steps.flag.outputs.built == 'true'
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0'
+
+      - name: Restore the signing key
+        if: steps.flag.outputs.built == 'true'
+        run: |
+          mkdir -p ~/.android
+          echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+
+      - name: Build the release APK
+        if: steps.flag.outputs.built == 'true'
+        working-directory: apps/mobile
+        run: gradle :app:assembleRelease
+
+      - uses: actions/upload-artifact@v4
+        if: steps.flag.outputs.built == 'true'
+        with:
+          name: tablet-apk
+          path: apps/mobile/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
   build:
+    needs: apk
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +112,12 @@ jobs:
         working-directory: apps/desktop
         run: npx tauri build --no-bundle
 
+      - uses: actions/download-artifact@v4
+        if: needs.apk.outputs.built == 'true'
+        with:
+          name: tablet-apk
+          path: apk
+
       - name: Stage artifacts
         shell: pwsh
         run: |
@@ -61,11 +129,18 @@ jobs:
           if (-not $exe) { throw "pulpit-desktop.exe not found after the build" }
           Copy-Item $exe.FullName "dist/pulpit-desktop-$version.exe"
           $hash = (Get-FileHash "dist/pulpit-desktop-$version.exe" -Algorithm SHA256).Hash.ToLower()
-          @{
+          $feed = [ordered]@{
             sha256 = $hash
             version = $version
             url = "https://github.com/${{ github.repository }}/releases/download/v$version/pulpit-desktop-$version.exe"
-          } | ConvertTo-Json | Set-Content dist/latest.json
+          }
+          # the tablet APK, when the apk job built one (see its comment)
+          if ("${{ needs.apk.outputs.built }}" -eq "true") {
+            Copy-Item apk/app-release.apk "dist/pulpit-$version.apk"
+            $feed.apk_sha256 = (Get-FileHash "dist/pulpit-$version.apk" -Algorithm SHA256).Hash.ToLower()
+            $feed.apk_url = "https://github.com/${{ github.repository }}/releases/download/v$version/pulpit-$version.apk"
+          }
+          $feed | ConvertTo-Json | Set-Content dist/latest.json
           Get-Content dist/latest.json
 
       - name: Publish release
@@ -81,6 +156,7 @@ jobs:
             "--notes", "Pulpit desktop $version - see the commit history for changes."
           )
           # a tag push already carries the tag; a manual dispatch creates it
+          if (Test-Path "dist/pulpit-$version.apk") { $releaseArgs += "dist/pulpit-$version.apk" }
           if ($env:GITHUB_REF_TYPE -eq "tag") { $releaseArgs += "--verify-tag" }
           gh @releaseArgs
 

@@ -15,6 +15,12 @@ val workspaceVersion: String =
         ?.groupValues?.get(1)
         ?: throw GradleException("missing [workspace.package] version in the workspace Cargo.toml")
 
+// Monotonic with the version, so `adb install -r` of a newer release is
+// never a downgrade: 1.5.2 -> 10502.
+val workspaceVersionCode: Int =
+    workspaceVersion.split(".").map { it.toInt() }
+        .let { (major, minor, patch) -> major * 10_000 + minor * 100 + patch }
+
 android {
     namespace = "app.pulpit.mobile"
     compileSdk = 34
@@ -24,7 +30,7 @@ android {
         // the target tablet (SM-T561, LineageOS) runs Android 7.1 (API 25)
         minSdk = 24
         targetSdk = 34
-        versionCode = 5
+        versionCode = workspaceVersionCode
         versionName = workspaceVersion
     }
 
