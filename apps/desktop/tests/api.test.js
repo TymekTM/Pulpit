@@ -25,6 +25,7 @@ describe("api", () => {
     ["setServerPort", [8611], "set_server_port", { port: 8611 }],
     ["getAutostart", [], "get_autostart", undefined],
     ["setAutostart", [true], "set_autostart", { enable: true }],
+    ["setStartMinimized", [true], "set_start_minimized", { enable: true }],
     ["readImageData", ["C:/a.png"], "read_image_data", { path: "C:/a.png" }],
     ["listKnownInputs", [], "list_known_inputs", undefined],
     ["listLanAddresses", [], "list_lan_addresses", undefined],
@@ -70,7 +71,7 @@ describe("api", () => {
   });
 
   it("covers every method in the table above", () => {
-    expect(Object.keys(api)).toHaveLength(57);
+    expect(Object.keys(api)).toHaveLength(58);
   });
 
   it("passes the command's result through", async () => {
