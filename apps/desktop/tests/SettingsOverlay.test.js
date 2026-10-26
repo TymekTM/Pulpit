@@ -159,6 +159,23 @@ describe("SettingsOverlay hotkey and autostart", () => {
     expect(w.vm.autostart).toBe(true);
     expect(w.vm.autostartError).toBe("registry locked");
   });
+
+  it("loads and flips start-minimized, reverting on failure", async () => {
+    defaults();
+    handle("get_settings", () => ({ hotkey: "X", port: 8500, start_minimized: true }));
+    const w = await mountSettings();
+    expect(w.vm.startMinimized).toBe(true);
+    await w.vm.toggleStartMinimized();
+    expect(cmds("set_start_minimized")[0].args).toEqual({ enable: false });
+    expect(w.vm.startMinimized).toBe(false);
+    handle("set_start_minimized", () => {
+      throw "disk full";
+    });
+    await w.vm.toggleStartMinimized();
+    // the flip back on failure leaves it at the previously saved value
+    expect(w.vm.startMinimized).toBe(false);
+    expect(w.vm.startMinimizedError).toBe("disk full");
+  });
 });
 
 describe("SettingsOverlay port", () => {

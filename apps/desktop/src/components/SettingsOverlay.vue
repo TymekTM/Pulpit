@@ -24,6 +24,12 @@ const autostart = ref(false);
 const autostartBusy = ref(false);
 const autostartError = ref("");
 
+// start-minimized applies on the next launch: the window is created
+// hidden (or not) once, in the backend's setup
+const startMinimized = ref(false);
+const startMinimizedBusy = ref(false);
+const startMinimizedError = ref("");
+
 const hotkey = ref("Ctrl+Alt+D");
 const hotkeyDraft = ref("");
 const hotkeyError = ref("");
@@ -546,6 +552,22 @@ async function toggleAutostart() {
   }
 }
 
+async function toggleStartMinimized() {
+  startMinimizedBusy.value = true;
+  startMinimizedError.value = "";
+  const next = !startMinimized.value;
+  startMinimized.value = next;
+  try {
+    await api.setStartMinimized(next);
+  } catch (e) {
+    // flip back and say why - a silent revert leaves the user guessing
+    startMinimized.value = !next;
+    startMinimizedError.value = e ? String(e) : "Nie udało się zapisać opcji startu.";
+  } finally {
+    startMinimizedBusy.value = false;
+  }
+}
+
 function onKeydown(e) {
   if (e.key === "Escape") {
     if (confirmRevoke.value) {
@@ -568,6 +590,7 @@ onMounted(async () => {
   try {
     const settings = await api.getSettings();
     hotkey.value = settings.hotkey;
+    startMinimized.value = Boolean(settings.start_minimized);
     portLocked.value = Boolean(settings.port_locked);
     portPending.value =
       settings.port && settings.port !== (props.status.port || 8500)
@@ -631,6 +654,20 @@ onUnmounted(() => {
                 ><span class="knob"></span></button>
               </div>
               <p v-if="autostartError" class="err">{{ autostartError }}</p>
+              <div class="ctl">
+                <div class="ctl-text">
+                  <span class="ctl-name">Start zminimalizowany</span>
+                  <span class="ctl-note">Następne uruchomienie zacznie się z oknem schowanym do zasobnika.</span>
+                </div>
+                <button
+                  class="switch"
+                  role="switch"
+                  :aria-checked="startMinimized"
+                  :disabled="startMinimizedBusy"
+                  @click="toggleStartMinimized"
+                ><span class="knob"></span></button>
+              </div>
+              <p v-if="startMinimizedError" class="err">{{ startMinimizedError }}</p>
               <div class="ctl">
                 <div class="ctl-text">
                   <span class="ctl-name">Zamykanie do zasobnika</span>

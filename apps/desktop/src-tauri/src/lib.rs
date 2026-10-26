@@ -29,6 +29,10 @@ struct DesktopState {
     v2: Option<Arc<pulpit_v2::V2State>>,
     /// Current touch-mode hotkey combo ("Ctrl+Alt+D" style).
     hotkey: std::sync::Mutex<String>,
+    /// Start with the main window hidden in the tray (`start_minimized`
+    /// in editor.json). The server and the tray are unaffected - only
+    /// the window skips its show at launch, once, in `setup`.
+    start_minimized: bool,
     /// `pulpitApp/editor.json` - editor-local settings (hotkey), kept
     /// separate from the original app's settings.json.
     settings_path: Option<std::path::PathBuf>,
@@ -194,10 +198,19 @@ pub fn run() {
         })
         .setup(|app| {
             let state = setup_core(app.handle().clone());
+            let start_minimized = state.start_minimized;
             app.manage(state);
 
             build_tray(app.handle())?;
-            create_main_window(app.handle())?;
+            create_main_window(app.handle(), !start_minimized)?;
+            if start_minimized {
+                // count the tray-hidden launch from now, so the idle
+                // WebView teardown treats it like a manual hide
+                HIDDEN_SINCE.store(
+                    pulpit_v2::unix_millis(),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+            }
             spawn_webview_teardown(app.handle().clone());
             Ok(())
         })
@@ -219,6 +232,7 @@ pub fn run() {
             get_settings,
             set_touch_mode_hotkey,
             set_server_port,
+            set_start_minimized,
             get_autostart,
             set_autostart,
             read_image_data,
@@ -393,6 +407,7 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
         std::env::var("PULPIT_PORT").ok().as_deref(),
         stored_editor.get("port"),
     );
+    let start_minimized = stored_flag(&stored_editor, "start_minimized");
 
     // PULPIT_DB overrides the database location (profiling / hermetic runs)
     let db_path = std::env::var_os("PULPIT_DB").map(std::path::PathBuf::from);
@@ -407,6 +422,7 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
             port,
             v2: None,
             hotkey: std::sync::Mutex::new(DEFAULT_HOTKEY.to_string()),
+            start_minimized,
             settings_path: None,
             aidev_config: Some(aidev_config),
             spotify: None,
@@ -776,6 +792,7 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
         port,
         v2: v2.clone(),
         hotkey: std::sync::Mutex::new(hotkey),
+        start_minimized,
         settings_path: Some(settings_path),
         aidev_config: Some(aidev_config),
         spotify,
@@ -865,7 +882,7 @@ fn show_main_window(app: &AppHandle) {
         // refetches boards, settings and live state on mount
         None => {
             tracing::info!("rebuilding the main window WebView");
-            if let Err(e) = create_main_window(app) {
+            if let Err(e) = create_main_window(app, true) {
                 tracing::error!("could not rebuild the main window: {e}");
             }
         }
@@ -901,10 +918,14 @@ fn goodbye_v2(app: &AppHandle) {
 /// WebView2 argument list is only reachable through the builder API, and a
 /// custom list replaces the default one - so the stock feature disables are
 /// repeated alongside the memory-oriented flags (no background networking,
-/// no component updates, capped HTTP disk cache).
-fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
+/// no component updates, capped HTTP disk cache). `visible` is false for a
+/// start-minimized launch: the window (and its WebView) is created hidden
+/// and only the tray can surface it. Rebuilds after a teardown always pass
+/// true - whoever rebuilds the window is about to show it.
+fn create_main_window(app: &AppHandle, visible: bool) -> tauri::Result<()> {
     tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
         .title("Pulpit")
+        .visible(visible)
         .inner_size(1280.0, 800.0)
         .min_inner_size(900.0, 600.0)
         .theme(Some(tauri::Theme::Dark))
@@ -1049,7 +1070,7 @@ fn toggle_touch_mode(app: &AppHandle) {
         }
         None => {
             tracing::info!("rebuilding the main window WebView for the touch toggle");
-            if let Err(e) = create_main_window(app) {
+            if let Err(e) = create_main_window(app, true) {
                 tracing::error!("could not rebuild the main window: {e}");
                 return;
             }
@@ -2144,6 +2165,22 @@ mod tests {
     }
 
     #[test]
+    fn stored_flag_reads_bools_and_defaults_to_off() {
+        assert!(stored_flag(
+            &serde_json::json!({"start_minimized": true}),
+            "start_minimized"
+        ));
+        // a non-bool (hand-edited file) must not flip the behavior on
+        assert!(!stored_flag(
+            &serde_json::json!({"start_minimized": "yes"}),
+            "start_minimized"
+        ));
+        // absent key, empty object and a missing file (Null) all stay off
+        assert!(!stored_flag(&serde_json::json!({}), "start_minimized"));
+        assert!(!stored_flag(&serde_json::Value::Null, "start_minimized"));
+    }
+
+    #[test]
     fn version_compare_for_updates() {
         assert!(version_newer("0.2.0", "0.1.2"));
         assert!(version_newer("v0.2.0", "0.1.9"));
@@ -2801,9 +2838,9 @@ async fn list_audio_devices(
         .collect())
 }
 
-/// Editor-local settings: the touch-mode hotkey plus the server port
+/// Editor-local settings: the touch-mode hotkey, the server port
 /// (`port_locked` when the `PULPIT_PORT` environment variable wins over
-/// the stored value).
+/// the stored value) and the start-minimized choice.
 #[tauri::command]
 async fn get_settings(state: State<'_, DesktopState>) -> Result<serde_json::Value, String> {
     let hotkey = state.hotkey.lock().unwrap().clone();
@@ -2811,6 +2848,7 @@ async fn get_settings(state: State<'_, DesktopState>) -> Result<serde_json::Valu
         "hotkey": hotkey,
         "port": state.port,
         "port_locked": std::env::var_os("PULPIT_PORT").is_some(),
+        "start_minimized": state.start_minimized,
     }))
 }
 
@@ -2887,6 +2925,12 @@ fn effective_port(env: Option<&str>, stored: Option<&serde_json::Value>) -> u16 
     stored.map_or(8500, |p| p as u16)
 }
 
+/// A tolerant boolean read from editor.json: an absent key, a non-bool
+/// value or a hand-mangled file all mean "off", never a failed launch.
+fn stored_flag(stored: &serde_json::Value, key: &str) -> bool {
+    stored.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
 /// Persist a new server port (Ustawienia -> Serwer). The sockets bind
 /// once at startup and tablets aim at `host:port` explicitly, so a live
 /// rebind would strand them: the value applies on the next launch.
@@ -2907,6 +2951,18 @@ async fn set_server_port(state: State<'_, DesktopState>, port: u16) -> Result<()
         .as_ref()
         .ok_or_else(|| "Brak ścieżki ustawień (uruchomienie awaryjne).".to_string())?;
     persist_editor_setting(path, "port", serde_json::json!(port))
+}
+
+/// Persist the start-minimized choice (Ustawienia -> Uruchamianie). Like
+/// the port it applies on the next launch: the window is either created
+/// hidden or not, once, in `setup`.
+#[tauri::command]
+async fn set_start_minimized(state: State<'_, DesktopState>, enable: bool) -> Result<(), String> {
+    let path = state
+        .settings_path
+        .as_ref()
+        .ok_or_else(|| "Brak ścieżki ustawień (uruchomienie awaryjne).".to_string())?;
+    persist_editor_setting(path, "start_minimized", serde_json::json!(enable))
 }
 
 /// The `status` section of aidev.json, with the defaults an absent
