@@ -29,6 +29,7 @@ export const api = {
   setServerPort: (port) => invoke("set_server_port", { port }),
   getAutostart: () => invoke("get_autostart"),
   setAutostart: (enable) => invoke("set_autostart", { enable }),
+  setStartMinimized: (enable) => invoke("set_start_minimized", { enable }),
   readImageData: (path) => invoke("read_image_data", { path }),
   listKnownInputs: () => invoke("list_known_inputs"),
   listLanAddresses: () => invoke("list_lan_addresses"),
