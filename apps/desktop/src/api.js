@@ -39,6 +39,7 @@ export const api = {
   takePendingTouchToggle: () => invoke("take_pending_touch_toggle"),
   adbDevices: () => invoke("adb_devices"),
   adbInstallApk: (path) => invoke("adb_install_apk", { path }),
+  installTabletUpdate: () => invoke("install_tablet_update"),
   checkForUpdates: () => invoke("check_for_updates"),
   installUpdate: () => invoke("install_update"),
   listAudioDevices: () => invoke("list_audio_devices"),

@@ -340,6 +340,23 @@ describe("SettingsOverlay adb and updates", () => {
     expect(cmds("adb_install_apk")).toHaveLength(0);
   });
 
+  it("updates the tablet from the feed and reports adb failures", async () => {
+    defaults();
+    const w = await mountSettings();
+    handle("install_tablet_update", () => "R52T: zainstalowano v1.5.2");
+    handle("adb_devices", () => ["R52T (device)"]);
+    await w.vm.updateTablet();
+    expect(cmds("install_tablet_update")).toHaveLength(1);
+    expect(w.vm.adbNote).toBe("R52T: zainstalowano v1.5.2");
+    expect(w.vm.adbNoteBad).toBe(false);
+    handle("install_tablet_update", () => {
+      throw "Brak tabletu w adb";
+    });
+    await w.vm.updateTablet();
+    expect(w.vm.adbNote).toBe("Brak tabletu w adb");
+    expect(w.vm.adbNoteBad).toBe(true);
+  });
+
   it("reports adb failures", async () => {
     defaults();
     handle("adb_devices", () => {

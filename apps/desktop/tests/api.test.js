@@ -35,6 +35,7 @@ describe("api", () => {
     ["takePendingTouchToggle", [], "take_pending_touch_toggle", undefined],
     ["adbDevices", [], "adb_devices", undefined],
     ["adbInstallApk", ["x.apk"], "adb_install_apk", { path: "x.apk" }],
+    ["installTabletUpdate", [], "install_tablet_update", undefined],
     ["checkForUpdates", [], "check_for_updates", undefined],
     ["installUpdate", [], "install_update", undefined],
     ["listAudioDevices", [], "list_audio_devices", undefined],
@@ -70,7 +71,7 @@ describe("api", () => {
   });
 
   it("covers every method in the table above", () => {
-    expect(Object.keys(api)).toHaveLength(57);
+    expect(Object.keys(api)).toHaveLength(58);
   });
 
   it("passes the command's result through", async () => {
