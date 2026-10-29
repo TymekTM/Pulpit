@@ -10,5 +10,7 @@ import "@fortawesome/fontawesome-free/css/fontawesome.min.css";
 import "@fortawesome/fontawesome-free/css/solid.min.css";
 import "./style.css";
 import App from "./App.vue";
+import { i18n, initUiLang } from "./i18n.js";
 
-createApp(App).mount("#app");
+// the stored language is applied before the first paint
+initUiLang().finally(() => createApp(App).use(i18n).mount("#app"));
