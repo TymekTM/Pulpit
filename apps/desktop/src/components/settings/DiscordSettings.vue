@@ -6,6 +6,7 @@
 // "configured" flag, so an empty secret input means "keep the saved one".
 import { computed, onMounted, ref, watch } from "vue";
 import { api } from "../../api";
+import { t } from "../../i18n";
 
 const props = defineProps({
   focused: { type: Boolean, default: false },
@@ -20,7 +21,7 @@ const status = ref({
   clientId: "",
   hasSecret: false,
   statusType: "not_configured",
-  statusLine: "nie skonfigurowano",
+  statusLine: "not configured",
   username: null,
 });
 
@@ -40,30 +41,30 @@ async function refresh() {
       clientIdDraft.value = res.clientId;
     }
   } catch (e) {
-    error.value = e ? String(e) : "Nie udało się pobrać statusu Discorda.";
+    error.value = e ? String(e) : t("Could not load the Discord status.");
   }
 }
 
 const statusDisplay = computed(() => {
   if (busy.value && status.value.statusType === "authorizing") {
-    return "czekam na zatwierdzenie";
+    return t("waiting for approval");
   }
-  return status.value.statusLine || "nie skonfigurowano";
+  return status.value.statusLine || t("not configured");
 });
 
 const isConnected = computed(() => status.value.statusType === "connected");
 
 const chip = computed(() => {
   if (isConnected.value) {
-    return { text: status.value.username || "połączono", ok: true };
+    return { text: status.value.username || t("connected"), ok: true };
   }
   if (status.value.statusType === "needs_auth") {
-    return { text: "wymaga autoryzacji", ok: false };
+    return { text: t("needs authorization"), ok: false };
   }
   if (status.value.statusType === "not_running") {
-    return { text: "nie działa", ok: false };
+    return { text: t("not running"), ok: false };
   }
-  return { text: "nie skonfigurowano", ok: false };
+  return { text: t("not configured"), ok: false };
 });
 
 function flashNote(text) {
@@ -75,7 +76,7 @@ function flashNote(text) {
 
 async function saveCredentials() {
   if (!clientIdDraft.value.trim()) {
-    error.value = "Wprowadź Client ID.";
+    error.value = t("Enter the Client ID.");
     return;
   }
   busy.value = true;
@@ -83,10 +84,10 @@ async function saveCredentials() {
   try {
     await api.discordSaveConfig(clientIdDraft.value.trim(), clientSecretDraft.value.trim());
     clientSecretDraft.value = "";
-    flashNote("Zapisano dane aplikacji Discord.");
+    flashNote(t("Discord app credentials saved."));
     await refresh();
   } catch (e) {
-    error.value = e ? String(e) : "Nie udało się zapisać konfiguracji Discorda.";
+    error.value = e ? String(e) : t("Could not save the Discord configuration.");
   } finally {
     busy.value = false;
   }
@@ -96,15 +97,15 @@ async function connectDiscord() {
   busy.value = true;
   error.value = "";
   status.value.statusType = "authorizing";
-  status.value.statusLine = "czekam na zatwierdzenie";
+  status.value.statusLine = t("waiting for approval");
   try {
     const res = await api.discordAuthorize();
     status.value.statusType = res.statusType || "connected";
     status.value.username = res.username;
-    status.value.statusLine = res.username ? `połączono jako ${res.username}` : "połączono";
-    flashNote("Pomyślnie połączono z aplikacją Discord!");
+    status.value.statusLine = res.username ? t("connected as {user}", { user: res.username }) : t("connected");
+    flashNote(t("Connected to the Discord app successfully!"));
   } catch (e) {
-    error.value = e ? String(e) : "Autoryzacja w aplikacji Discord nie powiodła się.";
+    error.value = e ? String(e) : t("Authorization in the Discord app failed.");
     await refresh();
   } finally {
     busy.value = false;
@@ -116,10 +117,10 @@ async function disconnectDiscord() {
   error.value = "";
   try {
     await api.discordDisconnect();
-    flashNote("Rozłączono sesję Discorda (dane aplikacji zachowane).");
+    flashNote(t("Discord session disconnected (app data kept)."));
     await refresh();
   } catch (e) {
-    error.value = e ? String(e) : "Nie udało się rozłączyć Discorda.";
+    error.value = e ? String(e) : t("Could not disconnect Discord.");
   } finally {
     busy.value = false;
   }
@@ -128,9 +129,9 @@ async function disconnectDiscord() {
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
-    flashNote(`Skopiowano: ${text}`);
+    flashNote(t("Copied: {text}", { text }));
   } catch {
-    error.value = "Nie udało się skopiować — skopiuj ręcznie.";
+    error.value = t("Could not copy - copy it manually.");
   }
 }
 
@@ -150,7 +151,7 @@ watch(
       v-if="!focused"
       class="hit"
       tabindex="0"
-      aria-label="Rozwiń: Discord"
+      :aria-label="t('Expand: Discord')"
       @click="emit('expand')"
     ></button>
     <header class="tile-head">
@@ -158,19 +159,19 @@ watch(
       <span class="chip" :class="chip.ok ? 'ok' : ''">{{ chip.text }}</span>
     </header>
     <p class="sum">
-      Sterowanie mikrofonem, odsłuchem i kanałami głosowymi przez lokalnego klienta Discord.
+      {{ t("Microphone, monitoring and voice-channel control through the local Discord client.") }}
     </p>
     <div v-show="focused" class="detail">
       <label class="ctl">
         <span class="ctl-head">
           <span class="ctl-title">Client ID</span>
-          <span class="ctl-note">ID aplikacji z discord.com/developers.</span>
+          <span class="ctl-note">{{ t("The app's ID from discord.com/developers.") }}</span>
         </span>
         <span class="input-line">
           <input
             v-model="clientIdDraft"
             class="combo-input"
-            placeholder="np. 123456789012345678"
+            :placeholder="t('e.g. 123456789012345678')"
             autocomplete="off"
             spellcheck="false"
             aria-label="Discord Client ID"
@@ -182,9 +183,9 @@ watch(
         <span class="ctl-head">
           <span class="ctl-title">Client Secret</span>
           <span class="ctl-note" v-if="status.hasSecret && !clientSecretDraft">
-            Zapisany — wpisz nowy, aby zmienić.
+            {{ t("Saved - type a new one to change it.") }}
           </span>
-          <span class="ctl-note" v-else>Klucz tajny aplikacji OAuth2.</span>
+          <span class="ctl-note" v-else>{{ t("The app's OAuth2 secret.") }}</span>
         </span>
         <span class="input-line">
           <input
@@ -197,22 +198,22 @@ watch(
             aria-label="Discord Client Secret"
           />
           <button class="act" type="button" @click="showSecret = !showSecret">
-            {{ showSecret ? "Ukryj" : "Pokaż" }}
+            {{ showSecret ? t("Hide") : t("Show") }}
           </button>
           <button class="act accent" type="button" :disabled="busy" @click="saveCredentials">
-            Zapisz
+            {{ t("Save") }}
           </button>
         </span>
       </label>
 
       <div class="ctl">
         <span class="ctl-head">
-          <span class="ctl-title">Status połączenia</span>
+          <span class="ctl-title">{{ t("Connection status") }}</span>
           <span class="ctl-note mono">{{ statusDisplay }}</span>
         </span>
         <div class="conn-actions">
           <button v-if="isConnected" class="act danger" :disabled="busy" @click="disconnectDiscord">
-            Rozłącz
+            {{ t("Disconnect") }}
           </button>
           <button
             v-else
@@ -220,7 +221,7 @@ watch(
             :disabled="busy || !clientIdDraft"
             @click="connectDiscord"
           >
-            {{ busy && status.statusType === 'authorizing' ? "Czekam..." : "Połącz z Discordem" }}
+            {{ busy && status.statusType === 'authorizing' ? t("Waiting...") : t("Connect to Discord") }}
           </button>
         </div>
       </div>
@@ -234,35 +235,35 @@ watch(
           :class="helpOpen ? 'fa-chevron-down' : 'fa-chevron-right'"
           aria-hidden="true"
         ></i>
-        {{ helpOpen ? "Ukryj instrukcję konfiguracji" : "Jak utworzyć aplikację Discord?" }}
+        {{ helpOpen ? t("Hide the setup steps") : t("How to create a Discord app?") }}
       </button>
 
       <ol v-if="helpOpen" class="help-steps">
         <li>
-          Przejdź do portalu deweloperskiego Discord:
+          {{ t("Go to the Discord developer portal:") }}
           <span class="mono">{{ DEVELOPERS_URL }}</span>
           <button class="act mini" type="button" @click="copyText(DEVELOPERS_URL)">
-            Kopiuj URL
+            {{ t("Copy URL") }}
           </button>
         </li>
         <li>
-          Utwórz nową aplikację (przycisk <b>New Application</b>) i nadaj jej dowolną nazwę
-          (np. <i>Pulpit</i>).
+          {{ t("Create a new app (the") }} <b>New Application</b> {{ t("button) and give it any name (e.g.") }}
+          <i>Pulpit</i>{{ t(").") }}
         </li>
         <li>
-          W zakładce <b>OAuth2</b> dodaj adres przekierowania (Redirects):
+          {{ t("Open the") }} <b>OAuth2</b> {{ t("tab and add the redirect address (Redirects):") }}
           <span class="mono">{{ REDIRECT_URI }}</span>
           <button class="act mini" type="button" @click="copyText(REDIRECT_URI)">
-            Kopiuj Redirect
+            {{ t("Copy redirect") }}
           </button>
         </li>
         <li>
-          W zakładce <b>OAuth2</b> skopiuj <b>Client ID</b> oraz wygeneruj/skopiuj
-          <b>Client Secret</b> i wklej powyżej.
+          {{ t("Still on the") }} <b>OAuth2</b> {{ t("tab, copy the") }} <b>Client ID</b>
+          {{ t("and generate/copy the") }} <b>Client Secret</b>{{ t(", then paste them above.") }}
         </li>
         <li>
-          Uruchom klienta Discord na komputerze, kliknij <b>Zapisz</b>, a następnie
-          <b>Połącz z Discordem</b> i zatwierdź w oknie aplikacji Discord.
+          {{ t("Start the Discord client on the computer, click") }} <b>{{ t("Save") }}</b>,
+          {{ t("then") }} <b>{{ t("Connect to Discord") }}</b> {{ t("and approve in the Discord app window.") }}
         </li>
       </ol>
     </div>

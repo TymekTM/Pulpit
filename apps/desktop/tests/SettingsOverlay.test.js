@@ -76,7 +76,7 @@ describe("SettingsOverlay startup", () => {
     });
     const w = await mountSettings();
     expect(w.vm.lanAddresses).toEqual([]);
-    expect(w.text()).toContain("nie widzi żadnej sieci");
+    expect(w.text()).toContain("sees no local network");
   });
 
   it("flags a stored port that differs from the running one", async () => {
@@ -309,10 +309,10 @@ describe("SettingsOverlay devices", () => {
   });
 
   it.each([
-    [0, "nigdy"],
-    [-30, "teraz"],
-    [-600, "10 min temu"],
-    [-3 * 3600, "3 godz. temu"],
+    [0, "never"],
+    [-30, "now"],
+    [-600, "10 min ago"],
+    [-3 * 3600, "3 h ago"],
   ])("labels last-seen offset %d as %s", async (offset, label) => {
     defaults();
     const w = await mountSettings();
@@ -384,7 +384,7 @@ describe("SettingsOverlay adb and updates", () => {
     const w = await mountSettings();
     await w.vm.checkUpdates();
     expect(w.vm.updateReady).toBe("1.5.0");
-    expect(w.vm.updateNote).toBe("Dostępna wersja 1.5.0 (masz 1.4.0).");
+    expect(w.vm.updateNote).toBe("Version 1.5.0 is available (you have 1.4.0).");
     await w.vm.installUpdate();
     expect(w.vm.updateNote).toBe("Restarting...");
     // stays busy while the app restarts itself
@@ -397,7 +397,7 @@ describe("SettingsOverlay adb and updates", () => {
     const w = await mountSettings();
     await w.vm.checkUpdates();
     expect(w.vm.updateReady).toBe("");
-    expect(w.vm.updateNote).toBe("System jest aktualny (v1.4.0).");
+    expect(w.vm.updateNote).toBe("Up to date (v1.4.0).");
   });
 
   it("re-enables the install button after a failed update", async () => {
@@ -468,7 +468,7 @@ describe("SettingsOverlay AI usage", () => {
     await flushPromises();
     expect(cmds("set_aidev_status_config")).toHaveLength(0);
     expect(w.vm.aidevShow).toEqual(["glm:5h"]);
-    expect(w.vm.aidevNote).toContain("Przynajmniej jeden");
+    expect(w.vm.aidevNote).toContain("At least one");
   });
 
   it("saves summary and row-style toggles, skipping no-op style changes", async () => {
@@ -502,7 +502,7 @@ describe("SettingsOverlay Spotify", () => {
     defaults();
     const w = await mountSettings();
     expect(w.vm.spotifyLoggedIn).toBe(false);
-    expect(w.vm.spotifyChip).toEqual({ text: "wymaga logowania", ok: false });
+    expect(w.vm.spotifyChip).toEqual({ text: "login required", ok: false });
   });
 
   it("describes a premium login with the live device", async () => {
@@ -510,7 +510,7 @@ describe("SettingsOverlay Spotify", () => {
     handle("spotify_status", () => ({ configured: true, clientId: "cid", loggedIn: true, user: "tymek", product: "premium" }));
     const w = await mountSettings({ customValues: { "spotify-device": "Desk" } });
     expect(w.vm.spotifyClientIdDraft).toBe("cid");
-    expect(w.vm.spotifyStatusLine).toBe("Zalogowano jako tymek (Premium) — urządzenie: Desk");
+    expect(w.vm.spotifyStatusLine).toBe("Logged in as tymek (Premium) - device: Desk");
     expect(w.vm.spotifyChip).toEqual({ text: "tymek", ok: true });
   });
 
@@ -518,8 +518,8 @@ describe("SettingsOverlay Spotify", () => {
     defaults();
     handle("spotify_status", () => ({ configured: true, loggedIn: true, product: "free" }));
     const w = await mountSettings();
-    expect(w.vm.spotifyStatusLine).toBe("Zalogowano  (Free — sterowanie odtwarzaniem wymaga Premium)");
-    expect(w.vm.spotifyChip.text).toBe("zalogowano");
+    expect(w.vm.spotifyStatusLine).toBe("Logged in (Free - controlling playback requires Premium)");
+    expect(w.vm.spotifyChip.text).toBe("logged in");
   });
 
   it("lets live auth pushes override the fetched status", async () => {
@@ -527,10 +527,10 @@ describe("SettingsOverlay Spotify", () => {
     handle("spotify_status", () => ({ configured: true, loggedIn: true, user: "u" }));
     const w = await mountSettings({ customValues: { "spotify-auth": "needs-login" } });
     expect(w.vm.spotifyLoggedIn).toBe(false);
-    expect(w.vm.spotifyStatusLine).toContain("Wymaga logowania");
+    expect(w.vm.spotifyStatusLine).toContain("Login required");
     await w.setProps({ customValues: { "spotify-auth": "off" } });
-    expect(w.vm.spotifyStatusLine).toContain("nieaktywne");
-    expect(w.vm.spotifyChip).toEqual({ text: "wył.", ok: false });
+    expect(w.vm.spotifyStatusLine).toContain("inactive");
+    expect(w.vm.spotifyChip).toEqual({ text: "off", ok: false });
     await w.setProps({ customValues: { "spotify-auth": "ok" } });
     expect(w.vm.spotifyLoggedIn).toBe(true);
   });
@@ -540,8 +540,8 @@ describe("SettingsOverlay Spotify", () => {
     handle("spotify_status", () => ({ configured: false }));
     const w = await mountSettings({ customValues: { "spotify-auth": "ok" } });
     expect(w.vm.spotifyLoggedIn).toBe(false);
-    expect(w.vm.spotifyStatusLine).toContain("uszkodzony");
-    expect(w.vm.spotifyChip.text).toBe("wył.");
+    expect(w.vm.spotifyStatusLine).toContain("corrupted");
+    expect(w.vm.spotifyChip.text).toBe("off");
   });
 
   it("saves a trimmed client id and refreshes", async () => {
@@ -551,7 +551,7 @@ describe("SettingsOverlay Spotify", () => {
     await w.vm.saveSpotifyClientId();
     expect(cmds("spotify_set_client_id")[0].args).toEqual({ clientId: "abc" });
     expect(cmds("spotify_status")).toHaveLength(2);
-    expect(w.vm.spotifyNote).toBe("Zapisano Client ID.");
+    expect(w.vm.spotifyNote).toBe("Client ID saved.");
   });
 
   it("logs in and out", async () => {
@@ -559,10 +559,10 @@ describe("SettingsOverlay Spotify", () => {
     handle("spotify_login", () => ({ user: "tymek" }));
     const w = await mountSettings();
     await w.vm.doSpotifyLogin();
-    expect(w.vm.spotifyNote).toBe("Zalogowano jako tymek.");
+    expect(w.vm.spotifyNote).toBe("Logged in as tymek.");
     await w.vm.doSpotifyLogout();
     expect(cmds("spotify_logout")).toHaveLength(1);
-    expect(w.vm.spotifyNote).toContain("Wylogowano");
+    expect(w.vm.spotifyNote).toContain("Logged out");
     expect(w.vm.spotifyBusy).toBe(false);
   });
 
@@ -583,7 +583,7 @@ describe("SettingsOverlay Spotify", () => {
     const w = await mountSettings();
     await w.vm.copyRedirectUri();
     expect(writeText).toHaveBeenCalledWith("http://127.0.0.1:8502/spotify/callback");
-    expect(w.vm.spotifyNote).toBe("Skopiowano redirect URI.");
+    expect(w.vm.spotifyNote).toBe("Redirect URI copied.");
   });
 
   it("refetches Spotify status when its tile is focused", async () => {

@@ -1,12 +1,13 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from "vue";
 import { api } from "../../api";
+import { t } from "../../i18n";
 
-// OBS Studio settings section (Ustawienia): host/port/password + the
-// enabled switch, a live connection status line and "Testuj
-// połączenie". Self-contained: the only state it reads from the parent
+// OBS Studio settings section (Settings): host/port/password + the
+// enabled switch, a live connection status line and a "Test connection"
+// button. Self-contained: the only state it reads from the parent
 // is whether the wall currently focuses this tile. Everything the user
-// types stays in the form until "Zapisz" - the password is sent to the
+// types stays in the form until "Save" - the password is sent to the
 // backend once and never comes back (the status only says whether one
 // is stored).
 const props = defineProps({
@@ -54,7 +55,7 @@ async function refreshStatus() {
       portDraft.value = String(s.port ?? 4455);
     }
   } catch (e) {
-    error.value = e ? String(e) : "Nie udało się pobrać statusu OBS.";
+    error.value = e ? String(e) : t("Could not load the OBS status.");
   }
 }
 
@@ -79,23 +80,28 @@ onUnmounted(() => {
 });
 
 const chip = computed(() => {
-  if (!status.value.enabled) return { text: "wył.", ok: false };
-  if (status.value.connected) return { text: status.value.version || "połączony", ok: true };
-  if (status.value.authFailed) return { text: "błąd logowania", ok: false };
-  return { text: "brak połączenia", ok: false };
+  if (!status.value.enabled) return { text: t("off"), ok: false };
+  if (status.value.connected) return { text: status.value.version || t("connected"), ok: true };
+  if (status.value.authFailed) return { text: t("auth failed"), ok: false };
+  return { text: t("no connection"), ok: false };
 });
 
 const statusLine = computed(() => {
   if (!status.value.enabled) {
-    return "Integracja wyłączona — kafelki OBS będą ignorowane (jedno ostrzeżenie na rodzaj kafelka).";
+    return t("Integration disabled - OBS tiles are ignored (one warning per tile kind).");
   }
   if (status.value.connected) {
-    return `Połączono z OBS${status.value.version ? ` (${status.value.version})` : ""} — stan kafelków podąża za programem na żywo.`;
+    return t("Connected to OBS{v} - tile state follows the program live.", {
+      v: status.value.version ? ` (${status.value.version})` : "",
+    });
   }
   if (status.value.authFailed) {
-    return "OBS odrzucił hasło — sprawdź hasło z ustawień obs-websocket (Narzędzia → obs-websocket).";
+    return t("OBS rejected the password - check the password from the obs-websocket settings (Tools → obs-websocket).");
   }
-  return `Brak połączenia z ${status.value.host}:${status.value.port} — uruchom OBS z wtyczką obs-websocket (OBS 28+ ma ją wbudowaną).`;
+  return t("No connection to {host}:{port} - run OBS with the obs-websocket plugin (OBS 28+ ships it built in).", {
+    host: status.value.host,
+    port: status.value.port,
+  });
 });
 
 async function save() {
@@ -104,16 +110,16 @@ async function save() {
   try {
     const port = Number(portDraft.value.trim());
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new Error("Port musi być liczbą z zakresu 1–65535.");
+      throw new Error(t("The port must be a number between 1 and 65535."));
     }
     const password = clearPassword.value ? "" : passwordDraft.value || null;
     await api.obsApplyConfig(enabledDraft.value, hostDraft.value.trim(), port, password);
     clearPassword.value = false;
     passwordDraft.value = "";
-    flashNote("Zapisano — połączenie odświeża się samo, bez restartu aplikacji.");
+    flashNote(t("Saved - the connection refreshes itself, without an app restart."));
     await refreshStatus();
   } catch (e) {
-    error.value = e ? String(e) : "Nie udało się zapisać ustawień OBS.";
+    error.value = e ? String(e) : t("Could not save the OBS settings.");
   } finally {
     busy.value = false;
   }
@@ -122,18 +128,18 @@ async function save() {
 async function testConnection() {
   busy.value = true;
   error.value = "";
-  testNote.value = "Łączę…";
+  testNote.value = t("Connecting…");
   testNoteBad.value = false;
   try {
     const port = Number(portDraft.value.trim());
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new Error("Port musi być liczbą z zakresu 1–65535.");
+      throw new Error(t("The port must be a number between 1 and 65535."));
     }
     const password = clearPassword.value ? "" : passwordDraft.value || null;
     const version = await api.obsTestConnection(hostDraft.value.trim(), port, password);
-    testNote.value = `Połączono: ${version}.`;
+    testNote.value = t("Connected: {version}.", { version });
   } catch (e) {
-    testNote.value = e ? String(e) : "Połączenie nie powiodło się.";
+    testNote.value = e ? String(e) : t("The connection failed.");
     testNoteBad.value = true;
   } finally {
     busy.value = false;
@@ -150,7 +156,7 @@ async function testConnection() {
     <button
       v-if="!expanded"
       class="hit"
-      aria-label="Rozwiń: OBS Studio"
+      :aria-label="t('Expand: OBS Studio')"
       @click.stop="$emit('focus')"
     ></button>
     <header class="tile-head">
@@ -158,14 +164,13 @@ async function testConnection() {
       <span class="chip" :class="chip.ok ? 'ok' : ''">{{ chip.text }}</span>
     </header>
     <p class="sum">
-      Natywna integracja przez obs-websocket v5 (OBS 28+): sceny, źródła,
-      audio, nagrywanie i stream na żywo. Hasło zostaje na tym komputerze.
+      {{ t("Native integration via obs-websocket v5 (OBS 28+): scenes, sources, audio, recording and a live stream. The password stays on this computer.") }}
     </p>
     <div v-show="expanded" class="detail">
       <div class="ctl">
         <div class="ctl-text">
-          <span class="ctl-name">Integracja włączona</span>
-          <span class="ctl-note">Gdy wyłączona, Pulpit nie łączy się z OBS-em wcale.</span>
+          <span class="ctl-name">{{ t("Integration enabled") }}</span>
+          <span class="ctl-note">{{ t("When disabled, Pulpit does not connect to OBS at all.") }}</span>
         </div>
         <button
           class="switch"
@@ -177,8 +182,8 @@ async function testConnection() {
       </div>
       <div class="ctl">
         <div class="ctl-text">
-          <span class="ctl-name">Adres i port</span>
-          <span class="ctl-note">Domyślnie ws://127.0.0.1:4455 (obs-websocket v5).</span>
+          <span class="ctl-name">{{ t("Host and port") }}</span>
+          <span class="ctl-note">{{ t("Defaults to ws://127.0.0.1:4455 (obs-websocket v5).") }}</span>
         </div>
         <span class="addr-line">
           <input
@@ -187,7 +192,7 @@ async function testConnection() {
             placeholder="127.0.0.1"
             autocomplete="off"
             spellcheck="false"
-            aria-label="Adres hosta OBS"
+            :aria-label="t('OBS host address')"
           />
           <input
             v-model="portDraft"
@@ -195,15 +200,15 @@ async function testConnection() {
             inputmode="numeric"
             placeholder="4455"
             autocomplete="off"
-            aria-label="Port obs-websocket"
+            :aria-label="t('obs-websocket port')"
           />
         </span>
       </div>
       <div class="ctl">
         <div class="ctl-text">
-          <span class="ctl-name">Hasło</span>
+          <span class="ctl-name">{{ t("Password") }}</span>
           <span class="ctl-note">
-            {{ status.hasPassword ? "Hasło zapisane — wpisz nowe, aby zmienić." : "Z obs-serverów: Narzędzia → obs-websocket → Hasło." }}
+            {{ status.hasPassword ? t("Password saved - type a new one to change it.") : t("From an OBS server: Tools → obs-websocket → Password.") }}
           </span>
         </div>
         <span class="addr-line">
@@ -211,9 +216,9 @@ async function testConnection() {
             v-model="passwordDraft"
             type="password"
             class="combo-input host-input"
-            :placeholder="status.hasPassword ? '••••••••' : 'hasło (opcjonalne)'"
+            :placeholder="status.hasPassword ? '••••••••' : t('password (optional)')"
             autocomplete="new-password"
-            aria-label="Hasło obs-websocket"
+            :aria-label="t('obs-websocket password')"
           />
           <button
             v-if="status.hasPassword"
@@ -221,14 +226,14 @@ async function testConnection() {
             :disabled="busy"
             @click="clearPassword = !clearPassword"
           >
-            {{ clearPassword ? "Usuwanie hasła…" : "Usuń hasło" }}
+            {{ clearPassword ? t("Clearing the password…") : t("Clear password") }}
           </button>
         </span>
       </div>
       <p class="note">{{ statusLine }}</p>
       <div class="row-btns">
-        <button class="act accent" :disabled="busy" @click="save">Zapisz</button>
-        <button class="act" :disabled="busy" @click="testConnection">Testuj połączenie</button>
+        <button class="act accent" :disabled="busy" @click="save">{{ t("Save") }}</button>
+        <button class="act" :disabled="busy" @click="testConnection">{{ t("Test connection") }}</button>
       </div>
       <p v-if="testNote" :class="testNoteBad ? 'err' : 'note pending'">{{ testNote }}</p>
       <p v-if="error" class="err">{{ error }}</p>

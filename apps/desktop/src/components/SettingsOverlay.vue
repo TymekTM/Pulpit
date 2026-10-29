@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "../api";
-import { LANG_CHOICES, setUiLang, t, uiLang } from "../i18n";
+import { setUiLang, t, uiLang } from "../i18n";
 import DiscordSettings from "./settings/DiscordSettings.vue";
 import VoicemeeterSettings from "./settings/VoicemeeterSettings.vue";
 import ObsSettings from "./settings/ObsSettings.vue";
@@ -571,6 +571,17 @@ async function toggleStartMinimized() {
   }
 }
 
+// the select is v-model bound to uiLang (kept in sync by i18n.js); a
+// failed persist is reverted inside setUiLang, so only the error is
+// surfaced here - via the title tooltip the next render shows the old choice
+async function onLangChange() {
+  try {
+    await setUiLang(uiLang.value);
+  } catch {
+    /* the optimistic switch is already reverted */
+  }
+}
+
 function onKeydown(e) {
   if (e.key === "Escape") {
     if (confirmRevoke.value) {
@@ -616,37 +627,47 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="rootEl" class="settings" role="dialog" aria-modal="true" aria-label="Ustawienia">
+  <div ref="rootEl" class="settings" role="dialog" aria-modal="true" :aria-label="t('Settings')">
     <header class="bar">
-      <h1>Ustawienia</h1>
-      <button ref="closeBtn" class="close" title="Zamknij (Esc)" @click="$emit('close')">
+      <h1>{{ t("Settings") }}</h1>
+      <select
+        v-model="uiLang"
+        class="lang"
+        :aria-label="t('UI language')"
+        @change="onLangChange"
+      >
+        <option value="auto">{{ t("Auto (system)") }}</option>
+        <option value="pl">Polski</option>
+        <option value="en">English</option>
+      </select>
+      <button ref="closeBtn" class="close" :title="t('Close (Esc)')" @click="$emit('close')">
         <i class="fas fa-times" aria-hidden="true"></i>
       </button>
     </header>
 
     <div class="wall">
       <section class="row" aria-labelledby="sec-general">
-        <h2 id="sec-general">Ogólne</h2>
+        <h2 id="sec-general">{{ t("General") }}</h2>
         <div class="tiles">
           <article class="tile" :class="tileCls('launch')">
             <button
               class="hit"
               :tabindex="focused === 'launch' ? -1 : 0"
-              aria-label="Rozwiń: Uruchamianie"
+              :aria-label="t('Expand: Startup')"
               @click="focused = 'launch'"
             ></button>
             <header class="tile-head">
-              <h3>Uruchamianie</h3>
+              <h3>{{ t("Startup") }}</h3>
               <span class="chip" :class="autostart ? 'ok' : ''">
-                {{ autostart ? "autostart wł." : "autostart wył." }}
+                {{ autostart ? t("autostart on") : t("autostart off") }}
               </span>
             </header>
-            <p class="sum">Zachowanie Pulpitu po zalogowaniu i przy zamykaniu okna.</p>
+            <p class="sum">{{ t("How Pulpit behaves after sign-in and when the window is closed.") }}</p>
             <div v-show="focused === 'launch'" class="detail">
               <div class="ctl">
                 <div class="ctl-text">
-                  <span class="ctl-name">Uruchamiaj po zalogowaniu</span>
-                  <span class="ctl-note">Rejestruje Pulpit w autostarcie systemu.</span>
+                  <span class="ctl-name">{{ t("Run after sign-in") }}</span>
+                  <span class="ctl-note">{{ t("Registers Pulpit in the system autostart.") }}</span>
                 </div>
                 <button
                   class="switch"
@@ -659,8 +680,8 @@ onUnmounted(() => {
               <p v-if="autostartError" class="err">{{ autostartError }}</p>
               <div class="ctl">
                 <div class="ctl-text">
-                  <span class="ctl-name">Start zminimalizowany</span>
-                  <span class="ctl-note">Następne uruchomienie zacznie się z oknem schowanym do zasobnika.</span>
+                  <span class="ctl-name">{{ t("Start minimized") }}</span>
+                  <span class="ctl-note">{{ t("The next launch starts with the window hidden to the tray.") }}</span>
                 </div>
                 <button
                   class="switch"
@@ -673,10 +694,10 @@ onUnmounted(() => {
               <p v-if="startMinimizedError" class="err">{{ startMinimizedError }}</p>
               <div class="ctl">
                 <div class="ctl-text">
-                  <span class="ctl-name">Zamykanie do zasobnika</span>
-                  <span class="ctl-note">Zawsze aktywne — zamknięcie okna chowa Pulpit do zasobnika.</span>
+                  <span class="ctl-name">{{ t("Close to tray") }}</span>
+                  <span class="ctl-note">{{ t("Always on - closing the window hides Pulpit to the tray.") }}</span>
                 </div>
-                <span class="locked"><i class="fas fa-lock" aria-hidden="true"></i> stałe</span>
+                <span class="locked"><i class="fas fa-lock" aria-hidden="true"></i> {{ t("fixed") }}</span>
               </div>
             </div>
           </article>
@@ -685,17 +706,17 @@ onUnmounted(() => {
             <button
               class="hit"
               :tabindex="focused === 'hotkey' ? -1 : 0"
-              aria-label="Rozwiń: Hotkey trybu dotykowego"
+              :aria-label="t('Expand: Touch-mode hotkey')"
               @click="focused = 'hotkey'"
             ></button>
             <header class="tile-head">
-              <h3>Hotkey trybu dotykowego</h3>
+              <h3>{{ t("Touch-mode hotkey") }}</h3>
             </header>
-            <p class="sum">Skrót przełączający edytor w pełnoekranowy tryb dotykowy.</p>
+            <p class="sum">{{ t("Shortcut toggling the editor into full-screen touch mode.") }}</p>
             <div v-show="focused === 'hotkey'" class="detail">
               <div v-if="!editingHotkey" class="combo-line">
                 <kbd class="combo">{{ hotkey }}</kbd>
-                <button class="act" @click="editingHotkey = true; hotkeyDraft = hotkey">Zmień</button>
+                <button class="act" @click="editingHotkey = true; hotkeyDraft = hotkey">{{ t("Change") }}</button>
               </div>
               <template v-else>
                 <div class="combo-line">
@@ -703,11 +724,11 @@ onUnmounted(() => {
                     v-model="hotkeyDraft"
                     class="combo-input"
                     placeholder="Ctrl+Alt+D"
-                    aria-label="Nowy skrót"
+                    :aria-label="t('New shortcut')"
                     @keyup.enter="saveHotkey"
                   />
-                  <button class="act accent" @click="saveHotkey">Ustaw</button>
-                  <button class="act" @click="editingHotkey = false">Anuluj</button>
+                  <button class="act accent" @click="saveHotkey">{{ t("Set") }}</button>
+                  <button class="act" @click="editingHotkey = false">{{ t("Cancel") }}</button>
                 </div>
                 <p v-if="hotkeyError" class="err">{{ hotkeyError }}</p>
               </template>
@@ -717,47 +738,47 @@ onUnmounted(() => {
       </section>
 
       <section class="row" aria-labelledby="sec-server">
-        <h2 id="sec-server">Serwer</h2>
+        <h2 id="sec-server">{{ t("Server") }}</h2>
         <div class="tiles">
           <article class="tile" :class="tileCls('status')">
             <button
               class="hit"
               :tabindex="focused === 'status' ? -1 : 0"
-              aria-label="Rozwiń: Status serwera"
+              :aria-label="t('Expand: Server status')"
               @click="focused = 'status'"
             ></button>
             <header class="tile-head">
-              <h3>Status</h3>
+              <h3>{{ t("Status") }}</h3>
               <span class="chip" :class="status.dbOk ? 'ok' : 'bad'">
-                {{ status.dbOk ? "działa" : "baza niedostępna" }}
+                {{ status.dbOk ? t("running") : t("database unavailable") }}
               </span>
             </header>
             <p v-if="status.dbOk" class="sum">
-              Nasłuch na 0.0.0.0:{{ status.port }} — legacy i v2 dzielą jeden port.
+              {{ t("Listening on 0.0.0.0:{port} - legacy and v2 share one port.", { port: status.port }) }}
             </p>
             <p v-else class="sum">
-              Baza jest zablokowana lub nie istnieje. Zamknij oryginalną aplikację i uruchom Pulpit ponownie.
+              {{ t("The database is locked or missing. Close the original app and start Pulpit again.") }}
             </p>
             <div v-show="focused === 'status' && status.dbOk" class="detail">
               <dl class="facts">
-                <div><dt>Adres</dt><dd class="mono tnum">0.0.0.0:{{ status.port }}</dd></div>
-                <div><dt>Klienci</dt><dd class="tnum">{{ status.clients }}</dd></div>
-                <div><dt>Wersja</dt><dd>Editor v{{ version }}</dd></div>
-                <div><dt>Logi</dt><dd class="mono">~/pulpitApp/logs</dd></div>
+                <div><dt>{{ t("Address") }}</dt><dd class="mono tnum">0.0.0.0:{{ status.port }}</dd></div>
+                <div><dt>{{ t("Clients") }}</dt><dd class="tnum">{{ status.clients }}</dd></div>
+                <div><dt>{{ t("Version") }}</dt><dd>Editor v{{ version }}</dd></div>
+                <div><dt>{{ t("Logs") }}</dt><dd class="mono">~/pulpitApp/logs</dd></div>
               </dl>
               <div class="ctl" style="margin-top: 12px">
                 <div class="ctl-text">
-                  <span class="ctl-name">Aktualizacje</span>
-                  <span class="ctl-note">Feed z update_url (domyślnie latest.json w repo); pobiera, weryfikuje sha256 i restartuje.</span>
+                  <span class="ctl-name">{{ t("Updates") }}</span>
+                  <span class="ctl-note">{{ t("Feed from update_url (latest.json in the repo by default); downloads, verifies sha256 and restarts.") }}</span>
                 </div>
                 <span style="display: flex; gap: 8px; flex: none">
-                  <button class="act" :disabled="updateBusy" @click="checkUpdates">Sprawdź</button>
+                  <button class="act" :disabled="updateBusy" @click="checkUpdates">{{ t("Check") }}</button>
                   <button
                     v-if="updateReady"
                     class="act accent"
                     :disabled="updateBusy"
                     @click="installUpdate"
-                  >Zainstaluj {{ updateReady }}</button>
+                  >{{ t("Install") }} {{ updateReady }}</button>
                 </span>
               </div>
               <p v-if="updateNote" :class="updateNoteBad ? 'err' : 'note pending'">{{ updateNote }}</p>
@@ -768,13 +789,13 @@ onUnmounted(() => {
             <button
               class="hit"
               :tabindex="focused === 'port' ? -1 : 0"
-              aria-label="Rozwiń: Port nasłuchu"
+              :aria-label="t('Expand: Listen port')"
               @click="focused = 'port'"
             ></button>
             <header class="tile-head">
-              <h3>Port nasłuchu</h3>
+              <h3>{{ t("Listen port") }}</h3>
             </header>
-            <p class="sum">Wspólny port obu protokołów; tablety wpinają się w ten adres.</p>
+            <p class="sum">{{ t("One port for both protocols; tablets connect to this address.") }}</p>
             <div v-show="focused === 'port'" class="detail">
               <div class="port-line">
                 <span class="big mono tnum">{{ status.port || 8500 }}</span>
@@ -784,23 +805,24 @@ onUnmounted(() => {
                     class="port-input"
                     inputmode="numeric"
                     autocomplete="off"
-                    aria-label="Nowy port"
+                    :aria-label="t('New port')"
                     @keyup.enter="savePort"
                   />
-                  <button class="act accent" :disabled="portBusy" @click="savePort">Zapisz</button>
+                  <button class="act accent" :disabled="portBusy" @click="savePort">{{ t("Save") }}</button>
                 </template>
               </div>
               <p v-if="portPending" class="note pending">
-                Zapisano port {{ portPending }} — zostanie użyty po ponownym uruchomieniu Pulpitu.
+                {{ t("Port {port} saved - it will be used after Pulpit restarts.", { port: portPending }) }}
               </p>
               <p v-if="portLocked" class="note">
-                Port narzuca zmienna środowiskowa <code class="mono">PULPIT_PORT</code> — jego
-                wartość ma pierwszeństwo przed zapisem.
+                {{ t("The port is dictated by the") }}
+                <code class="mono">PULPIT_PORT</code>
+                {{ t("environment variable - its value wins over the stored one.") }}
               </p>
               <p v-else class="note">
-                Dozwolony zakres 1024–65535. Zmiana obowiązuje po ponownym uruchomieniu; tablety
-                wpinają się w konkretny adres <span class="mono">host:port</span>, więc trzeba je
-                wtedy skierować na nowy port.
+                {{ t("The allowed range is 1024-65535. A change applies after a restart; tablets aim at a specific") }}
+                <span class="mono">host:port</span>
+                {{ t("address, so they must be pointed at the new port.") }}
               </p>
               <p v-if="portError" class="err">{{ portError }}</p>
             </div>
@@ -809,30 +831,30 @@ onUnmounted(() => {
       </section>
 
       <section class="row" aria-labelledby="sec-tablets">
-        <h2 id="sec-tablets">Tablety</h2>
+        <h2 id="sec-tablets">{{ t("Tablets") }}</h2>
         <div class="tiles">
           <article class="tile" :class="[tileCls('legacy'), { dead: !status.dbOk }]">
             <button
               class="hit"
               :tabindex="focused === 'legacy' && status.dbOk ? -1 : 0"
-              aria-label="Rozwiń: Stock client"
+              :aria-label="t('Expand: Stock client')"
               @click="focused = 'legacy'"
             ></button>
             <header class="tile-head">
-              <h3>Stock client</h3>
+              <h3>{{ t("Stock client") }}</h3>
               <span v-if="status.dbOk" class="chip" :class="lanAddresses.length ? 'ok' : ''">
-                {{ lanAddresses.length ? "gotowy do parowania" : "brak sieci" }}
+                {{ lanAddresses.length ? t("ready to pair") : t("no network") }}
               </span>
-              <span v-else class="chip bad">serwer wył.</span>
+              <span v-else class="chip bad">{{ t("server off") }}</span>
             </header>
-            <p class="sum">Oryginalna aplikacja Deckboard na Androida łączy się przez QR.</p>
+            <p class="sum">{{ t("The original Deckboard app on Android connects via QR.") }}</p>
             <div v-show="focused === 'legacy' && status.dbOk" class="detail">
               <template v-if="lanAddresses.length">
                 <div class="pair">
                   <img
                     class="qr"
                     :src="lanAddresses[activeAddress]?.qr"
-                    alt="Kod QR z adresem pulpitu"
+                    :alt="t('QR code with the Pulpit address')"
                   />
                   <div class="addr-list">
                     <button
@@ -846,14 +868,14 @@ onUnmounted(() => {
                       <span class="addr-name">{{ a.name }}</span>
                     </button>
                     <button class="act" :disabled="lanLoading" @click="refreshLan">
-                      <i class="fas fa-sync-alt" aria-hidden="true"></i> Odśwież
+                      <i class="fas fa-sync-alt" aria-hidden="true"></i> {{ t("Refresh") }}
                     </button>
                   </div>
                 </div>
-                <p class="note">Zeskanuj QR w aplikacji Deckboard lub wpisz adres ręcznie.</p>
+                <p class="note">{{ t("Scan the QR in the Deckboard app or type the address manually.") }}</p>
               </template>
               <p v-else class="note">
-                Pulpit nie widzi żadnej sieci lokalnej — podłącz Wi-Fi lub Ethernet i odśwież.
+                {{ t("Pulpit sees no local network - plug in Wi-Fi or Ethernet and refresh.") }}
               </p>
             </div>
           </article>
@@ -862,25 +884,25 @@ onUnmounted(() => {
             <button
               class="hit"
               :tabindex="focused === 'v2' && status.dbOk ? -1 : 0"
-              aria-label="Rozwiń: Nowy klient v2"
+              :aria-label="t('Expand: New v2 client')"
               @click="focused = 'v2'"
             ></button>
             <header class="tile-head">
-              <h3>Nowy klient (v2)</h3>
-              <span v-if="pairingOffer && status.dbOk" class="chip ok">kod żyje {{ pairingClock }}</span>
+              <h3>{{ t("New client (v2)") }}</h3>
+              <span v-if="pairingOffer && status.dbOk" class="chip ok">{{ t("code alive") }} {{ pairingClock }}</span>
             </header>
-            <p class="sum">Natywny klient Pulpit — jednorazowy kod zamiast otwartego QR.</p>
+            <p class="sum">{{ t("The native Pulpit client - a one-time code instead of an open QR.") }}</p>
             <div v-show="focused === 'v2' && status.dbOk" class="detail">
               <template v-if="!pairingOffer">
                 <button class="act primary" :disabled="pairingBusy" @click="generatePairing">
-                  <i class="fas fa-key" aria-hidden="true"></i> Generuj kod parowania
+                  <i class="fas fa-key" aria-hidden="true"></i> {{ t("Generate pairing code") }}
                 </button>
-                <p class="note">Kod działa 5 minut i wypala się po pierwszym użyciu.</p>
+                <p class="note">{{ t("The code works for 5 minutes and burns after the first use.") }}</p>
               </template>
               <template v-else>
                 <div class="code mono tnum">{{ pairingOffer.code }}</div>
-                <p class="note">Wpisz kod w nowym kliencie razem z adresem. Wygasa za {{ pairingClock }}.</p>
-                <button class="act" :disabled="pairingBusy" @click="generatePairing">Nowy kod</button>
+                <p class="note">{{ t("Type the code into the new client together with the address. Expires in {time}.", { time: pairingClock }) }}</p>
+                <button class="act" :disabled="pairingBusy" @click="generatePairing">{{ t("New code") }}</button>
               </template>
               <p v-if="pairingError" class="err">{{ pairingError }}</p>
             </div>
@@ -890,52 +912,47 @@ onUnmounted(() => {
             <button
               class="hit"
               :tabindex="focused === 'devices' && status.dbOk ? -1 : 0"
-              aria-label="Rozwiń: Zaufane urządzenia"
+              :aria-label="t('Expand: Trusted devices')"
               @click="focused = 'devices'"
             ></button>
             <header class="tile-head">
-              <h3>Zaufane urządzenia</h3>
+              <h3>{{ t("Trusted devices") }}</h3>
               <span v-if="status.dbOk" class="chip" :class="devices.length ? 'ok' : ''">
-                {{ devices.length ? `zaufane: ${devices.length}` : "brak" }}
+                {{ devices.length ? t("trusted: {n}", { n: devices.length }) : t("none") }}
               </span>
-              <span v-else class="chip bad">serwer wył.</span>
+              <span v-else class="chip bad">{{ t("server off") }}</span>
             </header>
             <p class="sum">
-              Tablety z zapisanym tokenem. Nowe urządzenie pyta o zaufanie przy pierwszym połączeniu.
+              {{ t("Tablets with a stored token. A new device asks for trust on its first connection.") }}
             </p>
             <div v-show="focused === 'devices' && status.dbOk" class="detail">
               <p v-if="!devices.length" class="note">
-                Żadne urządzenie nie ma jeszcze zaufania — wygeneruj kod parowania powyżej.
+                {{ t("No device is trusted yet - generate a pairing code above.") }}
               </p>
               <template v-else>
                 <ul class="devices">
                   <li v-for="d in devices" :key="d.id" class="device">
                     <span class="device-name">{{ d.name }}</span>
-                    <span class="device-seen">widziany: {{ lastSeenLabel(d.last_seen) }}</span>
+                    <span class="device-seen">{{ t("seen: {time}", { time: lastSeenLabel(d.last_seen) }) }}</span>
                     <button class="act danger" :disabled="devicesBusy" @click="revokeDevice(d)">
-                      <i class="fas fa-user-slash" aria-hidden="true"></i> Cofnij zaufanie
+                      <i class="fas fa-user-slash" aria-hidden="true"></i> {{ t("Revoke trust") }}
                     </button>
                   </li>
                 </ul>
                 <p class="note">
-                  Cofnięcie usuwa token urządzenia i zamyka jego połączenie. Wróci tylko przez
-                  nowe parowanie. Pytanie o zaufanie pozostawione bez odpowiedzi wygasa razem
-                  z kodem parowania i odrzuca tablet.
+                  {{ t("Revoking removes the device's token and closes its connection. It only comes back through a new pairing. A trust question left unanswered expires together with the pairing code and rejects the tablet.") }}
                 </p>
                 <div class="ctl" style="margin-top: 10px">
                   <div class="ctl-text">
-                    <span class="ctl-name">Instalacja APK (sideload)</span>
+                    <span class="ctl-name">{{ t("APK install (sideload)") }}</span>
                     <span class="ctl-note">
-                      Tablet podłączony po USB z adb; instalacja z zachowaniem danych
-                      (adb install -r). „Aktualizuj tablet” pobiera APK z tego samego feedu
-                      co aktualizacje desktopu (GitHub), sprawdza sha256 i uruchamia aplikację
-                      po instalacji. Urządzenia: {{ adbList.length ? adbList.join(", ") : "brak" }}
+                      {{ t("A tablet connected over USB with adb; the install keeps app data (adb install -r). \"Update tablet\" downloads the APK from the same feed as the desktop updates (GitHub), verifies sha256 and launches the app after the install. Devices: {devices}", { devices: adbList.length ? adbList.join(", ") : t("none") }) }}
                     </span>
                   </div>
                   <span style="display: flex; gap: 8px; flex: none">
-                    <button class="act" :disabled="adbBusy" @click="refreshAdb">Odśwież</button>
-                    <button class="act" :disabled="adbBusy" @click="installApk">Zainstaluj APK…</button>
-                    <button class="act accent" :disabled="adbBusy" @click="updateTablet">Aktualizuj tablet</button>
+                    <button class="act" :disabled="adbBusy" @click="refreshAdb">{{ t("Refresh") }}</button>
+                    <button class="act" :disabled="adbBusy" @click="installApk">{{ t("Install APK…") }}</button>
+                    <button class="act accent" :disabled="adbBusy" @click="updateTablet">{{ t("Update tablet") }}</button>
                   </span>
                 </div>
                 <p v-if="adbNote" :class="adbNoteBad ? 'err' : 'note pending'">{{ adbNote }}</p>
@@ -952,7 +969,7 @@ onUnmounted(() => {
             <button
               class="hit"
               :tabindex="focused === 'aidev' ? -1 : 0"
-              aria-label="Rozwiń: AI usage"
+              :aria-label="t('Expand: AI usage')"
               @click="focused = 'aidev'"
             ></button>
             <header class="tile-head">
@@ -960,20 +977,19 @@ onUnmounted(() => {
               <span class="chip" :class="aidevDetected.length ? 'ok' : ''">
                 {{
                   aidevDetected.length
-                    ? `${aidevShow.length} z ${aidevDetected.length} wierszy`
-                    : "wykrywanie…"
+                    ? t("{shown} of {total} rows", { shown: aidevShow.length, total: aidevDetected.length })
+                    : t("detecting…")
                 }}
               </span>
             </header>
             <p class="sum">
-              Kafele limitów planów AI: które wiersze pokazywać, czy mieć linię podsumowania.
-              Limity wykrywane automatycznie (GLM, Claude, Codex, OpenRouter).
+              {{ t("The AI plan-limits tile: which rows to show and whether to have a summary line. Limits are detected automatically (GLM, Claude, Codex, OpenRouter).") }}
             </p>
             <div v-show="focused === 'aidev'" class="detail">
               <div class="ctl">
                 <div class="ctl-text">
-                  <span class="ctl-name">Identyfikacja wierszy</span>
-                  <span class="ctl-note">Nazwa tekstowa albo logo marki — nigdy oba naraz.</span>
+                  <span class="ctl-name">{{ t("Row identification") }}</span>
+                  <span class="ctl-note">{{ t("A text name or the brand logo - never both at once.") }}</span>
                 </div>
                 <span class="seg">
                   <button
@@ -981,19 +997,19 @@ onUnmounted(() => {
                     :class="{ on: aidevRowStyle === 'name' }"
                     :disabled="aidevBusy"
                     @click="setAidevRowStyle('name')"
-                  >Nazwa</button>
+                  >{{ t("Name") }}</button>
                   <button
                     class="seg-btn"
                     :class="{ on: aidevRowStyle === 'logo' }"
                     :disabled="aidevBusy"
                     @click="setAidevRowStyle('logo')"
-                  >Logo</button>
+                  >{{ t("Logo") }}</button>
                 </span>
               </div>
               <div class="ctl">
                 <div class="ctl-text">
-                  <span class="ctl-name">Linia podsumowania</span>
-                  <span class="ctl-note">Wiersz pod listą nazywający okienko najbliżej limitu.</span>
+                  <span class="ctl-name">{{ t("Summary line") }}</span>
+                  <span class="ctl-note">{{ t("The row under the list naming the window closest to its limit.") }}</span>
                 </div>
                 <button
                   class="switch"
@@ -1018,12 +1034,10 @@ onUnmounted(() => {
                 </div>
               </template>
               <p v-else class="note">
-                Wykrywanie potrzebuje jednego cyklu producenta — poczekaj chwilę i wróć do tej
-                karty.
+                {{ t("Detection needs one producer cycle - wait a moment and come back to this tab.") }}
               </p>
               <p class="note">
-                Odznaczone wiersze znikają z kafelka AI plan limits. Zmiany zapisują się same
-                i działają bez restartu aplikacji.
+                {{ t("Unchecked rows disappear from the AI plan-limits tile. Changes save themselves and work without an app restart.") }}
               </p>
               <p v-if="aidevError" class="err">{{ aidevError }}</p>
               <p v-else-if="aidevNote" class="note pending">{{ aidevNote }}</p>
@@ -1046,7 +1060,7 @@ onUnmounted(() => {
             <button
               class="hit"
               :tabindex="focused === 'spotify' ? -1 : 0"
-              aria-label="Rozwiń: Spotify"
+              :aria-label="t('Expand: Spotify')"
               @click="focused = 'spotify'"
             ></button>
             <header class="tile-head">
@@ -1054,14 +1068,13 @@ onUnmounted(() => {
               <span class="chip" :class="spotifyChip.ok ? 'ok' : ''">{{ spotifyChip.text }}</span>
             </header>
             <p class="sum">
-              Kafelki sterowania i teraz odtwarzane. Logowanie przez twoją własną aplikację
-              Spotify (PKCE) — dane logowania zostają na tym komputerze.
+              {{ t("Playback control and now-playing tiles. Login through your own Spotify app (PKCE) - the credentials stay on this computer.") }}
             </p>
             <div v-show="focused === 'spotify'" class="detail">
               <div class="ctl">
                 <div class="ctl-text">
                   <span class="ctl-name">Client ID</span>
-                  <span class="ctl-note">Z twojej aplikacji na developer.spotify.com/dashboard.</span>
+                  <span class="ctl-note">{{ t("From your app on developer.spotify.com/dashboard.") }}</span>
                 </div>
                 <span class="spotify-id-line">
                   <input
@@ -1073,22 +1086,22 @@ onUnmounted(() => {
                     aria-label="Spotify Client ID"
                     @keyup.enter="saveSpotifyClientId"
                   />
-                  <button class="act accent" :disabled="spotifyBusy" @click="saveSpotifyClientId">Zapisz</button>
+                  <button class="act accent" :disabled="spotifyBusy" @click="saveSpotifyClientId">{{ t("Save") }}</button>
                 </span>
               </div>
               <div class="ctl">
                 <div class="ctl-text">
                   <span class="ctl-name">Redirect URI</span>
                   <span class="ctl-note mono">{{ spotify.redirectUri }}</span>
-                  <span class="ctl-note">Wpisz go dokładnie tak w ustawieniach swojej aplikacji Spotify.</span>
+                  <span class="ctl-note">{{ t("Enter it exactly like that in your Spotify app's settings.") }}</span>
                 </div>
                 <button class="act" @click="copyRedirectUri">
-                  <i class="fas fa-copy" aria-hidden="true"></i> Kopiuj
+                  <i class="fas fa-copy" aria-hidden="true"></i> {{ t("Copy") }}
                 </button>
               </div>
               <div class="ctl">
                 <div class="ctl-text">
-                  <span class="ctl-name">Konto</span>
+                  <span class="ctl-name">{{ t("Account") }}</span>
                   <span class="ctl-note">{{ spotifyStatusLine }}</span>
                 </div>
                 <button
@@ -1096,34 +1109,32 @@ onUnmounted(() => {
                   class="act danger"
                   :disabled="spotifyBusy"
                   @click="doSpotifyLogout"
-                >Wyloguj</button>
+                >{{ t("Log out") }}</button>
                 <button v-else class="act primary" :disabled="spotifyBusy" @click="doSpotifyLogin">
-                  Zaloguj przez Spotify
+                  {{ t("Log in with Spotify") }}
                 </button>
               </div>
               <p v-if="spotifyError" class="err">{{ spotifyError }}</p>
               <p v-else-if="spotifyNote" class="note pending">{{ spotifyNote }}</p>
               <button class="act spotify-help-toggle" @click="spotifyHelpOpen = !spotifyHelpOpen">
                 <i class="fas" :class="spotifyHelpOpen ? 'fa-chevron-down' : 'fa-chevron-right'" aria-hidden="true"></i>
-                Jak utworzyć aplikację Spotify
+                {{ t("How to create a Spotify app") }}
               </button>
               <ol v-if="spotifyHelpOpen" class="spotify-help">
                 <li>
-                  Otwórz <span class="mono">developer.spotify.com/dashboard</span>, zaloguj się
-                  i wybierz <b>Create app</b>.
+                  {{ t("Open") }} <span class="mono">developer.spotify.com/dashboard</span>{{ t(", log in and pick") }}
+                  <b>Create app</b>.
                 </li>
                 <li>
-                  W polu <b>Redirect URI</b> podaj dokładnie
-                  <span class="mono">{{ spotify.redirectUri }}</span>, a jako API wybierz
+                  {{ t("In the") }} <b>Redirect URI</b> {{ t("field enter exactly") }}
+                  <span class="mono">{{ spotify.redirectUri }}</span>, {{ t("and pick") }}
                   <b>Web API</b>.
                 </li>
                 <li>
-                  Skopiuj <b>Client ID</b> z ustawień aplikacji i wklej go w pole powyżej.
+                  {{ t("Copy the") }} <b>Client ID</b> {{ t("from the app's settings and paste it into the field above.") }}
                 </li>
                 <li>
-                  Kliknij <b>Zaloguj przez Spotify</b> — otworzy się przeglądarka, zatwierdź
-                  dostęp i wróć do Pulpitu. Sterowanie odtwarzaniem wymaga konta Premium; stan
-                  teraz odtwarzanego działa też na Free.
+                  {{ t("Click") }} <b>{{ t("Log in with Spotify") }}</b> {{ t("- a browser opens, approve the access and come back to Pulpit. Playback control requires a Premium account; now-playing status works on Free too.") }}
                 </li>
               </ol>
             </div>
@@ -1133,7 +1144,7 @@ onUnmounted(() => {
 
       <!-- integrations: fully self-contained settings tiles (components/settings) -->
       <section class="row" aria-labelledby="sec-integrations">
-        <h2 id="sec-integrations">Integracje</h2>
+        <h2 id="sec-integrations">{{ t("Integrations") }}</h2>
         <div class="tiles">
           <VoicemeeterSettings
             :focused="focused === 'voicemeeter'"
@@ -1156,17 +1167,16 @@ onUnmounted(() => {
         <div class="confirm-icon">
           <i class="fas fa-user-slash" aria-hidden="true"></i>
         </div>
-        <h2 id="revoke-title">Cofnąć zaufanie?</h2>
+        <h2 id="revoke-title">{{ t("Revoke trust?") }}</h2>
         <p class="confirm-name">{{ confirmRevoke.name }}</p>
         <p class="confirm-warn">
-          Token urządzenia zostanie usunięty, a jego połączenie zamknięte natychmiast.
-          Tablet wróci tylko przez nowe parowanie.
+          {{ t("The device's token will be removed and its connection closed immediately. The tablet only comes back through a new pairing.") }}
         </p>
         <p v-if="revokeError" class="err">{{ revokeError }}</p>
         <div class="confirm-actions">
-          <button ref="cancelBtn" class="act" @click="confirmRevoke = null">Anuluj</button>
+          <button ref="cancelBtn" class="act" @click="confirmRevoke = null">{{ t("Cancel") }}</button>
           <button class="act danger-solid" :disabled="devicesBusy" @click="doRevoke">
-            <i class="fas fa-user-slash" aria-hidden="true"></i> Odwołaj urządzenie
+            <i class="fas fa-user-slash" aria-hidden="true"></i> {{ t("Revoke device") }}
           </button>
         </div>
       </div>
@@ -1223,6 +1233,17 @@ onUnmounted(() => {
 }
 .close:hover { background: var(--tile-2); color: var(--ink); }
 .close:active { transform: scale(0.96); }
+
+/* UI language pick: same dark treatment as the editor's inputs */
+.lang {
+  flex: none;
+  padding: 7px 8px;
+  font-size: 12.5px;
+  background: #171c21;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+}
 
 .wall {
   flex: 1;
