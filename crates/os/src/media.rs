@@ -671,6 +671,10 @@ mod tests {
 
     #[test]
     fn keyed_snapshot_carries_the_digest_but_never_the_art_bytes() {
+        // The idle snapshot reads the process-global locale; pin it so a
+        // concurrent locale test cannot swap the idle text between the
+        // two builds this test compares.
+        let _guard = pin_locale("en");
         let bytes = b"fake-jpg-content";
         let key = art_digest(bytes);
         assert_eq!(key.len(), 64);
