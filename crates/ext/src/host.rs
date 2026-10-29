@@ -35,6 +35,19 @@ pub enum HostEvent {
     Log(String, String),
 }
 
+/// One host-side timer: `once` marks a `setTimeout` (the prelude emulates it
+/// as a self-clearing interval), which does not count as a real interval.
+struct Timer {
+    id: u64,
+    ms: u64,
+    due: Instant,
+    once: bool,
+}
+
+/// Upper bound on one-shot rounds in [`ExtRuntime::run_pending_one_shots`]:
+/// a callback chain that re-arms itself forever must not wedge the probe.
+const ONE_SHOT_ROUNDS: usize = 64;
+
 pub struct ExtRuntime {
     context: Context,
     pub package: String,
@@ -43,7 +56,12 @@ pub struct ExtRuntime {
     pub actions: Vec<String>,
     /// raw `inputs` declarations (button styles + actions for the mapper)
     pub inputs: Vec<Value>,
-    intervals: Vec<(u64, u64, Instant)>, // (id, ms, due)
+    intervals: Vec<Timer>,
+    /// The package used spawn/http/nextTick/setImmediate before its first
+    /// action (see [`ExtRuntime::pinned`]).
+    pinned: bool,
+    /// An action ran: later flag changes no longer pin the package.
+    executed: bool,
 }
 
 impl ExtRuntime {
@@ -117,11 +135,14 @@ impl ExtRuntime {
             actions,
             inputs,
             intervals: Vec::new(),
+            pinned: false,
+            executed: false,
         };
 
         // old-style init hook
         run(&mut rt.context, "if (typeof __ext_instance.initExtension === 'function') __ext_instance.initExtension();")?;
         rt.drain(); // collect intervals started by initExtension
+        rt.refresh_pin();
         Ok(rt)
     }
 
@@ -134,6 +155,7 @@ impl ExtRuntime {
             escape_js(action),
             escape_js(&args_json)
         );
+        self.executed = true;
         run(&mut self.context, &code)?;
         Ok(self.drain())
     }
@@ -144,7 +166,9 @@ impl ExtRuntime {
         if run(&mut self.context, &code).is_err() {
             return Vec::new();
         }
-        self.drain()
+        let events = self.drain();
+        self.refresh_pin();
+        events
     }
 
     /// Collect pending events (set values, interval registrations) and
@@ -183,9 +207,14 @@ impl ExtRuntime {
                         .and_then(Value::as_u64)
                         .unwrap_or(1000)
                         .max(100);
-                    self.intervals.retain(|(eid, _, _)| *eid != id);
-                    self.intervals
-                        .push((id, ms, Instant::now() + Duration::from_millis(ms)));
+                    let once = iv.get("once").and_then(Value::as_bool).unwrap_or(false);
+                    self.intervals.retain(|t| t.id != id);
+                    self.intervals.push(Timer {
+                        id,
+                        ms,
+                        due: Instant::now() + Duration::from_millis(ms),
+                        once,
+                    });
                     events.push(HostEvent::IntervalStart(id, ms));
                 }
                 for id in json
@@ -195,7 +224,7 @@ impl ExtRuntime {
                     .unwrap_or_default()
                 {
                     let id = id.as_u64().unwrap_or(0);
-                    self.intervals.retain(|(eid, _, _)| *eid != id);
+                    self.intervals.retain(|t| t.id != id);
                     events.push(HostEvent::IntervalClear(id));
                 }
             }
@@ -209,16 +238,15 @@ impl ExtRuntime {
         let due: Vec<u64> = self
             .intervals
             .iter()
-            .filter(|(_, _, d)| *d <= now)
-            .map(|(id, _, _)| *id)
+            .filter(|t| t.due <= now)
+            .map(|t| t.id)
             .collect();
         let mut events = Vec::new();
         for id in due {
             tracing::debug!(package = %self.package, timer = id, intervals = self.intervals.len(), "timer tick");
             events.extend(self.tick(id));
-            if let Some(entry) = self.intervals.iter_mut().find(|(eid, _, _)| *eid == id) {
-                let ms = entry.1;
-                entry.2 = Instant::now() + Duration::from_millis(ms);
+            if let Some(entry) = self.intervals.iter_mut().find(|t| t.id == id) {
+                entry.due = Instant::now() + Duration::from_millis(entry.ms);
             }
         }
         events
@@ -226,19 +254,75 @@ impl ExtRuntime {
 
     /// Minimum tick granularity needed by this runtime.
     pub fn tick_granularity(&self) -> Duration {
-        let min = self
-            .intervals
-            .iter()
-            .map(|(_, ms, _)| *ms)
-            .min()
-            .unwrap_or(1000);
+        let min = self.intervals.iter().map(|t| t.ms).min().unwrap_or(1000);
         Duration::from_millis(min.clamp(100, 60_000))
     }
 
-    /// Did the package register timers while loading? Timer-driven
-    /// extensions must stay resident or their pushed values stop.
+    /// Is any timer pending, one-shots included? A runtime with none left
+    /// has nothing to wait for.
     pub fn has_timers(&self) -> bool {
         !self.intervals.is_empty()
+    }
+
+    /// Time until the earliest pending timer is due (at least 1 ms), or
+    /// `None` when nothing is pending.
+    pub fn next_due_in(&self) -> Option<Duration> {
+        let now = Instant::now();
+        self.intervals
+            .iter()
+            .map(|t| t.due.saturating_duration_since(now))
+            .min()
+            .map(|d| d.max(Duration::from_millis(1)))
+    }
+
+    /// Is a real `setInterval` registered? One-shots do not count: they
+    /// fire once and are gone.
+    pub fn has_real_intervals(&self) -> bool {
+        self.intervals.iter().any(|t| !t.once)
+    }
+
+    /// Did the package use spawn/http/nextTick/setImmediate before its
+    /// first action? Such a package stays resident even with no interval
+    /// left (its in-memory state and callbacks are live), unlike an
+    /// execute-only one whose runtime is disposable.
+    pub fn pinned(&self) -> bool {
+        self.pinned
+    }
+
+    fn refresh_pin(&mut self) {
+        if self.executed || self.pinned {
+            return;
+        }
+        if let Ok(v) = run(&mut self.context, "__keep_resident") {
+            self.pinned = v.as_boolean().unwrap_or(false);
+        }
+    }
+
+    /// Fire every pending one-shot now, repeating while callbacks register
+    /// more. The load probe uses it to learn what the package keeps once its
+    /// `setTimeout(cb, 0)` initializers have run: a one-shot may register a
+    /// real interval, so classification must come after, not before.
+    pub fn run_pending_one_shots(&mut self) -> Vec<HostEvent> {
+        let mut events = Vec::new();
+        for _ in 0..ONE_SHOT_ROUNDS {
+            let mut batch: Vec<(u64, u64)> = self
+                .intervals
+                .iter()
+                .filter(|t| t.once)
+                .map(|t| (t.ms, t.id))
+                .collect();
+            if batch.is_empty() {
+                break;
+            }
+            batch.sort_unstable();
+            for (_, id) in batch {
+                events.extend(self.tick(id));
+                // a failed tick skips the drain; the one-shot is spent
+                // regardless
+                self.intervals.retain(|t| t.id != id);
+            }
+        }
+        events
     }
 }
 
