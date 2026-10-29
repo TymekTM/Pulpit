@@ -121,9 +121,9 @@ fn now_playing_payload(player: Option<&Value>) -> Value {
         "rows": [],
     });
     let Some(player) = player else {
-        payload["rows"] = json!([{ "label": "Status", "value": "Nothing playing" }]);
-        payload["compact"] = json!("Nothing playing");
-        payload["summary"] = json!("Nothing playing");
+        payload["rows"] = json!([{ "label": "Status", "value": "Nic nie jest odtwarzane" }]);
+        payload["compact"] = json!("Nic nie jest odtwarzane");
+        payload["summary"] = json!("Nic nie jest odtwarzane");
         return payload;
     };
     let track = track_name(player);
@@ -145,9 +145,9 @@ fn now_playing_payload(player: Option<&Value>) -> Value {
     }
     if rows.is_empty() {
         // a player object without an item (ad breaks report no item)
-        rows.push(json!({ "label": "Status", "value": "Nothing playing" }));
-        payload["compact"] = json!("Nothing playing");
-        payload["summary"] = json!("Nothing playing");
+        rows.push(json!({ "label": "Status", "value": "Nic nie jest odtwarzane" }));
+        payload["compact"] = json!("Nic nie jest odtwarzane");
+        payload["summary"] = json!("Nic nie jest odtwarzane");
     } else {
         let compact = if artist.is_empty() {
             track.clone()
@@ -382,7 +382,7 @@ mod tests {
         assert_eq!(idle["spotify-progress"], "0.000");
         assert_eq!(idle["spotify-art-url"], "");
         let payload = &idle["spotify-now-playing"];
-        assert_eq!(payload["rows"][0]["value"], "Nothing playing");
+        assert_eq!(payload["rows"][0]["value"], "Nic nie jest odtwarzane");
         assert!(payload.get("progress").is_none());
         // idle payloads still name their brand
         assert_eq!(payload["provider"], "spotify");
