@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+pub mod art;
 pub mod media;
 pub mod spotify;
 

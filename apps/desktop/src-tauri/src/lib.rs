@@ -574,6 +574,12 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
             }
         }
     };
+    // One cover-art LRU for both art-importing producers (Spotify +
+    // system media): each used to keep a private eviction deque that
+    // could not see the other lane's live covers and could delete a
+    // byte-identical cover out from under it. The SAME Arc goes to both
+    // pumps below - that per-host sharing is the fix (pulpit_host::art).
+    let art_lru = Arc::new(pulpit_host::art::SharedArtLru::new());
     // Fresh pairings need the operator's approval (audit B2 step 6): the
     // gate asks in a native dialog. The session bounds the wait by the
     // pairing-code TTL, so an unanswered dialog (nobody at the desk)
@@ -672,6 +678,7 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
                     feed.clone(),
                     pulpit_spotify::spawn_push(spotify.clone(), consumers),
                     v2.as_ref().map(|v2| v2.assets.clone()),
+                    art_lru.clone(),
                 ));
             }
             None => {
@@ -705,6 +712,7 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
             feed.clone(),
             pulpit_os::media::spawn_push(consumers),
             v2.as_ref().map(|v2| v2.assets.clone()),
+            art_lru.clone(),
         ));
     }
 

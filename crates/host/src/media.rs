@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
+use crate::art::{delete_evicted, SharedArtLru};
 use crate::{forward_snapshot, ClientFeed, ProducerGate, StatusApp};
 
 pub const ART_DATA_KEY: &str = pulpit_os::media::ART_DATA_KEY;
@@ -74,6 +75,7 @@ fn lru_remember(
 
 fn resolve_art(
     lru: &Mutex<VecDeque<(String, String)>>,
+    shared: &SharedArtLru,
     art: Option<(Vec<u8>, String)>,
     assets: Option<&Arc<pulpit_v2::AssetStore>>,
 ) -> Option<String> {
@@ -87,39 +89,41 @@ fn resolve_art(
     hasher.update(&bytes);
     let art_key = hex::encode(hasher.finalize());
 
+    // A memo hit still touches the shared LRU: the other lane's
+    // eviction decision must see this cover as live.
     if let Some(hash) = lru_lookup(&mut lru.lock().unwrap(), &art_key) {
+        delete_evicted(shared.touch(&hash), assets, "smtc thumbnail");
         return Some(hash);
     }
 
     let hash = assets.import_bytes(&bytes, &ext).ok()?;
-    let store = assets.clone();
+    // The memo only skips re-imports now; deletions belong to the
+    // shared LRU, so its own eviction callback is a no-op.
     lru_remember(
         &mut lru.lock().unwrap(),
         art_key,
         hash.clone(),
-        &mut |evicted| {
-            if store.remove(evicted) {
-                tracing::debug!(
-                    hash = evicted,
-                    "evicted smtc thumbnail from the asset store"
-                );
-            }
-        },
+        &mut |_evicted: &str| {},
     );
+    delete_evicted(shared.touch(&hash), assets, "smtc thumbnail");
     Some(hash)
 }
 
 /// The SMTC media producer pump: receiver in, three client lanes out.
+/// `art` is the host-wide cover-art LRU ([`crate::art`]) - the SAME
+/// instance the Spotify pump got, so neither lane can delete the other
+/// lane's live covers.
 pub async fn forward_media<F: ClientFeed>(
     feed: Arc<F>,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Value>,
     assets: Option<Arc<pulpit_v2::AssetStore>>,
+    art: Arc<SharedArtLru>,
 ) {
     let lru = Mutex::new(VecDeque::new());
     let mut gate = ProducerGate::default();
     while let Some(mut snapshot) = rx.recv().await {
-        let art = take_art_data(&mut snapshot);
-        let hash = resolve_art(&lru, art, assets.as_ref());
+        let art_data = take_art_data(&mut snapshot);
+        let hash = resolve_art(&lru, &art, art_data, assets.as_ref());
         attach_image(&mut snapshot, hash.as_deref());
         forward_snapshot(&*feed, StatusApp::CustomValue, &mut gate, &snapshot).await;
     }
@@ -178,8 +182,9 @@ mod tests {
 
         let pump_feed = feed.clone();
         let pump_assets = Some(assets.clone());
+        let art = Arc::new(SharedArtLru::new());
         let pump = tokio::spawn(async move {
-            forward_media(pump_feed, rx, pump_assets).await;
+            forward_media(pump_feed, rx, pump_assets, art).await;
         });
 
         use base64::Engine as _;

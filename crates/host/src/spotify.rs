@@ -7,8 +7,9 @@
 //! The internal `spotify-art-url` key (the raw cover URL) must NEVER
 //! reach a client: it is stripped from every snapshot before anything
 //! is forwarded. The URL is resolved to a content-addressed asset hash
-//! once per album (LRU of the last 32, evicted entries are deleted from
-//! the store again - the Spotify ToS allows temporary caching only),
+//! once per album (a private URL-keyed memo skips re-downloads;
+//! deletions belong to the shared, hash-keyed [`crate::art::SharedArtLru`]
+//! both art lanes use - the Spotify ToS allows temporary caching only),
 //! and the hash lands in the now-playing payload's `image` field.
 
 use std::collections::VecDeque;
@@ -17,6 +18,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
+use crate::art::{delete_evicted, SharedArtLru};
 use crate::{forward_snapshot, ClientFeed, ProducerGate, StatusApp};
 
 /// The poller's host-consumed key carrying the raw cover URL
@@ -103,13 +105,17 @@ fn lru_remember(
 /// text-only and simply retries on a later poll.
 async fn resolve_art(
     lru: &Mutex<VecDeque<(String, String)>>,
+    shared: &SharedArtLru,
     url: Option<String>,
     assets: Option<&Arc<pulpit_v2::AssetStore>>,
     fetch: ArtFetch,
 ) -> Option<String> {
     let url = url.filter(|u| !u.is_empty())?;
     let assets = assets?;
+    // A memo hit still touches the shared LRU: the other lane's
+    // eviction decision must see this cover as live.
     if let Some(hash) = lru_lookup(&mut lru.lock().unwrap(), &url) {
+        delete_evicted(shared.touch(&hash), assets, "spotify album art");
         return Some(hash);
     }
     // download + import off the async runtime (ureq blocks)
@@ -120,20 +126,15 @@ async fn resolve_art(
     .await
     .ok()??;
     let hash = assets.import_bytes(&bytes, ext).ok()?;
-    let store = assets.clone();
+    // The memo only skips re-downloads now; deletions belong to the
+    // shared LRU, so its own eviction callback is a no-op.
     lru_remember(
         &mut lru.lock().unwrap(),
         url,
         hash.clone(),
-        &mut |evicted| {
-            if store.remove(evicted) {
-                tracing::debug!(
-                    hash = evicted,
-                    "evicted spotify album art from the asset store"
-                );
-            }
-        },
+        &mut |_evicted: &str| {},
     );
+    delete_evicted(shared.touch(&hash), assets, "spotify album art");
     Some(hash)
 }
 
@@ -195,14 +196,18 @@ fn art_agent() -> ureq::Agent {
 /// client lanes out ([`forward_snapshot`] under [`StatusApp::CustomValue`],
 /// like every custom-value producer). `assets` is `None` when the v2
 /// stack failed to start - snapshots are forwarded without `image` then.
+/// `art` is the host-wide cover-art LRU ([`crate::art`]) - the SAME
+/// instance the SMTC pump got, so neither lane can delete the other
+/// lane's live covers.
 pub async fn forward_spotify<F: ClientFeed>(
     feed: Arc<F>,
     rx: tokio::sync::mpsc::UnboundedReceiver<Value>,
     assets: Option<Arc<pulpit_v2::AssetStore>>,
+    art: Arc<SharedArtLru>,
 ) {
     let agent = art_agent();
     let fetch: ArtFetch = Arc::new(move |url: &str| download_art(&agent, url));
-    forward_spotify_with(feed, rx, assets, fetch).await;
+    forward_spotify_with(feed, rx, assets, fetch, art).await;
 }
 
 /// The pump body with the fetch seam exposed (tests script it, no
@@ -214,12 +219,13 @@ async fn forward_spotify_with<F: ClientFeed>(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Value>,
     assets: Option<Arc<pulpit_v2::AssetStore>>,
     fetch: ArtFetch,
+    art: Arc<SharedArtLru>,
 ) {
     let lru = Mutex::new(VecDeque::new());
     let mut gate = ProducerGate::default();
     while let Some(mut snapshot) = rx.recv().await {
         let art_url = take_art_url(&mut snapshot);
-        let hash = resolve_art(&lru, art_url, assets.as_ref(), fetch.clone()).await;
+        let hash = resolve_art(&lru, &art, art_url, assets.as_ref(), fetch.clone()).await;
         attach_image(&mut snapshot, hash.as_deref());
         forward_snapshot(&*feed, StatusApp::CustomValue, &mut gate, &snapshot).await;
     }
@@ -400,8 +406,9 @@ mod tests {
         });
         let pump_feed = feed.clone();
         let assets_for_pump = Some(assets.clone());
+        let art = Arc::new(SharedArtLru::new());
         let pump = tokio::spawn(async move {
-            forward_spotify_with(pump_feed, rx, assets_for_pump, fetch).await;
+            forward_spotify_with(pump_feed, rx, assets_for_pump, fetch, art).await;
         });
 
         tx.send(snapshot_with_art()).unwrap();
@@ -466,8 +473,9 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let fetch: ArtFetch = Arc::new(|_url: &str| panic!("must not download without a store"));
         let pump_feed = feed.clone();
+        let art = Arc::new(SharedArtLru::new());
         let pump = tokio::spawn(async move {
-            forward_spotify_with(pump_feed, rx, None, fetch).await;
+            forward_spotify_with(pump_feed, rx, None, fetch, art).await;
         });
         tx.send(snapshot_with_art()).unwrap();
         drop(tx);
@@ -482,6 +490,8 @@ mod tests {
 
     #[tokio::test]
     async fn eviction_removes_only_the_hashes_this_pump_created() {
+        use crate::art::SHARED_ART_LRU_CAP;
+
         let dir = tempfile::tempdir().unwrap();
         let assets = Arc::new(pulpit_v2::AssetStore::open(dir.path().to_path_buf()).unwrap());
         // a board image the pump never touched must survive the LRU churn
@@ -492,11 +502,12 @@ mod tests {
         let fetch: ArtFetch =
             Arc::new(|url: &str| Some((format!("art-{url}").into_bytes(), "jpg" as &'static str)));
         let assets_for_pump = Some(assets.clone());
+        let art = Arc::new(SharedArtLru::new());
         let pump_feed = feed.clone();
         let pump = tokio::spawn(async move {
-            forward_spotify_with(pump_feed, rx, assets_for_pump, fetch).await;
+            forward_spotify_with(pump_feed, rx, assets_for_pump, fetch, art).await;
         });
-        let count = ART_LRU_CAP + 4;
+        let count = SHARED_ART_LRU_CAP + 4;
         for i in 0..count {
             tx.send(serde_json::json!({
                 "spotify-art-url": format!("https://i.scdn.co/image/{i}"),
@@ -516,14 +527,115 @@ mod tests {
                 .expect("art hash attached")
                 .to_string()
         };
-        // the LRU holds the last 32: the first 4 hashes were evicted and
-        // deleted from the store, everything newer is still served
+        // the shared LRU holds the last 64: the first 4 hashes fell out
+        // of the cap and were deleted from the store, everything newer
+        // is still served
         assert!(assets.get(&hash_of(0)).is_none(), "evicted art is deleted");
         assert!(assets.get(&hash_of(3)).is_none());
         assert!(assets.get(&hash_of(4)).is_some());
         assert!(assets.get(&hash_of(count - 1)).is_some());
         // the board image the pump never created was never touched
         assert!(assets.get(&board_hash).is_some());
+    }
+
+    /// The class the per-lane LRUs could not see: byte-identical art
+    /// imported by both lanes collides on one content-addressed hash,
+    /// and one lane's eviction must not delete the hash the other
+    /// lane's payload still references. One shared LRU, both pumps, one
+    /// store: producer A churns past the combined cap while producer B
+    /// keeps re-touching its album - B's cover must survive.
+    #[tokio::test]
+    async fn cross_lane_churn_never_deletes_the_other_lanes_live_cover() {
+        use crate::art::SHARED_ART_LRU_CAP;
+        use crate::media::forward_media;
+
+        let dir = tempfile::tempdir().unwrap();
+        let assets = Arc::new(pulpit_v2::AssetStore::open(dir.path().to_path_buf()).unwrap());
+        let art = Arc::new(SharedArtLru::new());
+
+        // Producer B (Spotify): one album, imported once, kept live.
+        let spotify_feed = feed();
+        let (b_tx, b_rx) = tokio::sync::mpsc::unbounded_channel();
+        let fetch: ArtFetch = Arc::new(|url: &str| {
+            Some((format!("spotify-art-{url}").into_bytes(), "jpg" as &'static str))
+        });
+        let b_assets = Some(assets.clone());
+        let b_art = art.clone();
+        let b_feed = spotify_feed.clone();
+        let pump_b = tokio::spawn(async move {
+            forward_spotify_with(b_feed, b_rx, b_assets, fetch, b_art).await;
+        });
+        let album_url = "https://i.scdn.co/image/shared-album";
+        let b_snapshot = |i: usize| {
+            serde_json::json!({
+                "spotify-playing": "ON",
+                "spotify-art-url": album_url,
+                "spotify-now-playing": { "title": "B", "rows": [], "compact": i.to_string() },
+            })
+        };
+        b_tx.send(b_snapshot(usize::MAX)).unwrap();
+
+        // Producer A (SMTC): more distinct covers than the shared cap,
+        // B's album re-touched after every one of A's pushes.
+        let media_feed = feed();
+        let (a_tx, a_rx) = tokio::sync::mpsc::unbounded_channel();
+        let a_assets = Some(assets.clone());
+        let a_art = art.clone();
+        let a_feed = media_feed.clone();
+        let pump_a = tokio::spawn(async move {
+            forward_media(a_feed, a_rx, a_assets, a_art).await;
+        });
+        use base64::Engine as _;
+        let count = SHARED_ART_LRU_CAP + 1;
+        for i in 0..count {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(format!("smtc-cover-{i}"));
+            a_tx.send(serde_json::json!({
+                "media-playing": "ON",
+                "media-now-playing": { "title": format!("Track {i}"), "rows": [] },
+                "media-art-data": b64,
+                "media-art-ext": "jpg",
+            }))
+            .unwrap();
+            b_tx.send(b_snapshot(i)).unwrap();
+        }
+        drop(a_tx);
+        drop(b_tx);
+        pump_a.await.unwrap();
+        pump_b.await.unwrap();
+
+        // B's album resolved to one live hash throughout
+        let b_emits = spotify_feed.emits.lock().unwrap();
+        assert_eq!(b_emits.len(), count + 1);
+        let album_hash = b_emits[0]["data"]["spotify-now-playing"]["image"]
+            .as_str()
+            .expect("album hash attached")
+            .to_string();
+        for emit in b_emits.iter() {
+            assert_eq!(
+                emit["data"]["spotify-now-playing"]["image"].as_str(),
+                Some(album_hash.as_str()),
+                "B's album resolves to one hash throughout"
+            );
+        }
+        // ... and that hash was never returned for deletion: the file
+        // survived A's churn
+        assert!(
+            assets.get(&album_hash).is_some(),
+            "the other lane's live cover must not be evicted"
+        );
+
+        // the churn did evict: A's covers beyond the shared cap are gone
+        let a_emits = media_feed.emits.lock().unwrap();
+        assert_eq!(a_emits.len(), count);
+        let a_hash = |i: usize| {
+            a_emits[i]["data"]["media-now-playing"]["image"]
+                .as_str()
+                .expect("cover hash attached")
+                .to_string()
+        };
+        assert!(assets.get(&a_hash(0)).is_none(), "A's oldest covers were evicted");
+        assert!(assets.get(&a_hash(1)).is_none());
+        assert!(assets.get(&a_hash(count - 1)).is_some());
     }
 
     #[tokio::test]
