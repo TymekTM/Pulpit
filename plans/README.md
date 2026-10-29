@@ -28,7 +28,7 @@ when done.
 | 014 | M8 discovery: Bluetooth-style pairing (mDNS + shared verification code) | P2 | M | - | DONE (`5f9e416` + fixes; mDNS advertise, pair-request + poll, Auto/Manual modes, custom in-app popup `2ef6cb6`; ADR-013). M8 leftovers (plugin API, APK sideload, updater) stay unchecked in ROADMAP |
 | 015 | Unify the idle now-playing text on the Polish string | P3 | S | - | DONE (executor GLM-5.3-Flash, reviewed; commit `a54646b`) |
 | 016 | Fix the multi-range doc on `parse_byte_range` (416, not full body) | P3 | S | - | DONE (executor GLM-5.3-Flash, reviewed; commit `1e7ea4a`; closes the deferred nit below) |
-| 017 | Gate the Discord pipe transport so the workspace builds off-Windows | P2 | M | - | TODO (round 5) |
+| 017 | Gate the Discord pipe transport so the workspace builds off-Windows | P2 | M | - | DONE (executor Claude Sonnet 5.5, reviewed; commit `afc3316`; Windows-side verification: msvc cross-check for Rust types + CI windows-latest for the full build) |
 | 018 | Share one art LRU across the two media producers | P3 | S-M | 017 (for Linux host tests) | TODO (round 5) |
 
 Plans 006-011 come from the second audit (see "Round 2: mobile battery
