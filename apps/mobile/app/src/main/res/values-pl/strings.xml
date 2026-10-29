@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Polish. Stosowane automatycznie przy systemowych ustawieniach
+     regionalnych pl - klient nie ma własnego przełącznika języka. -->
+<resources>
+
+    <!-- App identity -->
+    <string name="app_name">Pulpit</string>
+
+    <!-- Connect screen: identity, address fields, connect/pair actions -->
+    <string name="main_connect_subtitle">połącz się z serwerem na komputerze</string>
+    <string name="main_field_host">Adres IP komputera</string>
+    <string name="main_field_port">Port</string>
+    <string name="main_field_device_name">Nazwa urządzenia</string>
+    <string name="main_paired_hint">sparowano - Połącz używa zapisanego tokenu urządzenia</string>
+    <string name="main_battery_whitelist">Zezwól na pracę w tle (omijaj oszczędzanie baterii)</string>
+    <string name="main_forget_pairing">Zapomnij parowanie</string>
+    <string name="main_connecting_to">Łączenie z %1$s:%2$d…</string>
+    <string name="main_connect">Połącz</string>
+    <string name="main_pair">Paruj</string>
+
+    <!-- Connect screen: pairing modes and discovery -->
+    <string name="pair_mode_auto">Auto (w sieci)</string>
+    <string name="pair_mode_manual">Ręcznie (kod)</string>
+    <string name="pair_confirm_match">Potwierdź na komputerze, że kody są zgodne…</string>
+    <string name="pair_cancel">Przerwij</string>
+    <string name="pair_searching">Szukam komputerów w sieci… (upewnij się, że Pulpit działa)</string>
+    <string name="pair_code_field">Kod parowania (na komputerze: "Generuj kod parowania")</string>
+    <string name="pair_usb_button">Przez USB (adb reverse) - wstaw 127.0.0.1</string>
+    <string name="pair_usb_command">na PC: adb reverse tcp:8500 tcp:8500</string>
+
+    <!-- Exit confirmation (Back on the deck) -->
+    <string name="main_exit_title">Wyjść do menu głównego?</string>
+    <string name="main_exit_message">Połączenie z komputerem zostanie zamknięte.</string>
+    <string name="main_yes">Tak</string>
+    <string name="main_no">Nie</string>
+
+    <!-- Server-shutdown standby screen -->
+    <string name="main_goodnight">Dobranoc</string>
+    <string name="main_goodbye">Do widzenia</string>
+    <string name="main_shutdown_hint">Serwer został zamknięty. Dotknij, aby połączyć ponownie.</string>
+
+    <!-- Haptics settings -->
+    <string name="main_haptics_title">Wibracje</string>
+    <string name="main_haptics_on">Włączone (%1$s)</string>
+    <string name="main_haptics_off">Wyłączone</string>
+    <string name="main_haptic_light">Lekkie</string>
+    <string name="main_haptic_normal">Normalne</string>
+    <string name="main_haptic_strong">Mocne</string>
+
+    <!-- Keep-alive foreground service notification -->
+    <string name="main_notification_channel">Łącze z Pulpitem</string>
+    <string name="main_notification_text">utrzymuje łącze z serwerem</string>
+    <string name="main_notification_disconnect">Rozłącz</string>
+    <string name="main_link_connected">połączony z %1$s</string>
+    <string name="main_link_connecting">łączy się z %1$s…</string>
+    <string name="main_link_server_down">serwer zamknięty - czeka</string>
+    <string name="main_link_unreachable">serwer nieosiągalny - próbuje dalej</string>
+    <string name="main_link_refused">parowanie odrzucone</string>
+    <string name="main_link_disconnected">rozłączony</string>
+
+    <!-- Connection errors: address form -->
+    <string name="main_error_blank_host">podaj adres komputera</string>
+    <string name="main_error_bad_port">port musi być z zakresu 1-65535</string>
+    <string name="main_error_bad_address">"%1$s" nie jest prawidłowym adresem</string>
+    <string name="main_error_invalid_address">nieprawidłowy adres: %1$s</string>
+
+    <!-- Connection errors: credentials and pairing -->
+    <string name="main_error_no_credentials">brak tokenu lub kodu parowania</string>
+    <string name="main_error_not_paired">urządzenie niesparowane - wpisz kod parowania</string>
+    <string name="main_error_pairing_failed">parowanie nie powiodło się - wygeneruj nowy kod na komputerze</string>
+    <string name="main_error_pair_request_failed">żądanie parowania nie powiodło się</string>
+    <string name="main_error_pair_busy">Na komputerze trwa już inne parowanie - spróbuj za chwilę</string>
+    <string name="main_error_pair_http_rejected">Komputer odrzucił żądanie (HTTP %1$s)</string>
+    <string name="main_error_pair_rejected">komputer odrzucił parowanie</string>
+    <string name="main_error_pair_timeout">komputer nie odpowiedział w czasie</string>
+    <string name="main_error_pair_decision_expired">żądanie wygasło - uruchom parowanie ponownie</string>
+    <string name="main_error_connection_failed">połączenie nie powiodło się</string>
+
+    <!-- Connection errors: fatal refusals (error-frame codes) -->
+    <string name="main_error_pair_invalid">nieprawidłowy kod parowania - wygeneruj nowy na komputerze</string>
+    <string name="main_error_pair_code_expired">kod parowania wygasł - wygeneruj nowy na komputerze</string>
+    <string name="main_error_unauthorized">urządzenie odwołane na komputerze - sparuj ponownie</string>
+    <string name="main_error_outdated_client">ta aplikacja jest zbyt stara dla komputera - zaktualizuj ją</string>
+    <string name="main_error_refused">komputer odrzucił połączenie (%1$s)</string>
+
+    <!-- Board screen: link overlay status and the switcher chip -->
+    <string name="board_syncing">Synchronizacja tablic…</string>
+    <string name="board_connecting">Łączenie…</string>
+    <string name="board_reconnecting_attempt">Ponawianie połączenia (próba %1$d)…</string>
+    <string name="board_disconnected">Rozłączono - ponawiam…</string>
+    <string name="board_disconnected_attempt">Rozłączono - ponawiam (próba %1$d)…</string>
+    <string name="board_name_fallback">tablica %1$d</string>
+
+    <!-- Tool tiles: countdown timer, stopwatch, counter status lines -->
+    <string name="tile_timer_finished">KONIEC!</string>
+    <string name="tile_running">Działa</string>
+    <string name="tile_paused">Pauza</string>
+    <string name="tile_ready">Gotowy</string>
+    <string name="tile_counter_default">Licznik</string>
+
+</resources>

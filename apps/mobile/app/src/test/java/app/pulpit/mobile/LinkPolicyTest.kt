@@ -6,7 +6,7 @@ package app.pulpit.mobile
 import app.pulpit.mobile.net.ConnState
 import app.pulpit.mobile.state.closesLinkOnBackground
 import app.pulpit.mobile.state.keepsScreenOn
-import app.pulpit.mobile.state.linkStatusLine
+import app.pulpit.mobile.state.linkStatus
 import app.pulpit.mobile.state.showsBoard
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,12 +35,16 @@ class LinkPolicyTest {
 
     @Test
     fun statusLineNamesEveryState() {
-        assertEquals("połączony z 192.0.2.1", linkStatusLine(ConnState.Connected("192.0.2.1", 8500), "192.0.2.1"))
-        assertEquals("łączy się z 192.0.2.1...", linkStatusLine(ConnState.Connecting("192.0.2.1", 8500), "192.0.2.1"))
-        assertEquals("serwer zamknięty - czeka", linkStatusLine(ConnState.ServerDown, "h"))
-        assertEquals("serwer nieosiągalny - próbuje dalej", linkStatusLine(ConnState.Failed("timeout"), "h"))
-        assertEquals("parowanie odrzucone", linkStatusLine(ConnState.Failed("bad code", retryable = false), "h"))
-        assertEquals("rozłączony", linkStatusLine(ConnState.Disconnected, "h"))
+        // the notification line is resource-backed (EN default +
+        // values-pl override), so the mapping is pinned per state
+        assertEquals(R.string.main_link_connected, linkStatus(ConnState.Connected("192.0.2.1", 8500), "192.0.2.1").resId)
+        assertEquals("192.0.2.1", linkStatus(ConnState.Connected("192.0.2.1", 8500), "192.0.2.1").arg)
+        assertEquals(R.string.main_link_connecting, linkStatus(ConnState.Connecting("192.0.2.1", 8500), "192.0.2.1").resId)
+        assertEquals("192.0.2.1", linkStatus(ConnState.Connecting("192.0.2.1", 8500), "192.0.2.1").arg)
+        assertEquals(R.string.main_link_server_down, linkStatus(ConnState.ServerDown, "h").resId)
+        assertEquals(R.string.main_link_unreachable, linkStatus(ConnState.Failed("timeout"), "h").resId)
+        assertEquals(R.string.main_link_refused, linkStatus(ConnState.Failed("bad code", retryable = false), "h").resId)
+        assertEquals(R.string.main_link_disconnected, linkStatus(ConnState.Disconnected, "h").resId)
     }
 
     @Test

@@ -4,6 +4,7 @@
 package app.pulpit.mobile.state
 
 import android.content.Context
+import app.pulpit.mobile.R
 import app.pulpit.mobile.net.ConnState
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -18,7 +19,7 @@ const val LINK_STANDBY_MS = 3 * 60_000L
  *  The service flips [keepLinkInBackground]; the ViewModel mirrors the
  *  link line into [status] for the notification. */
 object LinkBus {
-    val status = MutableStateFlow("")
+    val status = MutableStateFlow<LinkStatus?>(null)
 
     /** True while the keep-alive service is up: background keeps the
      *  link open (see [closesLinkOnBackground]). */
@@ -48,15 +49,20 @@ fun showsBoard(
 fun keepsScreenOn(showsBoard: Boolean, linkStandby: Boolean): Boolean =
     showsBoard && !linkStandby
 
-/** One line for the keep-alive service notification (and Plog): what
- *  the link is doing, in deck terms. */
-fun linkStatusLine(conn: ConnState, host: String): String = when (conn) {
-    is ConnState.Connected -> "połączony z $host"
-    is ConnState.Connecting -> "łączy się z $host..."
-    is ConnState.ServerDown -> "serwer zamknięty - czeka"
+/** One line for the keep-alive service notification: what the link is
+ *  doing, in deck terms. Resource-backed (with the optional host
+ *  argument), so the notification follows the system locale; the
+ *  service resolves it with getString at build time. */
+data class LinkStatus(val resId: Int, val arg: String? = null)
+
+fun linkStatus(conn: ConnState, host: String): LinkStatus = when (conn) {
+    is ConnState.Connected -> LinkStatus(R.string.main_link_connected, host)
+    is ConnState.Connecting -> LinkStatus(R.string.main_link_connecting, host)
+    is ConnState.ServerDown -> LinkStatus(R.string.main_link_server_down)
     is ConnState.Failed ->
-        if (conn.retryable) "serwer nieosiągalny - próbuje dalej" else "parowanie odrzucone"
-    is ConnState.Disconnected -> "rozłączony"
+        if (conn.retryable) LinkStatus(R.string.main_link_unreachable)
+        else LinkStatus(R.string.main_link_refused)
+    is ConnState.Disconnected -> LinkStatus(R.string.main_link_disconnected)
 }
 
 /** Pure background decision (ROADMAP M4 vs plan 008): the socket closes

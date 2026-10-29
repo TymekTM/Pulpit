@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
@@ -68,6 +69,7 @@ import app.pulpit.mobile.net.numericValue
 import app.pulpit.mobile.proto.Board
 import app.pulpit.mobile.proto.ChannelInfo
 import app.pulpit.mobile.proto.V2
+import app.pulpit.mobile.R
 import app.pulpit.mobile.state.PulpitViewModel
 import kotlinx.serialization.json.JsonElement
 
@@ -245,15 +247,18 @@ private fun BoardSwitcher(
     }
 }
 
-/** Center status for the link overlay, or null when the link is healthy. */
+/** Center status for the link overlay, or null when the link is healthy.
+ *  Composable so the status lines come from string resources. */
+@Composable
 private fun statusFor(conn: ConnState, hasBoards: Boolean, attempt: Int): String? = when {
-    conn is ConnState.Connected && !hasBoards -> "Syncing boards..."
+    conn is ConnState.Connected && !hasBoards -> stringResource(R.string.board_syncing)
     conn is ConnState.Connected -> null
     conn is ConnState.Connecting ->
-        if (attempt > 0) "Reconnecting (attempt $attempt)..." else "Connecting..."
+        if (attempt > 0) stringResource(R.string.board_reconnecting_attempt, attempt)
+        else stringResource(R.string.board_connecting)
     else ->
-        if (attempt > 0) "Disconnected - retrying (attempt $attempt)..."
-        else "Disconnected - retrying..."
+        if (attempt > 0) stringResource(R.string.board_disconnected_attempt, attempt)
+        else stringResource(R.string.board_disconnected)
 }
 
 /** Small translucent board switcher in the corner - replaces the top bar. */
@@ -264,8 +269,10 @@ private fun BoardChip(vm: PulpitViewModel) {
     var menuOpen by remember { mutableStateOf(false) }
 
     Box(Modifier.padding(10.dp)) {
+        // board.name is payload (the host's own board title); the app
+        // name only stands in when no board is open yet
         Text(
-            text = board?.name ?: "Pulpit",
+            text = board?.name ?: stringResource(R.string.app_name),
             fontSize = 12.sp,
             color = Color.White.copy(alpha = 0.75f),
             maxLines = 1,
@@ -279,7 +286,9 @@ private fun BoardChip(vm: PulpitViewModel) {
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             boards.forEach { b ->
                 DropdownMenuItem(
-                    text = { Text(b.name.ifEmpty { "board ${b.id}" }) },
+                    // name is payload; the id line only fills in for a
+                    // board the host never titled
+                    text = { Text(b.name.ifEmpty { stringResource(R.string.board_name_fallback, b.id) }) },
                     onClick = {
                         menuOpen = false
                         vm.selectBoard(b)

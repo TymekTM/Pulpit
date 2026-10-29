@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -31,6 +32,7 @@ import app.pulpit.mobile.ui.ConnectScreen
 import app.pulpit.mobile.ui.DeckboardTheme
 import app.pulpit.mobile.ui.LocalHaptics
 import app.pulpit.mobile.ui.ShutdownScreen
+import app.pulpit.mobile.R
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,16 +93,18 @@ class MainActivity : ComponentActivity() {
                     if (confirmExit && (board || serverDown)) {
                         AlertDialog(
                             onDismissRequest = { confirmExit = false },
-                            title = { Text("Wyjść do menu głównego?") },
-                            text = { Text("Połączenie z komputerem zostanie zamknięte.") },
+                            title = { Text(stringResource(R.string.main_exit_title)) },
+                            text = { Text(stringResource(R.string.main_exit_message)) },
                             confirmButton = {
                                 TextButton(onClick = {
                                     confirmExit = false
                                     vm.openMenu()
-                                }) { Text("Tak") }
+                                }) { Text(stringResource(R.string.main_yes)) }
                             },
                             dismissButton = {
-                                TextButton(onClick = { confirmExit = false }) { Text("Nie") }
+                                TextButton(onClick = { confirmExit = false }) {
+                                    Text(stringResource(R.string.main_no))
+                                }
                             },
                         )
                     }
