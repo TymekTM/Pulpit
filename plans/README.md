@@ -29,7 +29,7 @@ when done.
 | 015 | Unify the idle now-playing text on the Polish string | P3 | S | - | DONE (executor GLM-5.3-Flash, reviewed; commit `a54646b`) |
 | 016 | Fix the multi-range doc on `parse_byte_range` (416, not full body) | P3 | S | - | DONE (executor GLM-5.3-Flash, reviewed; commit `1e7ea4a`; closes the deferred nit below) |
 | 017 | Gate the Discord pipe transport so the workspace builds off-Windows | P2 | M | - | DONE (executor Claude Sonnet 5.5, reviewed; commit `afc3316`; Windows-side verification: msvc cross-check for Rust types + CI windows-latest for the full build) |
-| 018 | Share one art LRU across the two media producers | P3 | S-M | 017 (for Linux host tests) | TODO (round 5) |
+| 018 | Share one art LRU across the two media producers | P3 | S-M | 017 (for Linux host tests) | DONE (executor GLM-5.3-Flash, reviewed; commit `802f44b`; the first executor correctly STOPped on this plan's wrong call-site inventory - the server DOES run a Spotify lane - and the corrected plan shipped with the fix) |
 
 Plans 006-011 come from the second audit (see "Round 2: mobile battery
 and bugs" at the end of this file). Order: 006 → 007 → 008 (the battery
