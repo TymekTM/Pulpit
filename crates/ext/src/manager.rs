@@ -6,13 +6,17 @@
 //! requests over an `std::sync::mpsc` channel. This mirrors the original
 //! Electron design where every extension ran in its own hidden window.
 //!
-//! Memory model: a runtime costs its committed heap for the life of the
-//! process (the OS heap never returns freed JS pages), so packages are
-//! classified at load time. Extensions that registered timers while
-//! loading stay resident (their ticks push tile values); execute-only
-//! ones drop their runtime and spawn it on the first `execute`. Metadata
-//! is cached on disk keyed by the source mtime, so after the first run a
-//! package that stays lazy never evals JS at startup at all.
+//! Memory model: a runtime thread keeps the heap its interpreter grew to
+//! for as long as the thread lives (a parked thread never gives freed JS
+//! pages back), so packages are classified at load time and threads exit
+//! as soon as they have nothing left to do. Extensions that keep a real
+//! interval after their pending one-shots ran, or that use
+//! spawn/http/nextTick/setImmediate, stay resident (their ticks push tile
+//! values); the rest drop their runtime and spawn it on the first
+//! `execute`. A runtime thread whose timers drain exits (see
+//! `runtime_loop`); the next `execute` respawns it like a cold start.
+//! Metadata is cached on disk keyed by the source mtime, so after the
+//! first run a package that stays lazy never evals JS at startup at all.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -28,10 +32,9 @@ use tracing::warn;
 use crate::host::{ExtRuntime, HostError, HostEvent};
 use thiserror::Error;
 
-/// One probe answer: metadata plus the channel to a spawned runtime, or the
+/// One probe answer: metadata plus the handle to a spawned runtime, or the
 /// load error. A `type` alias keeps the plan enum below readable.
-type ProbeResponseRx =
-    mpsc::Receiver<Result<(ProbeMeta, Option<mpsc::Sender<ExtRequest>>), HostError>>;
+type ProbeResponseRx = mpsc::Receiver<Result<(ProbeMeta, Option<RuntimeHandle>), HostError>>;
 
 #[derive(Debug, Clone)]
 pub enum ExtEvent {
@@ -48,12 +51,54 @@ pub enum ExtRequest {
     Shutdown,
 }
 
+/// The manager's end of one runtime thread. Cloned freely; `gate` is shared
+/// with the thread and flips to `true` (under its lock) when the thread
+/// retires, so a sender can tell a dead runtime from a live one without
+/// racing the thread's exit decision.
+#[derive(Clone)]
+struct RuntimeHandle {
+    tx: mpsc::Sender<ExtRequest>,
+    gate: Arc<std::sync::Mutex<bool>>,
+}
+
+impl RuntimeHandle {
+    /// Queue `request` unless the thread retired (or is gone), handing the
+    /// request back in that case. Sending under the gate lock is what makes
+    /// the retire handshake airtight: the thread re-checks its queue and
+    /// flips the flag under the same lock, so every request is either seen
+    /// by that re-check or refused here.
+    fn send(&self, request: ExtRequest) -> Result<(), ExtRequest> {
+        let retired = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+        if *retired {
+            return Err(request);
+        }
+        self.tx.send(request).map_err(|e| e.0)
+    }
+
+    fn is_retired(&self) -> bool {
+        *self.gate.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// Outcome of one dispatch attempt.
+enum Dispatch {
+    Done(Result<(), ManagerError>),
+    /// The runtime thread retired before it could take the request.
+    Retired,
+}
+
 /// Where a scanned package's runtime lives. Shared behind a mutex so a
 /// lazy entry can promote itself to resident on the first execute.
 enum Residence {
     /// Runtime thread is up since load (timer-driven extensions) or since
-    /// the first execute promoted this entry.
-    Resident(mpsc::Sender<ExtRequest>),
+    /// the first execute promoted this entry. The thread may have retired
+    /// since (its timers drained); the next execute notices and demotes the
+    /// entry back to `Lazy`, hence the source and configs it carries.
+    Resident {
+        handle: RuntimeHandle,
+        path: PathBuf,
+        configs: Value,
+    },
     /// Metadata is known but no runtime exists; spawn on first execute.
     Lazy { path: PathBuf, configs: Value },
     /// Load failed; kept for reporting only.
@@ -102,7 +147,8 @@ pub struct ExtFieldInfo {
 impl std::fmt::Debug for ExtEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let kind = match &*self.residence.lock().unwrap() {
-            Residence::Resident(_) => "resident",
+            Residence::Resident { handle, .. } if !handle.is_retired() => "resident",
+            Residence::Resident { .. } => "retired",
             Residence::Lazy { .. } => "lazy",
             Residence::Failed(_) => "failed",
         };
@@ -131,8 +177,17 @@ struct CachedMeta {
     name: String,
     actions: Vec<String>,
     inputs: Vec<Value>,
+    /// Stays resident: a real interval survived the one-shots, or the
+    /// package uses spawn/http/nextTick/setImmediate.
     has_timers: bool,
+    /// Which classifier wrote `has_timers`. Entries from before one-shots
+    /// were told apart from intervals (0) are re-probed once.
+    #[serde(default)]
+    classifier: u32,
 }
+
+/// Bumped whenever the residence classification rules change.
+const CLASSIFIER: u32 = 1;
 
 /// (name, actions, raw inputs, registered timers?)
 struct ProbeMeta {
@@ -235,7 +290,7 @@ impl ExtManager {
             /// Cache hit with timers: runtime spawned during planning.
             Resident {
                 meta: ProbeMeta,
-                dispatch: Option<mpsc::Sender<ExtRequest>>,
+                dispatch: Option<RuntimeHandle>,
             },
             Failed {
                 meta: Option<ProbeMeta>,
@@ -279,6 +334,7 @@ impl ExtManager {
                         &events_tx,
                         &active_clients,
                         spawn_timeout,
+                        false,
                     ) {
                         Ok(dispatch) => Plan::Resident {
                             meta,
@@ -376,6 +432,7 @@ impl ExtManager {
                                     actions: meta.actions.clone(),
                                     inputs: meta.inputs.clone(),
                                     has_timers: meta.has_timers,
+                                    classifier: CLASSIFIER,
                                 });
                             }
                             (meta, dispatch)
@@ -395,22 +452,26 @@ impl ExtManager {
             };
 
             all_inputs.extend(parse_inputs(&meta.inputs, &meta.name));
+            let configs = settings
+                .get(&package)
+                .cloned()
+                .unwrap_or_else(|| Value::Object(Default::default()));
             match dispatch {
-                Some(dispatch) => {
+                Some(handle) => {
                     tracing::info!(package = %package, name = %meta.name, actions = ?meta.actions, "extension resident (timers)");
                     entries.push(ExtEntry {
                         package,
                         name: meta.name,
                         actions: meta.actions,
-                        residence: std::sync::Mutex::new(Residence::Resident(dispatch)),
+                        residence: std::sync::Mutex::new(Residence::Resident {
+                            handle,
+                            path,
+                            configs,
+                        }),
                     });
                 }
                 None => {
                     tracing::info!(package = %package, name = %meta.name, actions = ?meta.actions, "extension lazy (runtime loads on first execute)");
-                    let configs = settings
-                        .get(&package)
-                        .cloned()
-                        .unwrap_or_else(|| Value::Object(Default::default()));
                     entries.push(ExtEntry {
                         package,
                         name: meta.name,
@@ -466,10 +527,11 @@ impl ExtManager {
 
     /// Execute an action on whichever extension declared it. Blocks until
     /// the extension thread replies (it runs the JS synchronously). Lazy
-    /// extensions pay a one-time runtime spawn here. The residence lock is
-    /// never held across the blocking dispatch or the spawn: a wedged
-    /// extension stalls only its own action, not `summary` or another
-    /// package's promotion.
+    /// extensions pay a one-time runtime spawn here, and so do resident
+    /// ones whose thread retired after their timers drained. The residence
+    /// lock is never held across the blocking dispatch or the spawn: a
+    /// wedged extension stalls only its own action, not `summary` or
+    /// another package's promotion.
     pub fn execute(&self, action: &str, command: Option<&str>) -> Result<(), ManagerError> {
         let args: Value = match command {
             Some(c) if !c.trim().is_empty() => {
@@ -481,99 +543,164 @@ impl ExtManager {
             if !entry.actions.iter().any(|a| a == action) {
                 continue;
             }
-            // snapshot what to do without holding the lock through the
-            // slow parts below
-            enum Snap {
-                Live(mpsc::Sender<ExtRequest>),
-                Lazy { path: PathBuf, configs: Value },
-                Failed(String),
-            }
-            let snap = {
-                let mut residence = entry.residence.lock().unwrap();
-                match &mut *residence {
-                    Residence::Resident(dispatch) => Snap::Live(dispatch.clone()),
-                    Residence::Lazy { path, configs } => Snap::Lazy {
-                        path: path.clone(),
-                        configs: configs.clone(),
-                    },
-                    Residence::Failed(error) => Snap::Failed(error.clone()),
-                }
-            };
-            let dispatch = match snap {
-                Snap::Live(dispatch) => dispatch,
-                Snap::Failed(error) => {
-                    return Err(ManagerError::Host(HostError::Other(format!(
-                        "extension {} is disabled (load error: {})",
-                        entry.package, error
-                    ))));
-                }
-                Snap::Lazy { path, configs } => {
-                    tracing::info!(package = %entry.package, "first execute - spawning extension runtime");
-                    let dispatch = match spawn_runtime(
-                        &path,
-                        &entry.package,
-                        &configs,
-                        &self.events_tx,
-                        &self.active_clients,
-                        self.spawn_timeout,
-                    ) {
-                        Ok(dispatch) => dispatch,
-                        Err(e) => {
-                            // A failed spawn disables the package for the
-                            // rest of the session: the load already had
-                            // its timeout, so a later execute must fail
-                            // fast instead of spawning (and waiting)
-                            // again. A racing execute that promoted the
-                            // entry meanwhile keeps its live runtime.
-                            let mut residence = entry.residence.lock().unwrap();
-                            if matches!(&*residence, Residence::Lazy { .. }) {
-                                warn!(package = %entry.package, error = %e, "extension failed to load - disabled");
-                                *residence = Residence::Failed(e.to_string());
+            // A runtime can retire between the snapshot and the send; the
+            // refused send demotes the entry and the next pass respawns it.
+            // Two retirements in a row would need a runtime that retires
+            // before it answers, which `hold` in `runtime_loop` rules out.
+            for _ in 0..3 {
+                let handle = self.runtime_for(entry)?;
+                match self.dispatch_to(&handle, action, args.clone()) {
+                    Dispatch::Done(result) => return result,
+                    Dispatch::Retired => {
+                        let mut residence = entry.residence.lock().unwrap();
+                        let demote = match &*residence {
+                            Residence::Resident {
+                                handle: current,
+                                path,
+                                configs,
+                            } if Arc::ptr_eq(&current.gate, &handle.gate) => {
+                                Some((path.clone(), configs.clone()))
                             }
-                            return Err(e.into());
-                        }
-                    };
-                    // a racing execute may have promoted the entry first;
-                    // whoever lost drops its extra channel and the loser
-                    // thread exits when its receiver disconnects
-                    let mut residence = entry.residence.lock().unwrap();
-                    match &mut *residence {
-                        Residence::Resident(existing) => existing.clone(),
-                        _ => {
-                            *residence = Residence::Resident(dispatch.clone());
-                            dispatch
+                            _ => None,
+                        };
+                        if let Some((path, configs)) = demote {
+                            *residence = Residence::Lazy { path, configs };
                         }
                     }
                 }
-            };
-            return self.dispatch_to(&dispatch, action, args);
+            }
+            return Err(ManagerError::Thread("runtime thread gone".into()));
         }
         Err(ManagerError::Host(HostError::Other(format!(
             "no extension handles action '{action}'"
         ))))
     }
 
-    fn dispatch_to(
-        &self,
-        dispatch: &mpsc::Sender<ExtRequest>,
-        action: &str,
-        args: Value,
-    ) -> Result<(), ManagerError> {
+    /// The live runtime of `entry`, spawning it when it is lazy or its
+    /// thread retired.
+    fn runtime_for(&self, entry: &ExtEntry) -> Result<RuntimeHandle, ManagerError> {
+        // snapshot what to do without holding the lock through the slow
+        // parts below
+        enum Snap {
+            Live(RuntimeHandle),
+            Lazy { path: PathBuf, configs: Value },
+            Failed(String),
+        }
+        let snap = {
+            let residence = entry.residence.lock().unwrap();
+            match &*residence {
+                Residence::Resident {
+                    handle,
+                    path,
+                    configs,
+                } if handle.is_retired() => Snap::Lazy {
+                    path: path.clone(),
+                    configs: configs.clone(),
+                },
+                Residence::Resident { handle, .. } => Snap::Live(handle.clone()),
+                Residence::Lazy { path, configs } => Snap::Lazy {
+                    path: path.clone(),
+                    configs: configs.clone(),
+                },
+                Residence::Failed(error) => Snap::Failed(error.clone()),
+            }
+        };
+        match snap {
+            Snap::Live(handle) => Ok(handle),
+            Snap::Failed(error) => Err(ManagerError::Host(HostError::Other(format!(
+                "extension {} is disabled (load error: {})",
+                entry.package, error
+            )))),
+            Snap::Lazy { path, configs } => {
+                tracing::info!(package = %entry.package, "spawning extension runtime");
+                // `hold`: the thread must outlive the request that
+                // triggered this spawn, whatever its timers say
+                let handle = match spawn_runtime(
+                    &path,
+                    &entry.package,
+                    &configs,
+                    &self.events_tx,
+                    &self.active_clients,
+                    self.spawn_timeout,
+                    true,
+                ) {
+                    Ok(handle) => handle,
+                    Err(e) => {
+                        // A failed spawn disables the package for the
+                        // rest of the session: the load already had
+                        // its timeout, so a later execute must fail
+                        // fast instead of spawning (and waiting)
+                        // again. A racing execute that promoted the
+                        // entry meanwhile keeps its live runtime.
+                        let mut residence = entry.residence.lock().unwrap();
+                        let spawnable = match &*residence {
+                            Residence::Lazy { .. } => true,
+                            Residence::Resident { handle, .. } => handle.is_retired(),
+                            Residence::Failed(_) => false,
+                        };
+                        if spawnable {
+                            warn!(package = %entry.package, error = %e, "extension failed to load - disabled");
+                            *residence = Residence::Failed(e.to_string());
+                        }
+                        return Err(e.into());
+                    }
+                };
+                // a racing execute may have promoted the entry first;
+                // whoever lost drops its extra handle and the loser
+                // thread exits when its receiver disconnects
+                let mut residence = entry.residence.lock().unwrap();
+                match &*residence {
+                    Residence::Resident {
+                        handle: existing, ..
+                    } if !existing.is_retired() => Ok(existing.clone()),
+                    _ => {
+                        *residence = Residence::Resident {
+                            handle: handle.clone(),
+                            path,
+                            configs,
+                        };
+                        Ok(handle)
+                    }
+                }
+            }
+        }
+    }
+
+    fn dispatch_to(&self, handle: &RuntimeHandle, action: &str, args: Value) -> Dispatch {
         let (reply_tx, reply_rx) = mpsc::channel();
-        dispatch
-            .send(ExtRequest::Execute {
-                action: action.to_string(),
-                args,
-                reply: reply_tx,
-            })
-            .map_err(|_| ManagerError::Thread("runtime thread gone".into()))?;
-        let events = reply_rx
-            .recv_timeout(Duration::from_secs(30))
-            .map_err(|_| ManagerError::Thread("extension did not answer in time".into()))??;
+        let request = ExtRequest::Execute {
+            action: action.to_string(),
+            args,
+            reply: reply_tx,
+        };
+        if handle.send(request).is_err() {
+            return Dispatch::Retired;
+        }
+        let events = match reply_rx.recv_timeout(Duration::from_secs(30)) {
+            Ok(Ok(events)) => events,
+            Ok(Err(e)) => return Dispatch::Done(Err(e.into())),
+            Err(_) => {
+                return Dispatch::Done(Err(ManagerError::Thread(
+                    "extension did not answer in time".into(),
+                )))
+            }
+        };
         for ev in events {
             Self::forward(&self.events_tx, ev);
         }
-        Ok(())
+        Dispatch::Done(Ok(()))
+    }
+
+    /// Runtime threads currently alive and registered. Threads that retired
+    /// (timers drained) and lazy packages do not count.
+    pub fn resident_count(&self) -> usize {
+        self.entries
+            .iter()
+            .filter(|e| match &*e.residence.lock().unwrap() {
+                Residence::Resident { handle, .. } => !handle.is_retired(),
+                _ => false,
+            })
+            .count()
     }
 
     /// Extension input declarations, flattened across scanned packages.
@@ -655,16 +782,18 @@ fn parse_inputs(raw: &[Value], extension: &str) -> Vec<ExtInputInfo> {
         .collect()
 }
 
-/// Load the package once: learn its metadata and, when it registered
-/// timers, leave the runtime running on its thread (returned sender);
-/// otherwise the runtime drops and `None` comes back.
+/// Load the package once: learn its metadata and, when it stays resident
+/// (a real interval left after its pending one-shots ran, or it uses
+/// spawn/http/nextTick/setImmediate), leave the runtime running on its
+/// thread (returned handle); otherwise the runtime drops and `None` comes
+/// back.
 fn load_extension(
     path: &Path,
     package: &str,
     configs: &Value,
     events_tx: &tokio_mpsc::UnboundedSender<ExtEvent>,
     active_clients: &Arc<AtomicUsize>,
-) -> Result<(ProbeMeta, Option<mpsc::Sender<ExtRequest>>), HostError> {
+) -> Result<(ProbeMeta, Option<RuntimeHandle>), HostError> {
     // extract to a temp dir before spawning (plain IO, thread-agnostic);
     // the keep-guard rides into the thread so the extraction outlives
     // the runtime reading from it
@@ -687,37 +816,51 @@ fn load_extension(
             let _keep = keep;
             match ExtRuntime::load(&root, &package, &configs) {
                 Ok(mut rt) => {
-                    let has_timers = rt.has_timers();
-                    let meta = ProbeMeta {
-                        name: rt.name.clone(),
-                        actions: rt.actions.clone(),
-                        inputs: rt.inputs.clone(),
-                        has_timers,
-                    };
                     // drain setValue/interval events the load itself produced
                     for ev in rt.drain() {
                         ExtManager::forward(&events_tx, ev);
                     }
-                    if has_timers {
+                    // `setTimeout(cb, 0)` initializers must run before the
+                    // verdict: a one-shot may register a real interval
+                    for ev in rt.run_pending_one_shots() {
+                        ExtManager::forward(&events_tx, ev);
+                    }
+                    let resident = rt.has_real_intervals() || rt.pinned();
+                    let meta = ProbeMeta {
+                        name: rt.name.clone(),
+                        actions: rt.actions.clone(),
+                        inputs: rt.inputs.clone(),
+                        has_timers: resident,
+                    };
+                    if resident {
                         let (req_tx, req_rx) = mpsc::channel();
-                        if res_tx.send(Ok((meta, Some(req_tx.clone())))).is_ok() {
+                        let gate = Arc::new(std::sync::Mutex::new(false));
+                        let handle = RuntimeHandle {
+                            tx: req_tx,
+                            gate: gate.clone(),
+                        };
+                        if res_tx.send(Ok((meta, Some(handle)))).is_ok() {
                             runtime_loop(
                                 ExtSlot {
                                     root,
                                     package,
                                     configs,
+                                    pinned: rt.pinned(),
                                     live: Some(rt),
                                 },
                                 req_rx,
                                 events_tx,
                                 active_clients,
+                                gate,
+                                false,
                             );
                         }
                     } else {
                         let _ = res_tx.send(Ok((meta, None)));
-                        // runtime drops: freed JS pages stay committed in the
-                        // OS heap, which is exactly why lazy packages must not
-                        // be re-probed on every start (the metadata cache)
+                        // runtime drops and the thread ends with it: the
+                        // heap goes back to the OS, which is also why lazy
+                        // packages must not be re-probed on every start
+                        // (the metadata cache)
                     }
                 }
                 Err(e) => {
@@ -737,10 +880,11 @@ fn load_extension(
 /// a wedged extension must not stall startup or a tile tap forever.
 const JS_LOAD_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Start a persistent runtime thread (cached timer extensions and lazy
+/// Start a runtime thread (cached timer extensions and lazy
 /// first-executes). Blocks until the runtime is ready, at most
 /// `load_timeout`: a package whose top-level JS never finishes loading
-/// errors instead of pinning the caller forever.
+/// errors instead of pinning the caller forever. `hold` keeps the thread
+/// alive until its first request arrives (see `runtime_loop`).
 fn spawn_runtime(
     path: &Path,
     package: &str,
@@ -748,7 +892,8 @@ fn spawn_runtime(
     events_tx: &tokio_mpsc::UnboundedSender<ExtEvent>,
     active_clients: &Arc<AtomicUsize>,
     load_timeout: Duration,
-) -> Result<mpsc::Sender<ExtRequest>, HostError> {
+    hold: bool,
+) -> Result<RuntimeHandle, HostError> {
     let (root, keep) = crate::source::PackageSource::open(path, package.to_string())
         .map_err(|e| HostError::Other(e.to_string()))?
         .into_root();
@@ -758,31 +903,38 @@ fn spawn_runtime(
     let active_clients = active_clients.clone();
 
     let (req_tx, req_rx) = mpsc::channel::<ExtRequest>();
+    let gate = Arc::new(std::sync::Mutex::new(false));
     let (res_tx, res_rx) = mpsc::channel();
     std::thread::Builder::new()
         .name(format!("ext-{package}"))
         .stack_size(64 * 1024 * 1024)
-        .spawn(move || {
-            // the extraction must outlive this thread
-            let _keep = keep;
-            match ExtRuntime::load(&root, &package, &configs) {
-                Ok(rt) => {
-                    if res_tx.send(Ok(())).is_ok() {
-                        runtime_loop(
-                            ExtSlot {
-                                root,
-                                package,
-                                configs,
-                                live: Some(rt),
-                            },
-                            req_rx,
-                            events_tx,
-                            active_clients,
-                        );
+        .spawn({
+            let gate = gate.clone();
+            move || {
+                // the extraction must outlive this thread
+                let _keep = keep;
+                match ExtRuntime::load(&root, &package, &configs) {
+                    Ok(rt) => {
+                        if res_tx.send(Ok(())).is_ok() {
+                            runtime_loop(
+                                ExtSlot {
+                                    root,
+                                    package,
+                                    configs,
+                                    pinned: rt.pinned(),
+                                    live: Some(rt),
+                                },
+                                req_rx,
+                                events_tx,
+                                active_clients,
+                                gate,
+                                hold,
+                            );
+                        }
                     }
-                }
-                Err(e) => {
-                    let _ = res_tx.send(Err(e));
+                    Err(e) => {
+                        let _ = res_tx.send(Err(e));
+                    }
                 }
             }
         })
@@ -791,7 +943,7 @@ fn spawn_runtime(
     res_rx
         .recv_timeout(load_timeout)
         .map_err(|_| HostError::Other("extension runtime did not start in time".into()))??;
-    Ok(req_tx)
+    Ok(RuntimeHandle { tx: req_tx, gate })
 }
 
 /// Interpreter slot owned by an extension thread: the runtime is held only
@@ -800,14 +952,17 @@ struct ExtSlot {
     root: std::path::PathBuf,
     package: String,
     configs: Value,
+    /// Keep the live interpreter (and the thread) with no timer left: the
+    /// package used spawn/http/nextTick/setImmediate before its first action.
+    pinned: bool,
     live: Option<ExtRuntime>,
 }
 
 /// Execute an action on the slot's interpreter, (re)creating it on demand.
 /// The interpreter is released right after the run unless the action
-/// registered timers, so resident cost between actions is zero. Re-running
-/// the entry module is safe because extensions keep their own state on
-/// disk (see the module docs).
+/// registered timers or the package is pinned, so resident cost between
+/// actions is zero. Re-running the entry module is safe because extensions
+/// keep their own state on disk (see the module docs).
 fn run_action(
     slot: &mut ExtSlot,
     action: &str,
@@ -815,48 +970,90 @@ fn run_action(
 ) -> Result<Vec<crate::host::HostEvent>, crate::host::HostError> {
     if slot.live.is_none() {
         tracing::info!(package = %slot.package, action, "extension runtime loaded on demand");
-        slot.live = Some(ExtRuntime::load(&slot.root, &slot.package, &slot.configs)?);
+        let rt = ExtRuntime::load(&slot.root, &slot.package, &slot.configs)?;
+        slot.pinned = rt.pinned();
+        slot.live = Some(rt);
     }
     let rt = slot.live.as_mut().expect("runtime loaded above");
     let events = rt.execute(action, args)?;
-    if !rt.has_timers() {
+    if !rt.has_timers() && !slot.pinned {
         slot.live = None;
     }
     Ok(events)
 }
 
+/// Flags the gate retired when the loop ends by any route (shutdown,
+/// disconnect, retirement), so senders stop trusting the dead channel.
+struct RetireOnDrop(Arc<std::sync::Mutex<bool>>);
+
+impl Drop for RetireOnDrop {
+    fn drop(&mut self) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = true;
+    }
+}
+
+/// Serve one runtime thread until it has nothing left to do.
+///
+/// A thread that waits with no timers and no pinned interpreter *retires*:
+/// it returns, dropping the interpreter and its heap (a parked thread would
+/// keep every page the JS grew to). Retirement is a handshake with
+/// [`RuntimeHandle::send`]: the thread re-checks its queue and flips the
+/// gate under the gate lock, and senders check the gate under the same
+/// lock, so a request either reaches the queue before the re-check (and is
+/// served) or is refused (and the manager respawns). `hold` defers
+/// retirement until the first request has been served: a freshly spawned
+/// lazy runtime exists to answer the execute that spawned it.
+///
+/// With timers pending the wait is the tick granularity (stretched to
+/// `IDLE_TICK_FLOOR` while no clients are connected, since the pushed
+/// values go unseen). A pinned drained runtime blocks on the queue alone.
 fn runtime_loop(
     mut slot: ExtSlot,
     req_rx: mpsc::Receiver<ExtRequest>,
     events_tx: tokio_mpsc::UnboundedSender<ExtEvent>,
     active_clients: Arc<AtomicUsize>,
+    gate: Arc<std::sync::Mutex<bool>>,
+    mut hold: bool,
 ) {
+    let _retire = RetireOnDrop(gate.clone());
     loop {
-        // Timers only run while a live interpreter is held; without one
-        // the thread blocks on recv() with no wakeups at all. With no
-        // clients connected the pushed values go unseen, so the wait
-        // stretches to `IDLE_TICK_FLOOR` instead of full speed.
-        let wait = if let Some(rt) = slot.live.as_mut() {
+        let mut wait = Duration::ZERO;
+        if let Some(rt) = slot.live.as_mut() {
             for ev in rt.tick_due() {
                 ExtManager::forward(&events_tx, ev);
             }
-            let granularity = rt
-                .tick_granularity()
-                .clamp(Duration::from_millis(50), Duration::from_secs(1));
-            if active_clients.load(Ordering::Relaxed) == 0 {
-                granularity.max(IDLE_TICK_FLOOR)
+            if !rt.has_real_intervals() {
+                // one-shots only: nothing periodic to stretch, so wait for
+                // the earliest due time and let the thread retire after
+                if let Some(due_in) = rt.next_due_in() {
+                    wait = due_in;
+                }
             } else {
-                granularity
+                let granularity = rt
+                    .tick_granularity()
+                    .clamp(Duration::from_millis(50), Duration::from_secs(1));
+                wait = if active_clients.load(Ordering::Relaxed) == 0 {
+                    granularity.max(IDLE_TICK_FLOOR)
+                } else {
+                    granularity
+                };
             }
-        } else {
-            Duration::ZERO
-        };
-        let request = if wait.is_zero() {
+        }
+        let request = if !wait.is_zero() {
+            req_rx.recv_timeout(wait)
+        } else if hold || (slot.pinned && slot.live.is_some()) {
             req_rx
                 .recv()
                 .map_err(|_| mpsc::RecvTimeoutError::Disconnected)
         } else {
-            req_rx.recv_timeout(wait)
+            let mut retired = gate.lock().unwrap_or_else(|e| e.into_inner());
+            match req_rx.try_recv() {
+                Ok(request) => Ok(request),
+                Err(_) => {
+                    *retired = true;
+                    break;
+                }
+            }
         };
         match request {
             Ok(ExtRequest::Execute {
@@ -864,6 +1061,7 @@ fn runtime_loop(
                 args,
                 reply,
             }) => {
+                hold = false;
                 // execute() drains setValue/interval events itself; the
                 // manager forwards whatever the reply carries
                 let _ = reply.send(run_action(&mut slot, &action, &args));
@@ -923,7 +1121,7 @@ impl MetadataCache {
 
     fn valid(&self, package: &str, signature: u64) -> Option<CachedMeta> {
         let meta = self.entries.get(package)?;
-        if meta.signature == signature {
+        if meta.signature == signature && meta.classifier == CLASSIFIER {
             Some(meta.clone())
         } else {
             None

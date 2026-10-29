@@ -44,6 +44,9 @@ var __timer_seq = 0;
 var __timers = {};            // id -> { cb, ms, next (managed host-side) }
 var __new_intervals = [];     // drained by Rust: { id, ms }
 var __cleared_intervals = []; // drained by Rust: id
+// Set by spawn/http/nextTick/setImmediate: the host keeps such a package
+// resident even when it has no interval left (see ExtRuntime::pinned).
+var __keep_resident = false;
 
 function __run_timer(id) {
     var t = __timers[id];
@@ -56,11 +59,17 @@ function __run_timer(id) {
     }
 }
 
-function setInterval(cb, ms) {
+function __add_timer(cb, ms, once) {
     var id = ++__timer_seq;
     __timers[id] = { cb: cb, ms: ms };
-    __new_intervals.push({ id: id, ms: ms });
+    // `once` marks the self-clearing emulation of setTimeout, so the host
+    // can tell one-shots from real intervals
+    __new_intervals.push({ id: id, ms: ms, once: once });
     return id;
+}
+
+function setInterval(cb, ms) {
+    return __add_timer(cb, ms, false);
 }
 
 function clearInterval(id) {
@@ -74,7 +83,7 @@ function setTimeout(cb, ms) {
         clearInterval(id);
         cb();
     };
-    var id = setInterval(wrapped, ms === undefined ? 0 : ms);
+    var id = __add_timer(wrapped, ms === undefined ? 0 : ms, true);
     return id;
 }
 
@@ -431,6 +440,7 @@ var __child_process = {
     // spawn runs the command synchronously under the hood but delivers
     // stdout/stderr/close through callbacks like real node
     spawn: function (file, args) {
+        __keep_resident = true;
         var full = file + " " + (Array.isArray(args) ? args.join(" ") : "");
         var handlers = {};
         var child = {
@@ -567,7 +577,7 @@ var __process = {
     argv: [__EXT_PACKAGE],
     cwd: function () { return __EXT_ROOT; },
     exit: function (code) { __host_log("warn", __EXT_PACKAGE + " called process.exit(" + code + ") - ignored"); },
-    nextTick: function (cb) { setTimeout(cb, 0); },
+    nextTick: function (cb) { __keep_resident = true; setTimeout(cb, 0); },
     hrtime: function () {
         var ms = Date.now();
         var arr = [Math.floor(ms / 1000), (ms % 1000) * 1e6];
@@ -696,6 +706,7 @@ function __url_parse(str) {
 }
 
 function __http_request(options, cb) {
+    __keep_resident = true;
     var o = typeof options === "string" ? __url_parse(options) : options;
     var url = (o.protocol || "http:") + "//" + (o.hostname || o.host || "") +
         (o.port ? ":" + o.port : "") + (o.path || "/");
@@ -971,7 +982,7 @@ var __builtin_modules = {
         setInterval: setInterval,
         clearTimeout: clearTimeout,
         clearInterval: clearInterval,
-        setImmediate: function (cb) { return setTimeout(cb, 0); },
+        setImmediate: function (cb) { __keep_resident = true; return setTimeout(cb, 0); },
     },
 };
 
