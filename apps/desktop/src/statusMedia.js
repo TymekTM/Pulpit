@@ -51,6 +51,10 @@ export function resolveStatusArt(hash, done) {
   }
   const cached = artUrlCache.get(hash);
   if (cached !== undefined) {
+    // refresh recency: the cover that is playing right now is re-resolved
+    // about once a second and must not age out behind 32 other covers
+    artUrlCache.delete(hash);
+    artUrlCache.set(hash, cached);
     done(cached);
     return;
   }

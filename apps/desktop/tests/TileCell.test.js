@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import TileCell from "../src/components/TileCell.vue";
 import { VM_SLIDER_RESET } from "../src/catalog.js";
-import { handle } from "./tauri.js";
+import { handle, calls } from "./tauri.js";
 
 const baseTile = {
   id: 1,
@@ -424,6 +424,31 @@ describe("TileCell media card", () => {
     expect(w.find(".status-progress-track i").attributes("style")).toContain("width: 5%");
     w.unmount();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps one interval and one art lookup across payload pushes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    handle("asset_data_url", () => "data:image/png;base64,AAA");
+    const payload = () => ({
+      rows,
+      image: "hash1",
+      progress: { position_ms: 0, duration_ms: 100_000, playing: true },
+    });
+    const w = nowPlaying(payload());
+    await flushPromises();
+    const spy = vi.spyOn(globalThis, "setInterval");
+    const lookups = calls.filter((c) => c.cmd === "asset_data_url").length;
+    // the server re-sends an equal-but-new payload about once a second
+    for (let i = 0; i < 3; i++) {
+      await w.setProps({ customValues: { "spotify-now-playing": payload() } });
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    expect(spy).not.toHaveBeenCalled();
+    expect(calls.filter((c) => c.cmd === "asset_data_url")).toHaveLength(lookups);
+    expect(vi.getTimerCount()).toBe(1);
+    spy.mockRestore();
+    w.unmount();
   });
 
   it("starts no ticker while paused", async () => {
