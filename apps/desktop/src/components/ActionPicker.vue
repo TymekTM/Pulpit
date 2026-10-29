@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { t } from "../i18n";
 
 // action picker for the tile dialog: searchable, grouped listbox that
 // replaces the native <select> with optgroups. Groups carry
@@ -31,8 +32,8 @@ const withCustom = computed(() => {
   return [
     ...props.groups,
     {
-      header: "Custom",
-      items: [{ value: props.modelValue, label: `${props.modelValue} (custom)` }],
+      header: t("Custom"),
+      items: [{ value: props.modelValue, label: t("{value} (custom)", { value: String(props.modelValue) }) }],
     },
   ];
 });
@@ -72,7 +73,7 @@ const recentGroup = computed(() => {
   }
   if (!items.length) return null;
   return {
-    header: "Niedawno używane",
+    header: t("Recently used"),
     items,
   };
 });
@@ -247,7 +248,7 @@ function onSearchKeydown(e) {
       <span class="chip" :style="{ background: currentColor }">
         <i class="fas" :class="'fa-' + currentIcon"></i>
       </span>
-      <span class="tval">{{ currentLabel }}</span>
+      <span class="tval">{{ currentLabel ? t(currentLabel) : currentLabel }}</span>
       <i class="fas fa-chevron-down caret" :class="{ up: open }"></i>
     </button>
     <Transition name="pop">
@@ -258,7 +259,7 @@ function onSearchKeydown(e) {
             ref="search"
             v-model="query"
             type="text"
-            placeholder="Search actions…"
+            :placeholder="t('Search actions…')"
             role="combobox"
             :aria-expanded="true"
             :aria-controls="uid"
@@ -266,9 +267,9 @@ function onSearchKeydown(e) {
             @keydown="onSearchKeydown"
           />
         </div>
-        <div :id="uid" ref="listEl" class="list" role="listbox" :aria-label="'Actions'">
+        <div :id="uid" ref="listEl" class="list" role="listbox" :aria-label="t('Actions')">
           <template v-for="g in visibleGroups" :key="g.header">
-            <div class="ghead">{{ g.header }}</div>
+            <div class="ghead">{{ t(g.header) }}</div>
             <div
               v-for="it in g.items"
               :key="`${g.header}-${it.value}`"
@@ -289,7 +290,7 @@ function onSearchKeydown(e) {
               <span class="chip" :style="{ background: it.color || '#7f8c8d' }">
                 <i class="fas" :class="'fa-' + (it.icon || 'puzzle-piece')"></i>
               </span>
-              <span class="ilabel">{{ it.label }}</span>
+              <span class="ilabel">{{ it.label ? t(it.label) : it.label }}</span>
               <span v-if="it.unavailable" class="unavail-tag" :title="it.unavailable">
                 <i class="fas fa-lock"></i>
               </span>
@@ -297,7 +298,7 @@ function onSearchKeydown(e) {
             </div>
           </template>
           <div v-if="!flat.length" class="empty">
-            No actions match “{{ query.trim() }}”
+            {{ t('No actions match “{q}”', { q: query.trim() }) }}
           </div>
         </div>
       </div>

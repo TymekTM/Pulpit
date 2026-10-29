@@ -3,6 +3,7 @@ import { computed, reactive, ref } from "vue";
 import { ask } from "../confirm";
 import { api } from "../api";
 import { MAX_BOARD_DIM, boardDim } from "../catalog";
+import { t } from "../i18n";
 
 const props = defineProps({
   mode: { type: String, required: true }, // 'create' | 'edit'
@@ -39,11 +40,12 @@ async function save() {
   error.value = "";
   try {
     if (props.mode === "create") {
-      const id = await api.createBoard(form.name || "New board", form.background, width, height);
+      const name = form.name || t("New board");
+      const id = await api.createBoard(name, form.background, width, height);
       emit("saved", {
         mode: "create",
         id,
-        name: form.name || "New board",
+        name,
         background: form.background,
         width,
         height,
@@ -60,14 +62,14 @@ async function save() {
       emit("saved", { mode: "edit", prev: { ...props.board }, next });
     }
   } catch (e) {
-    error.value = e ? String(e) : "Saving the board failed.";
+    error.value = e ? String(e) : t("Saving the board failed.");
   }
 }
 
 async function clearBoard() {
-  const ok = await ask(`Clear every tile from "${props.board.name}"?`, {
-    title: "Clear board",
-    okLabel: "Clear",
+  const ok = await ask(t('Clear every tile from "{name}"?', { name: props.board.name }), {
+    title: t("Clear board"),
+    okLabel: t("Clear"),
     kind: "warning",
   });
   if (!ok) return;
@@ -76,16 +78,16 @@ async function clearBoard() {
   try {
     await api.clearBoard(props.board.id);
   } catch (e) {
-    error.value = e ? String(e) : "Clearing the board failed.";
+    error.value = e ? String(e) : t("Clearing the board failed.");
     return;
   }
   emit("saved", { mode: "clear", boardId: props.board.id, buttons: buttonsSnapshot });
 }
 
 async function deleteBoard() {
-  const ok = await ask(`Delete board "${props.board.name}"?`, {
-    title: "Delete board",
-    okLabel: "Delete",
+  const ok = await ask(t('Delete board "{name}"?', { name: props.board.name }), {
+    title: t("Delete board"),
+    okLabel: t("Delete"),
     kind: "warning",
   });
   if (!ok) return;
@@ -97,7 +99,7 @@ async function deleteBoard() {
   try {
     await api.deleteBoard(props.board.id);
   } catch (e) {
-    error.value = e ? String(e) : "Deleting the board failed.";
+    error.value = e ? String(e) : t("Deleting the board failed.");
     return;
   }
   emit("saved", { mode: "delete", board: boardSnapshot });
@@ -108,24 +110,24 @@ async function deleteBoard() {
   <div class="overlay" @click.self="overlayClose">
     <div class="modal">
       <div class="modal-head" :style="{ '--canvas-head': form.background }">
-        {{ mode === "create" ? "New board" : "Edit board" }}
+        {{ mode === "create" ? t("New board") : t("Edit board") }}
       </div>
       <div class="modal-body">
         <label class="field">
-          Name
-          <input v-model="form.name" placeholder="Board name" @keyup.enter="save" />
+          {{ t("Name") }}
+          <input v-model="form.name" :placeholder="t('Board name')" @keyup.enter="save" />
         </label>
         <div class="row">
           <label class="field">
-            Columns (width)
+            {{ t("Columns (width)") }}
             <input v-model.number="form.width" type="number" min="1" :max="MAX_BOARD_DIM" step="1" />
           </label>
           <label class="field">
-            Rows (height)
+            {{ t("Rows (height)") }}
             <input v-model.number="form.height" type="number" min="1" :max="MAX_BOARD_DIM" step="1" />
           </label>
           <label class="field">
-            Background
+            {{ t("Background") }}
             <input v-model="form.background" type="color" class="color-input" />
           </label>
         </div>
@@ -133,11 +135,11 @@ async function deleteBoard() {
       </div>
       <div class="modal-actions">
         <template v-if="mode === 'edit'">
-          <button class="btn-text danger left" @click="clearBoard">Clear tiles</button>
-          <button class="btn-text danger" @click="deleteBoard">Delete board</button>
+          <button class="btn-text danger left" @click="clearBoard">{{ t("Clear tiles") }}</button>
+          <button class="btn-text danger" @click="deleteBoard">{{ t("Delete board") }}</button>
         </template>
-        <button class="btn-text" @click="emit('close')">Cancel</button>
-        <button class="btn-text accent" @click="save">Save</button>
+        <button class="btn-text" @click="emit('close')">{{ t("Cancel") }}</button>
+        <button class="btn-text accent" @click="save">{{ t("Save") }}</button>
       </div>
     </div>
   </div>

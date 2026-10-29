@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { t } from "../i18n";
 
 // select field renderer for catalog + extension-declared fields
 // ("input:select"). Hybrid: short sets render as inline chips (all choices
@@ -127,7 +128,7 @@ function onChipKeydown(e, idx) {
       @click="select(o.value)"
       @keydown="onChipKeydown($event, i)"
     >
-      <i v-if="o.value === modelValue" class="fas fa-check"></i>{{ o.label }}
+      <i v-if="o.value === modelValue" class="fas fa-check"></i>{{ t(o.label) }}
     </button>
   </div>
 
@@ -141,7 +142,7 @@ function onChipKeydown(e, idx) {
       @click="open ? closePop() : openPop()"
       @keydown="onTriggerKeydown"
     >
-      <span class="tval">{{ currentLabel }}</span>
+      <span class="tval">{{ currentLabel ? t(currentLabel) : currentLabel }}</span>
       <i class="fas fa-chevron-down caret" :class="{ up: open }"></i>
     </button>
     <Transition name="pop">
@@ -157,7 +158,7 @@ function onChipKeydown(e, idx) {
           @click="select(o.value); closePop()"
           @keydown="onOptionKeydown($event, i)"
         >
-          <span class="olabel">{{ o.label }}</span>
+          <span class="olabel">{{ t(o.label) }}</span>
           <i v-if="o.value === modelValue" class="fas fa-check ocheck"></i>
         </button>
       </div>

@@ -123,10 +123,10 @@ describe("EditTileModal basics", () => {
     dialog.ask.mockResolvedValueOnce(false);
     await w.find(".overlay").trigger("click");
     await flushPromises();
-    expect(dialog.ask).toHaveBeenLastCalledWith("Zamknąć okno i porzucić niezapisane zmiany?", {
-      title: "Niezapisane zmiany",
-      okLabel: "Porzuć zmiany",
-      cancelLabel: "Wróć",
+    expect(dialog.ask).toHaveBeenLastCalledWith("Close the window and discard unsaved changes?", {
+      title: "Unsaved changes",
+      okLabel: "Discard changes",
+      cancelLabel: "Go back",
       kind: "warning",
     });
     expect(w.emitted("close")).toHaveLength(1);
