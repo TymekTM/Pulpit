@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watchEffect } from "vue";
 import { api } from "../../api";
 import { i18n, t } from "../../i18n";
+import { windowVisible } from "../../statusMedia";
 
 // One native utility tile (catalog group "Tools"): clock, countdown
 // timer, stopwatch, counter. The state lives on the server
@@ -30,19 +31,55 @@ const kind = computed(() => String(props.tile.type || ""));
 // ---- extrapolation (server epoch ms -> local wall clock) -------------------
 
 const nowTick = ref(Date.now());
+
+// Milliseconds until the displayed value of this tile next changes, plus a
+// few ms of slack so the tick lands just past the boundary. Timers and
+// stopwatches show whole seconds (`mmss` rounds up), the clock shows the
+// wall-clock second, so one wake-up per displayed change is enough.
+const TICK_SLACK_MS = 8;
+function nextTickDelay(now) {
+  if (kind.value === "tool-clock") return 1000 - (now % 1000) + TICK_SLACK_MS;
+  const state = props.state;
+  const value = kind.value === "tool-timer"
+    ? Math.max(0, Number(state?.durationMs || 0) - elapsedTotalMs(state, now))
+    : elapsedTotalMs(state, now);
+  const phase = value % 1000;
+  // countdown: ceil(value / 1000) drops when value reaches a multiple of
+  // 1000; count-up: it grows when value passes one
+  const wait = kind.value === "tool-timer" ? phase || 1000 : 1000 - phase;
+  return wait + TICK_SLACK_MS;
+}
+
+// Ticks only while something is moving AND the window is on screen
+// (windowVisible, same gate as the media tile's progress tick): hiding the
+// window tears the timeout chain down, showing it again re-runs this
+// effect and refreshes nowTick. A running timer stops ticking once its
+// remaining time hits zero; the server's `finished` push takes over.
 watchEffect((onCleanup) => {
   const running = props.state?.running === true;
-  if (kind.value !== "tool-clock" && !running) return;
+  if ((kind.value !== "tool-clock" && !running) || !windowVisible.value) return;
   nowTick.value = Date.now();
-  const id = setInterval(() => {
-    nowTick.value = Date.now();
-  }, kind.value === "tool-clock" ? 1000 : 200);
-  onCleanup(() => clearInterval(id));
+  let id = null;
+  const schedule = () => {
+    const now = Date.now();
+    if (
+      kind.value === "tool-timer" &&
+      Number(props.state?.durationMs || 0) - elapsedTotalMs(props.state, now) <= 0
+    ) {
+      return;
+    }
+    id = setTimeout(() => {
+      nowTick.value = Date.now();
+      schedule();
+    }, nextTickDelay(now));
+  };
+  schedule();
+  onCleanup(() => clearTimeout(id));
 });
 
-function elapsedTotalMs(state) {
+function elapsedTotalMs(state, now = nowTick.value) {
   if (!state) return 0;
-  const extra = state.running ? Math.max(0, nowTick.value - Number(state.startedAtMs || 0)) : 0;
+  const extra = state.running ? Math.max(0, now - Number(state.startedAtMs || 0)) : 0;
   return Number(state.elapsedMs || 0) + extra;
 }
 
@@ -134,26 +171,33 @@ const counterLabel = computed(() => {
 
 const toolTitle = computed(() => props.tile.title || "");
 
-function clockParts() {
-  const now = new Date();
-  const opts = {
+// Formatters are cached per (locale, hour12, seconds, timeZone); the
+// rendered parts are computed once per tick (nowTick), not per template
+// read.
+const clockTimeFormat = computed(() =>
+  new Intl.DateTimeFormat(clockLocale.value, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: clockTwelve.value,
     ...(clockSeconds.value ? { second: "2-digit" } : {}),
     ...(clockZone.value ? { timeZone: clockZone.value } : {}),
+  }),
+);
+const clockDateFormat = computed(() =>
+  new Intl.DateTimeFormat(clockLocale.value, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    ...(clockZone.value ? { timeZone: clockZone.value } : {}),
+  }),
+);
+const clockParts = computed(() => {
+  const now = new Date(nowTick.value);
+  return {
+    time: clockTimeFormat.value.format(now),
+    date: clockShowDate.value ? clockDateFormat.value.format(now) : "",
   };
-  const time = new Intl.DateTimeFormat(clockLocale.value, opts).format(now);
-  const date = clockShowDate.value
-    ? new Intl.DateTimeFormat(clockLocale.value, {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-        ...(clockZone.value ? { timeZone: clockZone.value } : {}),
-      }).format(now)
-    : "";
-  return { time, date };
-}
+});
 
 function mmss(ms) {
   const total = Math.ceil(Math.max(0, ms) / 1000);
@@ -247,9 +291,9 @@ function onResetClick(event) {
     <template v-if="kind === 'tool-clock'">
       <div class="tool-clock">
         <span class="tool-time" :class="{ small: clockSeconds }">{{
-          clockParts().time
+          clockParts.time
         }}</span>
-        <span v-if="clockShowDate" class="tool-sub">{{ clockParts().date }}</span>
+        <span v-if="clockShowDate" class="tool-sub">{{ clockParts.date }}</span>
       </div>
     </template>
 
@@ -343,10 +387,13 @@ function onResetClick(event) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* finish flash: the tile blinks on every surface (Android mirrors it
-   with an animated overlay) */
+/* finish flash: the tile blinks a few times, then stays highlighted */
 .tool-body.flashing {
-  animation: tool-flash 800ms ease-in-out infinite;
+  animation: tool-flash 800ms ease-in-out 6;
+  /* after the last cycle the tile rests highlighted instead of blinking
+     (and repainting) until someone resets it */
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
 }
 @keyframes tool-flash {
   0%,

@@ -33,6 +33,13 @@ when done.
 | 019 | Full Polish/English i18n in the desktop UI | P1 | L | - | DONE (chunks A-D by delegated GLM-5.3-Flash + one Sonnet start (rate-limited mid-step-2, work preserved), all reviewed; branch `t3/i18n-desktop-integration`. Follow-ups: re-source the Polish callurl labels in catalog.js + editorHistory.js descriptions into t(); quote-style normalization in pl-chrome.json) |
 | 020 | Polish/English string resources in the Android client | P2 | M | - | DONE (executor GLM-5.3-Flash, reviewed; localized branch `t3/mobile-i18n`; first-ever local `gradle :app:testDebugUnitTest` on the Linux box — JDK17 + Gradle + SDK installed under /home/ttm-server by the executor) |
 | 021 | Locale-aware media/Spotify payload texts (host locale) | P2 | M | 019 | DONE (executor GLM-5.3-Flash, reviewed; crates/i18n + media/spotify texts + set_lang locale param + server config; landed with 019 on `t3/i18n-desktop-integration`. Follow-up: Discord statusLine from Rust still untranslated) |
+| 022 | SMTC art off the per-second path + per-session app-name cache | P1 | M | - | TODO (round 7; audits A-PERF-01/03) |
+| 023 | Ext runtimes: thread exit when drained, one-shot laziness, no idle wake | P1 | M | - | TODO (round 7; audit C measured 17→169 MB after one execute; stacks stay 64 MiB — confirmed virtual-only, shrinking REJECTED) |
+| 024 | Asset GC across restarts + fast low-RSS startup | P2 | S-M | - | TODO (round 7; A-MEM-01 + C-SRV-2: unbounded cover disk growth, 1.8 s/160 MB open) |
+| 025 | WebView papercuts: tool-tile tick, media-tile effects, clock formatters, art-cache LRU | P3 | S | - | TODO (round 7; audit B) |
+| 026 | Tools 100 ms tick → event-driven; Spotify transient keeps last values | P2 | S-M | - | TODO (round 7; C-SRV-1 + A correctness) |
+| 027 | Push dead-band + follow-up gating to MediaPropertiesChanged | P2 | S-M | 022 | QUEUED (after 022; A-PERF-02) |
+| 028 | Tablet update UX: offer uninstall+reinstall on signature mismatch | P3 | S | - | QUEUED (user hit INSTALL_FAILED_UPDATE_INCOMPATIBLE on 2026-10-29; i18n-aware dialog) |
 
 Plans 006-011 come from the second audit (see "Round 2: mobile battery
 and bugs" at the end of this file). Order: 006 → 007 → 008 (the battery
@@ -235,3 +242,22 @@ Release mechanics are not a plan: bump `[workspace.package] version`,
 `apps/desktop/src-tauri/tauri.conf.json` and `apps/desktop/package.json`
 (+ lockfile, + `Cargo.lock` refresh), tag `v*`, push - `release.yml`
 builds exe+APK, publishes and commits the feed manifest to main.
+
+## Round 7: performance + RAM delta audit (2026-10-29, three parallel Sonnet auditors)
+
+Scope: everything changed since f07f447 (415 commits) across the Rust
+runtime (lane A), the WebView (lane B), ext runtimes + server (lane C,
+measured on a Linux harness). Rejected with evidence this round:
+shrinking the 64 MiB Boa stacks (virtual reservation, ~91 kB resident
+per trivial thread, parser needs >16 MiB on deep expressions);
+ProducerGate growth (bounded by key set); unbounded producer channels
+(bounded by the reaper); idle wakeups under 1/s (settled flusher
+territory); mergeCustomValues stringify cost; vue-i18n runtime (JIT
+compile cache; ~3 t() on the tile path). Lane C also found
+`pulpit-server` still does not LINK off Windows (crates/vm unguarded
+Win32 DLL calls) - recorded as a follow-up DX item, not planned.
+
+Tablet install note (2026-10-29): the user hit signature mismatch on
+the first release APK - the installed tablet app predates the release
+keystore. One-time uninstall+reinstall documented in the thread;
+plan 028 covers the UX.

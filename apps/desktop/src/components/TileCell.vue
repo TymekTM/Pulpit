@@ -263,8 +263,15 @@ const statusMini = computed(() => {
 // and memoized in the WebView (see statusMedia.js). A dropped lookup
 // leaves the url null - the tile renders text-only.
 const statusArtUrl = ref(null);
+// Primitive projections of the payload: the object is replaced about once
+// a second while playing, but these only change when the value does, so
+// the effects below do not re-run (or restart the interval) per push.
+const statusImage = computed(() => statusData.value?.image);
+const progressPlaying = computed(
+  () => statusData.value?.progress?.playing === true,
+);
 watchEffect((onCleanup) => {
-  const hash = statusData.value?.image;
+  const hash = statusImage.value;
   let live = true;
   onCleanup(() => {
     live = false;
@@ -281,9 +288,7 @@ watchEffect((onCleanup) => {
 // Date.now() also covers the payload-change frame - no stale position.
 const nowTick = ref(Date.now());
 watchEffect((onCleanup) => {
-  if (statusData.value?.progress?.playing !== true || !windowVisible.value) {
-    return;
-  }
+  if (!progressPlaying.value || !windowVisible.value) return;
   nowTick.value = Date.now();
   const id = setInterval(() => {
     nowTick.value = Date.now();

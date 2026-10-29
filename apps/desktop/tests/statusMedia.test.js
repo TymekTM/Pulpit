@@ -66,7 +66,7 @@ describe("resolveStatusArt", () => {
     expect(artCalls()).toHaveLength(2);
   });
 
-  it("caps the memo at 32 covers, dropping the oldest insertion", async () => {
+  it("caps the memo at 32 covers, dropping the least recently used", async () => {
     handle("asset_data_url", ({ hash }) => `url-${hash}`);
     for (let i = 0; i < 33; i++) await resolve(`h${i}`);
     expect(artCalls()).toHaveLength(33);
@@ -74,10 +74,20 @@ describe("resolveStatusArt", () => {
     await resolve("h32");
     await resolve("h1");
     expect(artCalls()).toHaveLength(33);
-    // h0 fell out and costs a new lookup; a memo hit does not refresh
-    // recency, only a (re)insert does
+    // h0 fell out and costs a new lookup
     await resolve("h0");
     expect(artCalls()).toHaveLength(34);
+  });
+
+  it("keeps a cover that is hit repeatedly while others pass", async () => {
+    handle("asset_data_url", ({ hash }) => `url-${hash}`);
+    await resolve("playing");
+    for (let i = 0; i < 40; i++) {
+      await resolve(`other${i}`);
+      // the playing cover is re-resolved on every status push
+      await resolve("playing");
+    }
+    expect(artCalls().filter((c) => c.args.hash === "playing")).toHaveLength(1);
   });
 });
 
