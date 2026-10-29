@@ -138,7 +138,7 @@ fn resolve_art(
             key
         }
     };
-    let hash = assets.import_bytes(&bytes, &ext).ok()?;
+    let hash = assets.import_cover_bytes(&bytes, &ext).ok()?;
     // The memo only skips re-imports now; deletions belong to the
     // shared LRU, so its own eviction callback is a no-op.
     lru_remember(
