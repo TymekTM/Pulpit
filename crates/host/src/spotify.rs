@@ -125,7 +125,7 @@ async fn resolve_art(
     })
     .await
     .ok()??;
-    let hash = assets.import_bytes(&bytes, ext).ok()?;
+    let hash = assets.import_cover_bytes(&bytes, ext).ok()?;
     // The memo only skips re-downloads now; deletions belong to the
     // shared LRU, so its own eviction callback is a no-op.
     lru_remember(
@@ -449,7 +449,7 @@ mod tests {
             .as_str()
             .expect("image hash attached")
             .to_string();
-        assert_eq!(first.len(), 64, "sha256 hex from import_bytes");
+        assert_eq!(first.len(), 64, "sha256 hex from import_cover_bytes");
         assert_eq!(
             data(&emits[1])["spotify-now-playing"]["image"].as_str(),
             Some(first.as_str()),

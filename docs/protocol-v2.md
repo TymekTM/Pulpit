@@ -382,6 +382,8 @@ Client → server, one frame per user gesture:
 
 - Store: `~/pulpitApp/assets/<sha256-hex>.<ext>` (env
   `PULPIT_ASSETS`). Content-addressed, so imports are idempotent.
+  Producer covers (media/Spotify art) live in `assets/covers/`, which is
+  wiped at every server start; clients re-fetch on demand.
 - Endpoint: `GET /assets/<sha256-hex>?token=<device token>` -
   `Cache-Control: immutable, max-age=31536000`, content type from the
   stored extension. Wrong/missing token: 401. Unknown hash: 404.

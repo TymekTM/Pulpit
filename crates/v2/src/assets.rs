@@ -3,6 +3,19 @@
 //! hash; legacy DB data URLs convert into the same store when boards are
 //! built. Served from `GET /assets/<hash>?token=...` with immutable cache
 //! headers.
+//!
+//! Two kinds of entry, told apart by the import path:
+//! - **board images** ([`AssetStore::import_bytes`] /
+//!   [`AssetStore::import_data_url`]) live in the root. They are the only
+//!   files the store hashes and indexes at open, so startup cost scales
+//!   with board-image volume alone.
+//! - **producer covers** ([`AssetStore::import_cover_bytes`]: SMTC
+//!   thumbnails, Spotify album art) live in `covers/`. They are
+//!   disposable by contract (the producers keep temporary caches only):
+//!   the whole directory is wiped at open, unread, and clients re-fetch
+//!   on demand. Without this the covers accumulated across launches
+//!   without bound (the in-process LRU that retires them dies with the
+//!   process).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -11,10 +24,21 @@ use std::sync::Mutex;
 use base64::Engine;
 use sha2::{Digest, Sha256};
 
+/// Subdirectory holding producer covers (see the module docs).
+const COVERS_DIR: &str = "covers";
+
+#[derive(Clone)]
+struct Entry {
+    ext: String,
+    /// Lives in `covers/` rather than the root.
+    cover: bool,
+}
+
 pub struct AssetStore {
     dir: PathBuf,
-    /// hash -> file extension, rebuilt from the directory at open.
-    exts: Mutex<HashMap<String, String>>,
+    /// hash -> entry; board images are rebuilt from the root at open,
+    /// covers start empty (their directory is wiped).
+    exts: Mutex<HashMap<String, Entry>>,
     /// data-URL fingerprint -> hash. Board rebuilds re-import the same URL
     /// strings on every generation bump; the fingerprint key (not the URL
     /// itself) keeps multi-MB base64 strings out of memory.
@@ -31,6 +55,14 @@ pub struct AssetStore {
 impl AssetStore {
     pub fn open(dir: PathBuf) -> std::io::Result<AssetStore> {
         std::fs::create_dir_all(&dir)?;
+        let covers = dir.join(COVERS_DIR);
+        // No covers dir yet = a store written before covers were split
+        // out: its root mixes board images with years of accumulated
+        // covers and nothing says which is which. Board images are
+        // re-derivable (every board build re-imports them from the DB),
+        // so that root is purged unhashed, once; the covers dir created
+        // below marks the migration done.
+        let legacy = !covers.exists();
         let mut exts = HashMap::new();
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
@@ -38,6 +70,10 @@ impl AssetStore {
                 let Some((hash, ext)) = split_stem(&file_name) else {
                     continue;
                 };
+                if legacy {
+                    let _ = std::fs::remove_file(entry.path());
+                    continue;
+                }
                 // Content-addressed means it: verify at open. A file
                 // whose bytes do not hash to its name is a torn write
                 // from a pre-rename crash or tampering; serving it under
@@ -46,7 +82,13 @@ impl AssetStore {
                 // removed - a re-import of the honest bytes heals it.
                 match std::fs::read(entry.path()) {
                     Ok(bytes) if hash == hex::encode(Sha256::digest(&bytes)) => {
-                        exts.insert(hash.to_string(), ext.to_string());
+                        exts.insert(
+                            hash.to_string(),
+                            Entry {
+                                ext: ext.to_string(),
+                                cover: false,
+                            },
+                        );
                     }
                     _ => {
                         tracing::warn!(file = %file_name, "asset content does not match its hash name - dropping it");
@@ -55,6 +97,13 @@ impl AssetStore {
                 }
             }
         }
+        // Covers are disposable: drop them without reading a byte.
+        if let Err(e) = std::fs::remove_dir_all(&covers) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(error = %e, "could not wipe the cover cache");
+            }
+        }
+        std::fs::create_dir_all(&covers)?;
         Ok(AssetStore {
             dir,
             exts: Mutex::new(exts),
@@ -63,22 +112,71 @@ impl AssetStore {
         })
     }
 
-    /// Stores bytes under their sha-256 and returns the hex hash. Existing
-    /// files with the same hash are left untouched. Writes go to a temp
-    /// sibling + rename (shared `pulpit_db::write_atomic`): responses are
-    /// served `immutable`, so a torn write to the final name would be
-    /// cached forever by clients that happened to fetch it mid-write.
+    fn path_of(&self, hash: &str, entry: &Entry) -> PathBuf {
+        let name = format!("{hash}.{}", entry.ext);
+        if entry.cover {
+            self.dir.join(COVERS_DIR).join(name)
+        } else {
+            self.dir.join(name)
+        }
+    }
+
+    /// Stores a board image under its sha-256 and returns the hex hash.
+    /// Existing files with the same hash are left untouched. Writes go to
+    /// a temp sibling + rename (shared `pulpit_db::write_atomic`):
+    /// responses are served `immutable`, so a torn write to the final
+    /// name would be cached forever by clients that happened to fetch it
+    /// mid-write. Producer covers use [`AssetStore::import_cover_bytes`].
     pub fn import_bytes(&self, bytes: &[u8], ext: &str) -> std::io::Result<String> {
         let ext = normalize_ext(ext);
         let hash = hex::encode(Sha256::digest(bytes));
-        let path = self.dir.join(format!("{hash}.{ext}"));
+        let entry = Entry { ext, cover: false };
+        let path = self.path_of(&hash, &entry);
         if !path.exists() {
+            pulpit_db::write_atomic(&path, bytes)?;
+        }
+        // the same bytes may already be a cover; the board image now owns
+        // the hash, so the disposable copy goes (best effort - the covers
+        // dir is wiped at open anyway)
+        let previous = self
+            .exts
+            .lock()
+            .expect("asset store poisoned")
+            .insert(hash.clone(), entry);
+        if let Some(previous) = previous.filter(|p| p.cover) {
+            let _ = std::fs::remove_file(self.path_of(&hash, &previous));
+        }
+        Ok(hash)
+    }
+
+    /// Like [`AssetStore::import_bytes`] for a producer cover (SMTC
+    /// thumbnail, Spotify album art): stored in the disposable `covers/`
+    /// directory, wiped at the next open. Bytes already stored as a board
+    /// image stay where they are.
+    pub fn import_cover_bytes(&self, bytes: &[u8], ext: &str) -> std::io::Result<String> {
+        let ext = normalize_ext(ext);
+        let hash = hex::encode(Sha256::digest(bytes));
+        let existing = self
+            .exts
+            .lock()
+            .expect("asset store poisoned")
+            .get(&hash)
+            .cloned();
+        if let Some(entry) = existing.as_ref().filter(|e| !e.cover) {
+            if self.path_of(&hash, entry).exists() {
+                return Ok(hash);
+            }
+        }
+        let entry = Entry { ext, cover: true };
+        let path = self.path_of(&hash, &entry);
+        if !path.exists() {
+            std::fs::create_dir_all(self.dir.join(COVERS_DIR))?;
             pulpit_db::write_atomic(&path, bytes)?;
         }
         self.exts
             .lock()
             .expect("asset store poisoned")
-            .insert(hash.clone(), ext);
+            .insert(hash.clone(), entry);
         Ok(hash)
     }
 
@@ -122,13 +220,13 @@ impl AssetStore {
     /// serving goes through `read_for_serving`. Not `#[cfg(test)]`:
     /// other crates' tests (pulpit-host's art pump) read through it.
     pub fn get(&self, hash: &str) -> Option<Vec<u8>> {
-        let ext = self
+        let entry = self
             .exts
             .lock()
             .expect("asset store poisoned")
             .get(hash)
             .cloned()?;
-        std::fs::read(self.dir.join(format!("{hash}.{ext}"))).ok()
+        std::fs::read(self.path_of(hash, &entry)).ok()
     }
 
     /// Deletes an entry (the Spotify art LRU's retention). The store is
@@ -145,11 +243,11 @@ impl AssetStore {
         {
             return false;
         }
-        let ext = self.exts.lock().expect("asset store poisoned").remove(hash);
-        let Some(ext) = ext else {
+        let entry = self.exts.lock().expect("asset store poisoned").remove(hash);
+        let Some(entry) = entry else {
             return false;
         };
-        match std::fs::remove_file(self.dir.join(format!("{hash}.{ext}"))) {
+        match std::fs::remove_file(self.path_of(hash, &entry)) {
             Ok(()) => true,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
             Err(e) => {
@@ -163,14 +261,14 @@ impl AssetStore {
     /// (optional) `Range` header value.
     pub fn read_for_serving(&self, hash: &str, range: Option<&str>) -> std::io::Result<AssetBody> {
         use std::io::{Read as _, Seek as _, SeekFrom};
-        let ext = self
+        let entry = self
             .exts
             .lock()
             .expect("asset store poisoned")
             .get(hash)
             .cloned()
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "unknown hash"))?;
-        let mut file = std::fs::File::open(self.dir.join(format!("{hash}.{ext}")))?;
+        let mut file = std::fs::File::open(self.path_of(hash, &entry))?;
         let total = file.metadata()?.len();
         let Some(spec) = range else {
             let mut bytes = Vec::with_capacity(total as usize);
@@ -198,13 +296,13 @@ impl AssetStore {
     }
 
     pub fn content_type(&self, hash: &str) -> Option<&'static str> {
-        let ext = self
+        let entry = self
             .exts
             .lock()
             .expect("asset store poisoned")
             .get(hash)
             .cloned()?;
-        Some(content_type(&ext))
+        Some(content_type(&entry.ext))
     }
 }
 
@@ -342,20 +440,20 @@ mod tests {
 
         // board first, then the same bytes arrive as album art
         let board = store.import_data_url(&url(b"cover-a")).unwrap();
-        let art = store.import_bytes(b"cover-a", "jpg").unwrap();
+        let art = store.import_cover_bytes(b"cover-a", "jpg").unwrap();
         assert_eq!(art, board, "content-addressed: one entry");
         assert!(!store.remove(&art), "a board image is pinned");
         assert!(store.get(&board).is_some());
 
         // album art first, then a board picks up the same bytes
-        let art = store.import_bytes(b"cover-b", "jpg").unwrap();
+        let art = store.import_cover_bytes(b"cover-b", "jpg").unwrap();
         let board = store.import_data_url(&url(b"cover-b")).unwrap();
         assert_eq!(art, board);
         assert!(!store.remove(&art));
         assert!(store.get(&board).is_some());
 
         // bytes no board uses are deleted
-        let own = store.import_bytes(b"cover-c", "jpg").unwrap();
+        let own = store.import_cover_bytes(b"cover-c", "jpg").unwrap();
         assert!(store.remove(&own));
         assert!(store.get(&own).is_none());
     }
@@ -462,6 +560,7 @@ mod tests {
         // a file whose name claims a hash its content does not match:
         // a torn write from a pre-rename crash, or tampering
         let hash = hex::encode(Sha256::digest(b"good-bytes"));
+        std::fs::create_dir(dir.path().join(COVERS_DIR)).unwrap(); // not a legacy store
         let path = dir.path().join(format!("{hash}.png"));
         std::fs::write(&path, b"truncated-or-tampered").unwrap();
 
@@ -480,5 +579,110 @@ mod tests {
         let healed = store.import_bytes(b"good-bytes", "png").unwrap();
         assert_eq!(healed, hash);
         assert_eq!(store.get(&hash).unwrap(), b"good-bytes");
+    }
+
+    #[test]
+    fn covers_are_wiped_at_open_and_board_images_survive() {
+        let dir = tempfile::tempdir().unwrap();
+        let (board, cover) = {
+            let store = AssetStore::open(dir.path().to_path_buf()).unwrap();
+            let board = store.import_bytes(b"board-image", "png").unwrap();
+            let cover = store.import_cover_bytes(b"album-art", "jpg").unwrap();
+            assert_eq!(store.get(&cover).unwrap(), b"album-art");
+            assert_eq!(store.content_type(&cover), Some("image/jpeg"));
+            (board, cover)
+        };
+        // a stray file that does not hash to its name: reading it at open
+        // would drop it as corrupt, wiping the dir drops it unread
+        let stray = dir
+            .path()
+            .join(COVERS_DIR)
+            .join(format!("{}.jpg", "a".repeat(64)));
+        std::fs::write(&stray, b"not-its-hash").unwrap();
+
+        let store = AssetStore::open(dir.path().to_path_buf()).unwrap();
+        assert!(store.get(&cover).is_none(), "cover is gone after reopen");
+        assert!(store.content_type(&cover).is_none());
+        assert!(!stray.exists());
+        assert_eq!(
+            std::fs::read_dir(dir.path().join(COVERS_DIR))
+                .unwrap()
+                .count(),
+            0
+        );
+        assert_eq!(store.get(&board).unwrap(), b"board-image");
+    }
+
+    #[test]
+    fn a_cover_serves_again_after_reimport() {
+        let dir = tempfile::tempdir().unwrap();
+        let hash = {
+            let store = AssetStore::open(dir.path().to_path_buf()).unwrap();
+            store.import_cover_bytes(b"0123456789", "png").unwrap()
+        };
+        let store = AssetStore::open(dir.path().to_path_buf()).unwrap();
+        assert!(store.read_for_serving(&hash, None).is_err());
+        assert_eq!(
+            store.import_cover_bytes(b"0123456789", "png").unwrap(),
+            hash
+        );
+        assert_eq!(
+            store.read_for_serving(&hash, None).unwrap(),
+            AssetBody::Full(b"0123456789".to_vec())
+        );
+        assert_eq!(
+            store.read_for_serving(&hash, Some("bytes=2-4")).unwrap(),
+            AssetBody::Window {
+                start: 2,
+                end_incl: 4,
+                total: 10,
+                bytes: b"234".to_vec()
+            }
+        );
+        assert_eq!(store.content_type(&hash), Some("image/png"));
+        assert!(dir
+            .path()
+            .join(COVERS_DIR)
+            .join(format!("{hash}.png"))
+            .exists());
+    }
+
+    #[test]
+    fn a_board_import_takes_over_a_cover_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = AssetStore::open(dir.path().to_path_buf()).unwrap();
+        let cover = store.import_cover_bytes(b"same-bytes", "jpg").unwrap();
+        let cover_path = dir.path().join(COVERS_DIR).join(format!("{cover}.jpg"));
+        assert!(cover_path.exists());
+        let board = store.import_bytes(b"same-bytes", "jpg").unwrap();
+        assert_eq!(board, cover);
+        assert!(!cover_path.exists(), "the root copy owns the hash now");
+        assert_eq!(store.get(&board).unwrap(), b"same-bytes");
+        drop(store);
+        // and it survives a reopen, cover wipe included
+        let store = AssetStore::open(dir.path().to_path_buf()).unwrap();
+        assert_eq!(store.get(&board).unwrap(), b"same-bytes");
+    }
+
+    #[test]
+    fn a_pre_split_store_is_purged_once() {
+        let dir = tempfile::tempdir().unwrap();
+        // old layout: covers and board images mixed in the root
+        let hash = hex::encode(Sha256::digest(b"old"));
+        let old = dir.path().join(format!("{hash}.png"));
+        std::fs::write(&old, b"old").unwrap();
+        let unrelated = dir.path().join("notes.txt");
+        std::fs::write(&unrelated, b"keep").unwrap();
+
+        let store = AssetStore::open(dir.path().to_path_buf()).unwrap();
+        assert!(!old.exists());
+        assert!(store.get(&hash).is_none());
+        assert!(unrelated.exists(), "only hash-named files are touched");
+        let board = store.import_bytes(b"new", "png").unwrap();
+        drop(store);
+
+        // the covers dir now marks the migration done
+        let store = AssetStore::open(dir.path().to_path_buf()).unwrap();
+        assert_eq!(store.get(&board).unwrap(), b"new");
     }
 }
