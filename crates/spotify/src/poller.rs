@@ -38,6 +38,9 @@ const TRACK_END_MARGIN: Duration = Duration::from_millis(250);
 /// NeedsLogin keeps the loop alive (a re-login swaps the handle state)
 /// but polls slowly and without any requests.
 const NEEDS_LOGIN_POLL: Duration = Duration::from_secs(30);
+/// Retry delay after a transient failure (offline, 5xx): no snapshot is
+/// pushed, so the clients keep their last values until a poll succeeds.
+const TRANSIENT_RETRY: Duration = Duration::from_secs(5);
 /// Upper bound on how long a rate-limited loop iteration sleeps before
 /// re-checking the pause.
 const PAUSE_POLL_CAP: Duration = Duration::from_secs(30);
@@ -90,6 +93,13 @@ fn poll_loop(
             Err(e) => {
                 // transient (offline, 5xx): keep the clients' last values
                 tracing::debug!(error = %e, "spotify poll failed");
+                // push nothing (a `player = None` snapshot would blank the
+                // tiles) and leave the cross-poll memories untouched so the
+                // next successful poll dedupes against the same state
+                if wake.sleep_until(Instant::now() + TRANSIENT_RETRY) {
+                    std::thread::sleep(FAST_REPOLL);
+                }
+                continue;
             }
         }
         if auth == AuthState::Ok {
@@ -400,14 +410,48 @@ mod tests {
     }
 
     #[test]
-    fn transport_failures_keep_the_loop_alive() {
+    fn transport_failures_push_nothing_but_keep_the_loop_alive() {
         let (spotify, fake, _dir) = handle(true);
         // nothing scripted: the first poll fails at the transport level
+        let wake = spotify.wake();
         let mut rx = spawn_push(spotify, consumers(1));
-        let snap = recv_within(&mut rx, Duration::from_secs(5)).expect("a snapshot");
-        // an offline machine must not look like it needs a login
-        assert_eq!(snap["spotify-auth"], "ok");
+        // an offline machine must not blank the tiles (or look like it
+        // needs a login): no snapshot at all
+        assert!(recv_within(&mut rx, Duration::from_millis(500)).is_none());
         assert_eq!(fake.requests().len(), 1);
+        // the loop retries (a control call cuts the retry delay short)
+        fake.push(empty(204, &[]));
+        wake.signal();
+        let snap = recv_within(&mut rx, Duration::from_secs(5)).expect("a snapshot");
+        assert_eq!(snap["spotify-auth"], "ok");
+        assert_eq!(fake.requests().len(), 2);
+    }
+
+    #[test]
+    fn a_transient_error_keeps_the_last_pushed_snapshot() {
+        let (spotify, fake, _dir) = handle(true);
+        fake.push(playing_track("spotify:track:abc", 55))
+            .push_json(200, serde_json::json!([true]));
+        let wake = spotify.wake();
+        let mut rx = spawn_push(spotify, consumers(1));
+        let first = recv_within(&mut rx, Duration::from_secs(5)).expect("a snapshot");
+        assert_eq!(first["spotify-playing"], "ON");
+
+        // the re-poll hits a failing transport (nothing scripted)
+        wake.signal();
+        assert!(
+            recv_within(&mut rx, Duration::from_millis(1_200)).is_none(),
+            "a transient error must not push an idle snapshot"
+        );
+        assert_eq!(fake.requests().len(), 3, "{:?}", urls(&fake));
+
+        // recovery: the same track again needs no second contains-check and
+        // the remembered volume survived the failure
+        fake.push(playing_track("spotify:track:abc", 55));
+        wake.signal();
+        let again = recv_within(&mut rx, Duration::from_secs(5)).expect("recovered snapshot");
+        assert_eq!(again, first);
+        assert_eq!(fake.requests().len(), 4, "{:?}", urls(&fake));
     }
 
     #[test]
