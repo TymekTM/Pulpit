@@ -17,6 +17,7 @@
 //! VOICE_SETTINGS_UPDATE pushes, so toggles send SET straight away instead
 //! of GET-then-SET.
 
+#[cfg(windows)]
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::time::{Duration, Instant};
@@ -231,29 +232,7 @@ pub fn authorize(config: &DiscordConfig, deadline: Instant) -> Result<AuthTokens
     };
 
     // step 2: AUTHORIZE over the pipe - Discord shows the consent popup
-    let mut session = Conn::handshake(&config.client_id, deadline, None)?;
-    let mut args = json!({
-        "scopes": SCOPES,
-        "client_id": config.client_id,
-        "prompt": "consent",
-    });
-    if let Some(token) = &rpc_token {
-        args["rpc_token"] = json!(token);
-    }
-    let reply = session.request_until(deadline, "AUTHORIZE", args)?;
-    if reply.get("evt").and_then(Value::as_str) == Some("ERROR") {
-        let msg = reply
-            .pointer("/data/message")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown");
-        tracing::warn!(message = msg, "discord AUTHORIZE rejected");
-        return Err(DiscordError::AuthCancelled);
-    }
-    let code = reply
-        .pointer("/data/code")
-        .and_then(Value::as_str)
-        .ok_or(DiscordError::AuthCancelled)?
-        .to_string();
+    let code = request_auth_code(config, deadline, rpc_token.as_deref())?;
 
     // step 3: exchange the code on the real API (local routes are gone in
     // newer Discord builds)
@@ -276,6 +255,48 @@ pub fn authorize(config: &DiscordConfig, deadline: Instant) -> Result<AuthTokens
             .and_then(Value::as_str)
             .map(str::to_string),
     })
+}
+
+/// Discord IPC is a Windows named pipe; elsewhere there is nothing to
+/// show the consent popup.
+#[cfg(not(windows))]
+fn request_auth_code(
+    _config: &DiscordConfig,
+    _deadline: Instant,
+    _rpc_token: Option<&str>,
+) -> Result<String> {
+    Err(DiscordError::NotRunning)
+}
+
+#[cfg(windows)]
+fn request_auth_code(
+    config: &DiscordConfig,
+    deadline: Instant,
+    rpc_token: Option<&str>,
+) -> Result<String> {
+    let mut session = Conn::handshake(&config.client_id, deadline, None)?;
+    let mut args = json!({
+        "scopes": SCOPES,
+        "client_id": config.client_id,
+        "prompt": "consent",
+    });
+    if let Some(token) = rpc_token {
+        args["rpc_token"] = json!(token);
+    }
+    let reply = session.request_until(deadline, "AUTHORIZE", args)?;
+    if reply.get("evt").and_then(Value::as_str) == Some("ERROR") {
+        let msg = reply
+            .pointer("/data/message")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        tracing::warn!(message = msg, "discord AUTHORIZE rejected");
+        return Err(DiscordError::AuthCancelled);
+    }
+    reply
+        .pointer("/data/code")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or(DiscordError::AuthCancelled)
 }
 
 /// Silent token refresh; works while a refresh token from a previous
@@ -474,6 +495,17 @@ pub fn probe_status(config: &DiscordConfig) -> DiscordStatus {
     if config.access_token.trim().is_empty() {
         return DiscordStatus::NeedsAuth;
     }
+    probe_connection(config)
+}
+
+/// Discord IPC is a Windows named pipe; elsewhere it is never reachable.
+#[cfg(not(windows))]
+fn probe_connection(_config: &DiscordConfig) -> DiscordStatus {
+    DiscordStatus::NotRunning
+}
+
+#[cfg(windows)]
+fn probe_connection(config: &DiscordConfig) -> DiscordStatus {
     let deadline = Instant::now() + Duration::from_millis(1500);
     match Conn::connect(config, deadline) {
         Ok(conn) => {
@@ -605,6 +637,7 @@ pub struct MemberVoice {
 
 impl MemberVoice {
     /// `RPCVoiceState` dispatch payload -> member; None without a user id.
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn parse(data: &Value) -> Option<MemberVoice> {
         let user = data.get("user")?;
         let user_id = user.get("id").and_then(Value::as_str)?.to_string();
@@ -716,9 +749,13 @@ pub fn member_state_keys(member: &MemberVoice) -> Vec<(String, Value)> {
 
 // ------------------------------------------------------------------ frames
 
+#[cfg_attr(not(windows), allow(dead_code))]
 const OP_HANDSHAKE: u32 = 0;
+#[cfg_attr(not(windows), allow(dead_code))]
 const OP_FRAME: u32 = 1;
+#[cfg_attr(not(windows), allow(dead_code))]
 const OP_PING: u32 = 3;
+#[cfg_attr(not(windows), allow(dead_code))]
 const OP_PONG: u32 = 4;
 
 /// Largest inbound frame the client will ever assemble; real Discord
@@ -765,6 +802,7 @@ pub fn decode_frame(buf: &[u8]) -> Option<(u32, &[u8])> {
 /// Pop every complete frame from the front of `buf`, parsed as JSON. An
 /// incomplete tail stays put; a frame whose payload is not JSON is dropped
 /// (it cannot participate in request/reply matching anyway).
+#[cfg_attr(not(windows), allow(dead_code))]
 fn extract_frames(buf: &mut Vec<u8>) -> Vec<(u32, Value)> {
     let mut frames = Vec::new();
     while buf.len() >= 8 {
@@ -792,6 +830,7 @@ fn extract_frames(buf: &mut Vec<u8>) -> Vec<(u32, Value)> {
 
 /// What one inbound frame asks of the connection.
 #[derive(Debug, PartialEq)]
+#[cfg_attr(not(windows), allow(dead_code))]
 enum Incoming {
     /// Nonce-matched reply to a request we sent (successful or not - the
     /// caller inspects `evt`).
@@ -814,6 +853,7 @@ enum Incoming {
 
 /// `nonce` is Some while waiting for a specific request's reply, None
 /// while idle (nothing we sent is outstanding).
+#[cfg_attr(not(windows), allow(dead_code))]
 fn classify(op: u32, frame: &Value, nonce: Option<&str>) -> Incoming {
     if op == OP_PING {
         return Incoming::Ping(frame.clone());
@@ -849,6 +889,7 @@ fn classify(op: u32, frame: &Value, nonce: Option<&str>) -> Incoming {
 
 /// Second wait slot in [`Pipe::read_some_wake`]: the wake event (the
 /// first slot, the read event, answers as plain WAIT_OBJECT_0).
+#[cfg(windows)]
 const WAIT_WAKE: u32 = pipe::WAIT_OBJECT_0 + 1;
 
 #[cfg(windows)]
@@ -954,10 +995,12 @@ mod pipe {
 /// A named-pipe handle opened for overlapped I/O, so reads can carry a
 /// timeout without a PeekNamedPipe poll loop (the poll's 20 ms sleep was
 /// the floor under every request/response).
+#[cfg(windows)]
 struct Pipe {
     handle: *mut c_void,
 }
 
+#[cfg(windows)]
 // SAFETY: the raw handle is owned exclusively by this struct and every
 // method takes &mut self, so calls never overlap.
 unsafe impl Send for Pipe {}
@@ -965,10 +1008,12 @@ unsafe impl Send for Pipe {}
 /// Auto-reset, unnamed event: each wait consumes one completion. Created
 /// per I/O call because an event handed to a completed-synchronously
 /// operation stays signaled and would short-circuit the next wait.
+#[cfg(windows)]
 fn new_event() -> *mut c_void {
     unsafe { pipe::CreateEventW(std::ptr::null_mut(), 0, 0, std::ptr::null_mut()) }
 }
 
+#[cfg(windows)]
 impl Pipe {
     fn open() -> Result<Pipe> {
         for id in 0..10 {
@@ -1137,8 +1182,10 @@ impl Pipe {
 
 /// Cap on a single pipe write; a healthy local pipe drains instantly, so
 /// hitting this means Discord is wedged and the session is not worth saving.
+#[cfg(windows)]
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[cfg(windows)]
 impl Drop for Pipe {
     fn drop(&mut self) {
         // SAFETY: handle is a live handle we own
@@ -1151,6 +1198,7 @@ impl Drop for Pipe {
 /// One authenticated Discord RPC connection: the pipe plus the frame
 /// assembly state and the last known voice settings. Not shared across
 /// threads - the actor owns it.
+#[cfg(windows)]
 struct Conn {
     pipe: Pipe,
     nonce: u64,
@@ -1179,6 +1227,7 @@ struct Conn {
     resync: bool,
 }
 
+#[cfg(windows)]
 impl Conn {
     /// Open the pipe, send the handshake and consume the READY dispatch -
     /// Discord ignores commands sent before READY.
@@ -1556,6 +1605,7 @@ impl Conn {
 /// Command replies must not be errors; error frames carry their payload in
 /// `data` too, and caching or reading mute/deaf out of one would silently
 /// fake a successful action.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn require_ok(frame: &Value) -> Result<()> {
     if frame.get("evt").and_then(Value::as_str) == Some("ERROR") {
         Err(DiscordError::Rpc("rpc error"))
@@ -1749,6 +1799,7 @@ pub struct ExecOutcome {
     pub label: String,
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 enum Job {
     Exec {
         config: DiscordConfig,
@@ -1779,9 +1830,11 @@ pub struct DiscordClient {
 
 /// Non-owning copy of the wake handle for the serve path; the actor keeps
 /// the owning [`WakeEvent`] alive for as long as it uses this copy.
+#[cfg(windows)]
 #[derive(Clone, Copy)]
 struct WakeHandle(*mut c_void);
 
+#[cfg(windows)]
 unsafe impl Send for WakeHandle {}
 
 /// Auto-reset event the API threads signal to interrupt the actor's idle
@@ -1789,6 +1842,7 @@ unsafe impl Send for WakeHandle {}
 /// [`DiscordClient`] and the actor thread share it through an `Arc`, so
 /// dropping the client never closes a handle the actor is still waiting
 /// on (a closed handle value can be reused by an unrelated object).
+#[cfg_attr(not(windows), allow(dead_code))]
 struct WakeEvent(*mut c_void);
 
 // SAFETY: the raw handle is only ever passed to SetEvent (any thread,
@@ -1797,6 +1851,7 @@ struct WakeEvent(*mut c_void);
 unsafe impl Send for WakeEvent {}
 unsafe impl Sync for WakeEvent {}
 
+#[cfg(windows)]
 impl WakeEvent {
     fn new() -> WakeEvent {
         // auto-reset: each wait consumes one signal, so a wake fires
@@ -1804,6 +1859,7 @@ impl WakeEvent {
         WakeEvent(unsafe { pipe::CreateEventW(std::ptr::null_mut(), 0, 0, std::ptr::null_mut()) })
     }
 
+    #[cfg(windows)]
     fn handle(&self) -> WakeHandle {
         WakeHandle(self.0)
     }
@@ -1815,6 +1871,7 @@ impl WakeEvent {
     }
 }
 
+#[cfg(windows)]
 impl Drop for WakeEvent {
     fn drop(&mut self) {
         if !self.0.is_null() {
@@ -1823,15 +1880,28 @@ impl Drop for WakeEvent {
     }
 }
 
+// No pipe transport off Windows: the event is an inert null handle, which
+// the is_null guards in set() already treat as a no-op.
+#[cfg(not(windows))]
+impl WakeEvent {
+    fn new() -> WakeEvent {
+        WakeEvent(std::ptr::null_mut())
+    }
+
+    fn set(&self) {}
+}
+
 /// Idle cadence of the actor loop while a connection is up. The tick only
 /// bounds how long one serve pass may hold the actor; queued actions
 /// interrupt it through the wake event, and with no connection the actor
 /// blocks on the job queue outright - so neither state burns wakeups.
+#[cfg(windows)]
 const IDLE_TICK: Duration = Duration::from_secs(10);
 
 /// How often the disconnected actor retries a warm-configured connect.
 /// Covers Discord restarts and the gap after a transport failure: the
 /// per-member tiles come back (and go live) without any user action.
+#[cfg(windows)]
 const RECONNECT_EVERY: Duration = Duration::from_secs(15);
 
 impl DiscordClient {
@@ -1847,11 +1917,18 @@ impl DiscordClient {
     pub fn spawn_push(push: Option<tokio::sync::mpsc::UnboundedSender<Value>>) -> DiscordClient {
         let (tx, rx) = std::sync::mpsc::channel();
         let wake = std::sync::Arc::new(WakeEvent::new());
-        let thread_wake = wake.clone();
-        std::thread::Builder::new()
-            .name("discord-rpc".into())
-            .spawn(move || actor_loop(rx, thread_wake, None, push))
-            .expect("spawn discord rpc actor");
+        #[cfg(windows)]
+        {
+            let thread_wake = wake.clone();
+            std::thread::Builder::new()
+                .name("discord-rpc".into())
+                .spawn(move || actor_loop(rx, thread_wake, None, push))
+                .expect("spawn discord rpc actor");
+        }
+        // Discord IPC is a Windows named pipe: elsewhere no actor runs and
+        // the receiver drops here, so execute() reports the actor stopped.
+        #[cfg(not(windows))]
+        let _ = (rx, push);
         DiscordClient {
             jobs: std::sync::Mutex::new(tx),
             wake,
@@ -1910,6 +1987,7 @@ impl Drop for DiscordClient {
 
 /// One queued action, or None if the actor should stop. The reply is
 /// always sent back for Exec (the API thread blocks on it).
+#[cfg(windows)]
 #[allow(clippy::too_many_arguments)]
 fn handle_job(
     conn: &mut Option<Conn>,
@@ -1955,6 +2033,7 @@ fn handle_job(
     }
 }
 
+#[cfg(windows)]
 fn actor_loop(
     rx: std::sync::mpsc::Receiver<Job>,
     wake: std::sync::Arc<WakeEvent>,
@@ -2028,6 +2107,7 @@ fn actor_loop(
 /// Connect on demand, run the plan, and drop the session on any failure so
 /// the next action starts fresh (an expired token surfaces as AuthRejected
 /// and goes through the caller's re-authorization path).
+#[cfg(windows)]
 fn run_exec(
     conn: &mut Option<Conn>,
     push: &Option<tokio::sync::mpsc::UnboundedSender<Value>>,
@@ -2055,6 +2135,7 @@ fn run_exec(
     outcome
 }
 
+#[cfg(windows)]
 fn run_connected(conn: &mut Conn, what: &Plan, deadline: Instant) -> Result<Option<ExecOutcome>> {
     match what {
         Plan::ConnectChannel(id) => {
@@ -2165,6 +2246,7 @@ fn run_connected(conn: &mut Conn, what: &Plan, deadline: Instant) -> Result<Opti
 /// Fold a `SET_USER_VOICE_SETTINGS` reply (or any payload carrying the
 /// per-user volume/mute) back into the member map so the next flip and
 /// the pushed tiles read the authoritative state.
+#[cfg(windows)]
 fn adopt_user_voice_settings(conn: &mut Conn, user_id: &str, data: Option<&Value>) {
     let Some(data) = data else {
         return;
@@ -2597,6 +2679,7 @@ mod tests {
     /// Stand-in Discord: one named-pipe server instance that accepts a
     /// client and then never speaks, so the actor's connection sits in an
     /// idle overlapped read for the whole test.
+    #[cfg(windows)]
     fn spawn_silent_pipe_server(name: &str) {
         use std::os::windows::ffi::OsStrExt;
         let wide: Vec<u16> = std::ffi::OsStr::new(name)
@@ -2641,6 +2724,7 @@ mod tests {
         });
     }
 
+    #[cfg(windows)]
     #[test]
     fn execute_completes_while_the_actor_serves_a_silent_connection() {
         // The old loop only noticed a queued job after its 20 ms tick; a
@@ -2711,6 +2795,7 @@ mod tests {
     }
 
     /// Client end of a test pipe, opened like the real Discord pipe.
+    #[cfg(windows)]
     fn open_test_pipe(name: &str) -> Pipe {
         use std::os::windows::ffi::OsStrExt;
         let path: Vec<u16> = std::ffi::OsStr::new(name)
@@ -2739,6 +2824,7 @@ mod tests {
     /// Live probe: reads the saved token from settings.json, connects and
     /// authenticates only (no state changes). Run explicitly:
     /// `cargo test -p pulpit-discord -- --ignored --nocapture live_auth`
+    #[cfg(windows)]
     #[test]
     #[ignore = "talks to the real Discord pipe"]
     fn live_authenticate() {
@@ -2753,6 +2839,7 @@ mod tests {
     /// mic flips and two deaf flips, so Discord ends in the state it
     /// started in. Run explicitly:
     /// `cargo test -p pulpit-discord -- --ignored --nocapture live_latency`
+    #[cfg(windows)]
     #[test]
     #[ignore = "talks to the real Discord pipe"]
     fn live_latency_probe() {
@@ -2984,6 +3071,7 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     #[test]
     fn voice_states_update_members_and_push_snapshots() {
         let name = format!(
@@ -3053,6 +3141,7 @@ mod tests {
         assert_eq!(snap["user-volume-label_42"], "Jockie (1) · offline");
     }
 
+    #[cfg(windows)]
     #[test]
     fn set_volume_stores_the_sent_fraction_over_the_quantized_read_back() {
         let name = format!(
@@ -3105,6 +3194,7 @@ mod tests {
         assert_eq!(volume, serde_json::json!(0.25));
     }
 
+    #[cfg(windows)]
     fn saved_config() -> DiscordConfig {
         let home = std::env::var("USERPROFILE").unwrap();
         let raw = std::fs::read_to_string(format!("{home}\\deckboard\\settings.json"))
