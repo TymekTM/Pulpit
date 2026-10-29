@@ -1,13 +1,20 @@
 // UI language. English text is the message KEY (gettext style): every
 // user-visible literal is written once, in English, and wrapped in `t()`.
 // `locales/en.json` stays empty (a missing key renders as itself),
-// `locales/pl.json` maps the English source to Polish, and a key without a
-// Polish entry falls back to its English text. Polish lives only in pl.json.
+// and a key without a Polish entry falls back to its English text.
+// Polish is assembled from the per-domain files - `pl-chrome.json` (app
+// chrome), `pl-modals.json` (dialogs), `pl.json` (settings tabs) - merged
+// in that order, so on a colliding key the later domain wins. (Two
+// chrome/modals collisions exist; the modals wording - typographic quotes
+// and the literal "Clear" translation - wins there, flagged for
+// review in the integration notes.)
 import { createI18n } from "vue-i18n";
 import { ref } from "vue";
 import { api } from "./api.js";
 import en from "./locales/en.json";
 import pl from "./locales/pl.json";
+import plModals from "./locales/pl-modals.json";
+import plChrome from "./locales/pl-chrome.json";
 
 export const LANG_CHOICES = ["auto", "pl", "en"];
 
@@ -37,7 +44,7 @@ export const i18n = createI18n({
   globalInjection: false,
   locale: resolveLocale("auto", systemLang()),
   fallbackLocale: "en",
-  messages: { en, pl },
+  messages: { en, pl: { ...plChrome, ...plModals, ...pl } },
   pluralRules: { pl: plPlural },
   // English-as-key: format (interpolate / pluralize) the key itself when a
   // locale has no entry for it, and do not log every untranslated string
