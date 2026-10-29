@@ -8,6 +8,7 @@ import {
   mmss,
 } from "../catalog";
 import { resolveStatusArt, payloadReceivedAt, windowVisible } from "../statusMedia";
+import { t } from "../i18n";
 import ToolTile from "./tiles/ToolTile.vue";
 
 // One tile. Isolated so a live state push re-renders only the tiles that
@@ -424,7 +425,11 @@ const tileAriaLabel = computed(() => {
     const name = props.boardNames?.[cmd.value.id];
     if (name) return name;
   }
-  return metaOf(props.tile).label || String(props.tile.type).replace(/-/g, " ");
+  // catalog/extension label render site: the EN label is the key, so the
+  // aria label follows the UI language like every other chrome string
+  const metaLabel = metaOf(props.tile).label;
+  if (metaLabel) return t(metaLabel);
+  return String(props.tile.type).replace(/-/g, " ");
 });
 
 // ---- custom gestures (M5), desktop touch mode ------------------------------
