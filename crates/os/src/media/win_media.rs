@@ -1,7 +1,8 @@
 //! Windows implementation of SMTC media transport controls.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use windows::core::PCWSTR;
@@ -22,7 +23,7 @@ use windows::Win32::System::Registry::{
 
 use super::{
     art_digest, attach_art_data, aumid_to_friendly_name, build_snapshot_keyed, AutoRepeatMode,
-    MediaProperties, PlaybackInfo, PlaybackStatus, TimelineProperties,
+    MediaProperties, PlaybackInfo, PlaybackStatus, PushGate, TimelineProperties,
 };
 use crate::{OsError, Result};
 
@@ -414,6 +415,14 @@ pub(crate) fn spawn_push(
 ) -> tokio::sync::mpsc::UnboundedReceiver<Value> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let waker = global_waker();
+    // Which kind of event woke the loop. The shared waker cannot tell
+    // them apart, and only a MediaPropertiesChanged announces a track
+    // change (arming the late-cover follow-up); players that fire
+    // timeline events at ~1 Hz must not double-push. Read-and-cleared
+    // at the top of each poll.
+    let props_evt = Arc::new(AtomicBool::new(false));
+    let playback_evt = Arc::new(AtomicBool::new(false));
+    let timeline_evt = Arc::new(AtomicBool::new(false));
 
     std::thread::Builder::new()
         .name("smtc-push".to_string())
@@ -434,14 +443,20 @@ pub(crate) fn spawn_push(
             };
 
             // Register Manager events
+            // A changed session list or current session can bring a new
+            // track: it counts as a props event.
             let waker_sessions = waker.clone();
+            let flag = props_evt.clone();
             let _ = manager.SessionsChanged(&TypedEventHandler::new(move |_, _| {
+                flag.store(true, Ordering::Release);
                 waker_sessions.wake();
                 Ok(())
             }));
 
             let waker_current = waker.clone();
+            let flag = props_evt.clone();
             let _ = manager.CurrentSessionChanged(&TypedEventHandler::new(move |_, _| {
+                flag.store(true, Ordering::Release);
                 waker_current.wake();
                 Ok(())
             }));
@@ -451,7 +466,9 @@ pub(crate) fn spawn_push(
             // resolving it can enumerate the HKCU registry: compute it
             // when the session changes, not on every poll.
             let mut app_name = String::new();
-            let mut last_snapshot_str = String::new();
+            // Position dead-band: while playing, a poll that only moved
+            // the position is not pushed (clients interpolate it).
+            let mut gate = PushGate::default();
             // Digest of the cover the receiver last got bytes for: the
             // art travels only when this changes (the host memoizes the
             // imported cover by digest).
@@ -467,7 +484,8 @@ pub(crate) fn spawn_push(
             // full second for the next periodic tick. The compare below
             // dedupes when the re-poll reads the same snapshot, and the
             // 400 ms wait consumes any further event wakes fired in the
-            // meantime.
+            // meantime. Only a props event (or a session change) arms it:
+            // timeline/playback events carry no new title or cover.
             let mut do_follow_up = false;
 
             loop {
@@ -483,6 +501,14 @@ pub(crate) fn spawn_push(
                     continue;
                 }
 
+                // The events that triggered this poll (and any that fired
+                // during the follow-up wait above).
+                let props_fired = props_evt.swap(false, Ordering::AcqRel);
+                // Playback/timeline events only wake the loop; their data
+                // is read below like every poll.
+                playback_evt.store(false, Ordering::Release);
+                timeline_evt.store(false, Ordering::Release);
+
                 let current_session = manager.GetCurrentSession().ok();
                 let current_id = current_session
                     .as_ref()
@@ -491,25 +517,32 @@ pub(crate) fn spawn_push(
                     .unwrap_or_default();
 
                 // Attach session events when session changes
-                if current_id != last_session_id {
+                let session_changed = current_id != last_session_id;
+                if session_changed {
                     last_session_id = current_id.clone();
                     app_name = aumid_to_friendly_name(&current_id);
                     if let Some(session) = &current_session {
                         let w = waker.clone();
+                        let flag = props_evt.clone();
                         let _ =
                             session.MediaPropertiesChanged(&TypedEventHandler::new(move |_, _| {
+                                flag.store(true, Ordering::Release);
                                 w.wake();
                                 Ok(())
                             }));
                         let w = waker.clone();
+                        let flag = playback_evt.clone();
                         let _ =
                             session.PlaybackInfoChanged(&TypedEventHandler::new(move |_, _| {
+                                flag.store(true, Ordering::Release);
                                 w.wake();
                                 Ok(())
                             }));
                         let w = waker.clone();
+                        let flag = timeline_evt.clone();
                         let _ = session.TimelinePropertiesChanged(&TypedEventHandler::new(
                             move |_, _| {
+                                flag.store(true, Ordering::Release);
                                 w.wake();
                                 Ok(())
                             },
@@ -541,18 +574,19 @@ pub(crate) fn spawn_push(
                     art_key.as_deref(),
                 );
 
-                // Change detection: compare the serialized snapshot, art
-                // digest included. Players publish their SMTC thumbnail a
-                // beat after the metadata (Spotify does), so the poll
-                // right after a track change can carry the new title
-                // with the OLD cover - the art-only swap on the next
-                // poll must still count as a change. Leaving the art out
-                // of the compare entirely is exactly what made covers
-                // stick; the digest keeps it in at the cost of 64 bytes.
-                let snapshot_str = snapshot.to_string();
-                let changed = snapshot_str != last_snapshot_str;
-                if changed {
-                    last_snapshot_str = snapshot_str;
+                // Change detection: the gate compares the snapshot with
+                // its volatile position normalized out, art digest
+                // included. Players publish their SMTC thumbnail a beat
+                // after the metadata (Spotify does), so the poll right
+                // after a track change can carry the new title with the
+                // OLD cover - the art-only swap on the next poll must
+                // still count as a change. Leaving the art out of the
+                // compare entirely is exactly what made covers stick; the
+                // digest keeps it in at the cost of 64 bytes. Position-only
+                // moves while playing stay inside the dead-band and are
+                // not pushed (see `PushGate`).
+                let decision = gate.decide(&snapshot, Instant::now());
+                if decision.send {
                     // Bytes go out only with a new cover; an unchanged
                     // digest means the receiver already holds them.
                     if art_key != last_sent_art_digest {
@@ -576,14 +610,16 @@ pub(crate) fn spawn_push(
                 } else {
                     Duration::from_secs(10)
                 };
-                let event_woken = waker.wait_timeout(sleep_duration);
+                waker.wait_timeout(sleep_duration);
 
                 // One bounded follow-up only when this poll was triggered
-                // by an event AND it sent a change: that is exactly the
-                // case where the new title arrived with a stale thumbnail
-                // and the real art may be published moments later. The
-                // follow-up waits 400 ms at the top of the next iteration.
-                do_follow_up = event_woken && changed;
+                // by a props event (or a new session) AND a semantic field
+                // changed: that is exactly the case where the new title
+                // arrived with a stale thumbnail and the real art may be
+                // published moments later. Timeline/playback-only events
+                // and plain position ticks never arm it. The follow-up
+                // waits 400 ms at the top of the next iteration.
+                do_follow_up = (props_fired || session_changed) && decision.identity_changed;
             }
         })
         .expect("spawn smtc worker thread");
