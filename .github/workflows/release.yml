@@ -150,12 +150,18 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ steps.ver.outputs.version }}"
+          # Release notes: a checked-in file wins (ship it with the
+          # version-bump commit), otherwise GitHub generates them from
+          # the commits. Never ship the old placeholder again.
+          $notesArgs = @("--generate-notes")
+          if (Test-Path ".github/release-notes/v$version.md") {
+            $notesArgs = @("--notes-file", ".github/release-notes/v$version.md")
+          }
           $releaseArgs = @(
             "release", "create", "v$version",
             "dist/pulpit-desktop-$version.exe", "dist/latest.json",
-            "--title", "v$version",
-            "--notes", "Pulpit desktop $version - see the commit history for changes."
-          )
+            "--title", "v$version"
+          ) + $notesArgs
           # a tag push already carries the tag; a manual dispatch creates it
           if (Test-Path "dist/pulpit-$version.apk") { $releaseArgs += "dist/pulpit-$version.apk" }
           if ($env:GITHUB_REF_TYPE -eq "tag") { $releaseArgs += "--verify-tag" }
