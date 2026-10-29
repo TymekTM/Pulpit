@@ -74,14 +74,23 @@ producers' live covers, which kills the cross-delete class outright.
   hashes a board image resolved to (`pinned`) — that protection exists
   and must not be duplicated in the new LRU.
 
-- Wiring (call sites to update):
+- Wiring (call sites to update — FOUR production sites, one Arc per
+  host shared across BOTH its lanes; the headless server runs the
+  Spotify lane too when `spotify.json` is configured):
   - `apps/desktop/src-tauri/src/lib.rs:671` —
     `pulpit_host::spotify::forward_spotify(...)`;
   - `apps/desktop/src-tauri/src/lib.rs:704` —
     `pulpit_host::media::forward_media(...)`;
+  - `apps/server/src/main.rs:273` —
+    `pulpit_host::spotify::forward_spotify(...)` (the `Some(spotify)`
+    arm of the config match);
   - `apps/server/src/main.rs:290` —
-    `pulpit_host::media::forward_media(...)` (the server runs no
-    Spotify lane).
+    `pulpit_host::media::forward_media(...)`.
+  `forward_spotify` (production, `crates/host/src/spotify.rs:198`) is a
+  three-arg wrapper that builds the real downloader and delegates to
+  the private `forward_spotify_with(feed, rx, assets, fetch)` pump body
+  (`:212`) which owns `resolve_art` — the new `art` param goes on both
+  (wrapper passes it through).
 
 - Repo conventions: pure helper + in-file unit tests (see the LRU tests
   in `crates/host/src/media.rs` / `spotify.rs` test modules), pumps are

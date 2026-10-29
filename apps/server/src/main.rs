@@ -204,6 +204,11 @@ async fn main() -> anyhow::Result<()> {
         config: Default::default(),
     });
 
+    // One cover-art LRU shared by both art-importing producers (see
+    // pulpit_host::art): the SAME Arc goes to both pumps below, so one
+    // lane's eviction can never delete the other lane's live covers.
+    let art_lru = Arc::new(pulpit_host::art::SharedArtLru::new());
+
     // M8 discovery: advertise on mDNS so tablets can find this server
     // (headless = no gate, so pair-requests auto-accept with a warning).
     // `PULPIT_NO_DISCOVERY=1` skips it (side-by-side runs on one host).
@@ -274,6 +279,7 @@ async fn main() -> anyhow::Result<()> {
                 feed.clone(),
                 pulpit_spotify::spawn_push(spotify.clone(), consumers),
                 Some(v2.assets.clone()),
+                art_lru.clone(),
             ));
         }
         None => {
@@ -291,6 +297,7 @@ async fn main() -> anyhow::Result<()> {
             feed.clone(),
             pulpit_os::media::spawn_push(consumers),
             Some(v2.assets.clone()),
+            art_lru.clone(),
         ));
     }
     tokio::spawn(pulpit_host::activity_loop(
