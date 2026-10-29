@@ -1,5 +1,6 @@
 import { vi, beforeEach } from "vitest";
 import { handle, resetTauri } from "./tauri.js";
+import { setLocaleForTest } from "../src/i18n.js";
 
 // happy-dom does not expose `localStorage` as a global on every Node
 // version (works on 22, undefined on 26); tests only use it for the
@@ -48,6 +49,8 @@ vi.mock("../src/confirm.js", async () => {
 
 beforeEach(() => {
   resetTauri();
+  // English is the message key; pin it so assertions never depend on the host locale
+  setLocaleForTest("en");
   // integration status commands every settings / editor mount polls; the
   // real backend always answers with an object, never null
   handle("obs_status", () => ({
