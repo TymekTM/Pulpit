@@ -606,8 +606,27 @@ fun statusData(tile: Tile, live: kotlinx.serialization.json.JsonElement?): Statu
         }
     }
     val rowStyle = obj["row_style"]?.jsonPrimitive?.contentOrNull ?: "name"
-    return StatusData(rows, compact, summary, rowStyle, statusImage(obj), statusProgress(obj))
+    return StatusData(
+        rows,
+        compact,
+        summary,
+        rowStyle,
+        statusImage(obj),
+        statusProgress(obj),
+        statusProvider(obj),
+    )
 }
+
+/** The payload's declared source brand ("spotify"), lowercased for
+ *  matching: drives the media card's corner mark. Absent, empty or
+ *  garbage reads as no brand - an unknown brand draws no mark, so a
+ *  YouTube-in-Chrome session never wears Spotify's logo. */
+private fun statusProvider(obj: JsonObject): String? =
+    runCatching { obj["provider"]?.jsonPrimitive?.contentOrNull }
+        .getOrNull()
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it.isNotEmpty() }
 
 /** The payload's album-art asset hash: a non-empty hex-looking string
  *  (the v2 AssetStore hashes are sha256 hex). Anything else - missing,
@@ -883,7 +902,11 @@ private fun StatusMediaText(data: StatusData, meta: Boolean, titleLines: Int) {
     val extras = data.rows.filter {
         !it.label.equals("Track", true) &&
             !it.label.equals("Artist", true) &&
-            !it.label.equals("Album", true)
+            !it.label.equals("Album", true) &&
+            // Spotify's corner mark already names the source; the App
+            // row would just duplicate it and break parity with the
+            // dedicated spotify tile's card
+            !(data.provider == "spotify" && it.label.equals("App", true))
     }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (title.isNotEmpty()) {
@@ -933,9 +956,9 @@ private fun StatusMediaText(data: StatusData, meta: Boolean, titleLines: Int) {
 /** Media layout for a status payload that carries album art and/or
  *  playback progress: the art whole with a title/artist card below it
  *  (portrait/square tiles) or beside it (wide tiles), ending in the
- *  playback bar, and a small brand glyph in a tile corner outside the
- *  art. The art takes the spare height, so the text stays readable at
- *  any tile size. */
+ *  playback bar, and - only when the payload names a brand we mark -
+ *  a small brand glyph in a tile corner outside the art. The art takes
+ *  the spare height, so the text stays readable at any tile size. */
 @Composable
 private fun StatusMediaView(
     tile: Tile,
@@ -984,7 +1007,9 @@ private fun StatusMediaView(
                 }
             }
         }
-        if (art != null) {
+        if (art != null && data.provider == "spotify") {
+            // the mark belongs to Spotify only: the payload names its
+            // source, other players' covers stay unbranded
             Text(
                 text = "\uf1bc",
                 fontFamily = FaBrands,

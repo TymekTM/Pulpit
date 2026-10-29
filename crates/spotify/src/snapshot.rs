@@ -113,6 +113,9 @@ fn playing(player: &Value) -> bool {
 fn now_playing_payload(player: Option<&Value>) -> Value {
     let mut payload = json!({
         "title": "Spotify",
+        // source brand for the renderers' corner mark; the SMTC
+        // producer sets the same field when its session is Spotify
+        "provider": "spotify",
         "compact": "",
         "summary": "",
         "rows": [],
@@ -361,6 +364,8 @@ mod tests {
         );
         assert_eq!(payload["compact"], "Song name \u{2014} A, B");
         assert_eq!(payload["summary"], "Song name \u{2014} A, B");
+        // the payload always names its brand (corner mark)
+        assert_eq!(payload["provider"], "spotify");
         // optional new fields: progress present, image absent (host lane)
         assert_eq!(
             payload["progress"],
@@ -379,6 +384,8 @@ mod tests {
         let payload = &idle["spotify-now-playing"];
         assert_eq!(payload["rows"][0]["value"], "Nothing playing");
         assert!(payload.get("progress").is_none());
+        // idle payloads still name their brand
+        assert_eq!(payload["provider"], "spotify");
 
         let login = build_snapshot(None, None, AuthState::NeedsLogin, None);
         assert_eq!(login["spotify-auth"], "needs-login");

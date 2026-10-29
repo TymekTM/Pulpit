@@ -306,6 +306,18 @@ const progressView = computed(() => {
   };
 });
 
+// The payload's declared source brand (the producers' optional
+// `provider` field): the corner mark renders only for a brand we have
+// a glyph for. A YouTube-in-Chrome session carries no provider and
+// draws no mark at all - Spotify's logo belongs to Spotify only.
+const statusProvider = computed(() => {
+  const provider = String(statusData.value?.provider || "").trim().toLowerCase();
+  return provider || null;
+});
+const statusCornerGlyph = computed(() =>
+  statusProvider.value ? providerSvg(statusProvider.value) : "",
+);
+
 // Media payloads (album art and/or playback progress) get a card layout
 // instead of the label/value rows: the producer's Track / Artist / Album
 // rows become a stacked title-subtitle block, the duplicated summary
@@ -324,6 +336,13 @@ const mediaView = computed(() => {
       r !== track &&
       !["track", "artist", "album"].includes(
         String(r.label || "").toLowerCase(),
+      ) &&
+      // Spotify's corner mark already names the source; the App row
+      // would just duplicate it and break parity with the dedicated
+      // spotify tile's card
+      !(
+        statusProvider.value === "spotify" &&
+        String(r.label || "").toLowerCase() === "app"
       ),
   );
   return {
@@ -901,11 +920,13 @@ function onTileKeydown(event) {
               </div>
             </div>
           </template>
-          <!-- brand mark in a tile corner, outside the art -->
+          <!-- brand mark in a tile corner, outside the art: only when the
+               payload names a source we have a glyph for (Spotify), so
+               other players' covers stay unbranded -->
           <span
-            v-if="statusArtUrl"
+            v-if="statusArtUrl && statusCornerGlyph"
             class="status-corner-glyph"
-            v-html="providerSvg('spotify')"
+            v-html="statusCornerGlyph"
           ></span>
         </template>
       </div>

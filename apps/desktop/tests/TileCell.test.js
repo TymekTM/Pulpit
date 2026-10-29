@@ -323,6 +323,7 @@ describe("TileCell media card", () => {
     const w = nowPlaying({
       rows,
       image: "hash1",
+      provider: "spotify",
       progress: { position_ms: 61_000, duration_ms: 180_000, playing: false },
     });
     await flushPromises();
@@ -333,6 +334,41 @@ describe("TileCell media card", () => {
     expect(w.find(".status-progress-time").text()).toBe("1:01 / 3:00");
     expect(w.find(".status-corner-glyph svg").exists()).toBe(true);
     expect(w.find(".tile-status").classes()).toContain("has-art");
+  });
+
+  it("brands the corner only when the payload names Spotify, dropping its App row", async () => {
+    handle("asset_data_url", ({ hash }) => `data:${hash}`);
+    const mediaTile = (value) =>
+      mountTile(
+        { mode: "status", type: "media-now-playing", w: 2, h: 2 },
+        { customValues: { "media-now-playing": value } },
+      );
+    const mediaRows = [
+      { label: "Track", value: "Song" },
+      { label: "Artist", value: "Band" },
+      { label: "Album", value: "LP" },
+      { label: "App", value: "Spotify" },
+    ];
+    // a Spotify SMTC session: the mark shows, the App row folds into it
+    // (parity with the dedicated spotify tile's card)
+    const spotify = mediaTile({ rows: mediaRows, image: "a1", provider: "spotify" });
+    await flushPromises();
+    expect(spotify.find(".status-corner-glyph svg").exists()).toBe(true);
+    expect(spotify.findAll(".media-sub").map((s) => s.text())).toEqual(["Band", "LP"]);
+    // any other source (YouTube in Chrome): no mark, the App row stays
+    const chrome = mediaTile({
+      rows: mediaRows.map((r) =>
+        r.label === "App" ? { label: "App", value: "Google Chrome" } : r,
+      ),
+      image: "a2",
+    });
+    await flushPromises();
+    expect(chrome.find(".status-corner-glyph").exists()).toBe(false);
+    expect(chrome.findAll(".media-sub").map((s) => s.text())).toEqual([
+      "Band",
+      "LP",
+      "App: Google Chrome",
+    ]);
   });
 
   it("drops album and extras on a one-cell-high tile", async () => {

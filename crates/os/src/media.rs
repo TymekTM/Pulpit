@@ -230,6 +230,18 @@ pub struct TimelineProperties {
 pub const ART_DATA_KEY: &str = "media-art-data";
 pub const ART_EXT_KEY: &str = "media-art-ext";
 
+/// The media card's corner-brand source (see the desktop/mobile media
+/// renderers): the brand mark only renders for apps we carry a glyph
+/// for, so an `App` name that is not Spotify yields no provider at all
+/// and clients draw no mark - a YouTube-in-Chrome session must never
+/// wear Spotify's logo.
+fn corner_provider(app_name: &str) -> Option<&'static str> {
+    app_name
+        .to_lowercase()
+        .contains("spotify")
+        .then_some("spotify")
+}
+
 /// Build a snapshot payload matching the design §4 contract and
 /// spotify-now-playing shape so desktop and mobile renderers are shared.
 pub fn build_snapshot(
@@ -278,6 +290,12 @@ pub fn build_snapshot(
         "summary": "",
         "rows": [],
     });
+
+    // Brand the payload's source when recognized (renderers gate their
+    // corner mark on it; unknown brands stay unmarked).
+    if let Some(provider) = corner_provider(app_name) {
+        now_playing["provider"] = Value::String(provider.to_string());
+    }
 
     let has_content = props.is_some_and(|p| !p.title.is_empty() || !p.artist.is_empty());
     if !has_content {
@@ -412,6 +430,7 @@ mod tests {
         assert_eq!(np["rows"][0]["label"], "Status");
         assert_eq!(np["rows"][0]["value"], "Nic nie jest odtwarzane");
         assert!(np.get("progress").is_none());
+        assert!(np.get("provider").is_none());
         assert!(snapshot.get(ART_DATA_KEY).is_none());
     }
 
@@ -465,6 +484,17 @@ mod tests {
         assert_eq!(prog["position_ms"], 60000);
         assert_eq!(prog["duration_ms"], 354000);
         assert_eq!(prog["playing"], true);
+        // the Spotify session is branded so the renderers' corner mark
+        // shows; other apps carry no provider
+        assert_eq!(np["provider"], "spotify");
+        let chrome = build_snapshot(
+            Some(&props),
+            Some(&playback),
+            Some(&timeline),
+            "Google Chrome",
+            None,
+        );
+        assert!(chrome["media-now-playing"].get("provider").is_none());
     }
 
     #[test]
