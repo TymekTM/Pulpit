@@ -140,8 +140,9 @@ class StatusDataTest {
     }
 
     /** The spotify-now-playing round-trip (design §4): the optional
-     *  `image` hash and `progress` object survive the parser; `compact`
-     *  arrives as a string here, which reads as no compact entries. */
+     *  `image` hash, `progress` object and `provider` brand survive the
+     *  parser; `compact` arrives as a string here, which reads as no
+     *  compact entries. */
     @Test
     fun parsesImageAndProgress() {
         val data = statusData(
@@ -157,7 +158,8 @@ class StatusDataTest {
                   "compact": "Song — Artist",
                   "summary": "Song — Artist",
                   "image": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-                  "progress": {"position_ms": 61234, "duration_ms": 201000, "playing": true}
+                  "progress": {"position_ms": 61234, "duration_ms": 201000, "playing": true},
+                  "provider": "Spotify"
                 }
                 """.trimIndent(),
             ),
@@ -168,6 +170,8 @@ class StatusDataTest {
             data.image,
         )
         assertEquals(StatusProgress(61234, 201000, playing = true), data.progress)
+        // brands normalize to lowercase for the corner-mark matching
+        assertEquals("spotify", data.provider)
         assertEquals(0, data.compact.size)
         assertEquals("Song — Artist", data.summary)
     }
@@ -185,6 +189,7 @@ class StatusDataTest {
         )!!
         assertNull(data.image)
         assertNull(data.progress)
+        assertNull(data.provider)
     }
 
     @Test
@@ -229,12 +234,15 @@ class StatusDataTest {
                 {
                   "rows": [{"label": "Track", "value": "Song"}],
                   "image": {"hash": "9f86d081"},
-                  "progress": [61234, 201000, true]
+                  "progress": [61234, 201000, true],
+                  "provider": {"brand": "spotify"}
                 }
                 """.trimIndent(),
             ),
         )!!
         assertNull(shapes.image)
         assertNull(shapes.progress)
+        // a non-string provider is no brand, not a crash
+        assertNull(shapes.provider)
     }
 }

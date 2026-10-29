@@ -18,14 +18,18 @@ if (typeof document !== "undefined") {
   });
 }
 
-// hash -> data URL (null = lookup failed and stays failed; the backend
-// validates the hash, so a failure means the asset is gone). Module
-// level: every TileCell in the WebView shares the memo, so re-renders
-// and sibling tiles on the same album never refetch. Capped like the
-// host's art LRU: a long listening session would otherwise keep every
-// cover's data URL alive in the WebView.
+// hash -> data URL. Module level: every TileCell in the WebView shares
+// the memo, so re-renders and sibling tiles on the same album never
+// refetch. Capped like the host's art LRU: a long listening session
+// would otherwise keep every cover's data URL alive in the WebView.
+// Failed lookups are retried on a short delay instead of being pinned
+// as artless forever: payloads re-resolve the same hash about once a
+// second while playing, so a hard TTL stops a genuinely missing asset
+// from refetching on every push while a transient miss heals itself.
 const ART_CACHE_CAP = 32;
+const ART_RETRY_MS = 10_000;
 const artUrlCache = new Map();
+const artFailedAt = new Map();
 
 function rememberArt(hash, url) {
   artUrlCache.delete(hash);
@@ -37,9 +41,9 @@ function rememberArt(hash, url) {
 const artPending = new Map();
 
 /** Resolves a status payload's asset hash through the asset_data_url
- *  Tauri command, memoized per hash. Calls `done` with the data URL or
- *  null - dropped lookups resolve as null and the tile simply renders
- *  without art. */
+ *  Tauri command, memoized per successful lookup. Calls `done` with
+ *  the data URL or null - dropped lookups resolve as null and the tile
+ *  simply renders without art until the retry window reopens. */
 export function resolveStatusArt(hash, done) {
   if (!hash) {
     done(null);
@@ -50,16 +54,24 @@ export function resolveStatusArt(hash, done) {
     done(cached);
     return;
   }
+  const failedAt = artFailedAt.get(hash);
+  if (failedAt !== undefined && Date.now() - failedAt < ART_RETRY_MS) {
+    done(null);
+    return;
+  }
   let pending = artPending.get(hash);
   if (!pending) {
+    artFailedAt.delete(hash);
     pending = api
       .assetDataUrl(hash)
       .then((url) => {
+        if (!url) throw new Error("empty asset data url");
+        artFailedAt.delete(hash);
         rememberArt(hash, url);
         return url;
       })
       .catch(() => {
-        rememberArt(hash, null);
+        artFailedAt.set(hash, Date.now());
         return null;
       })
       .finally(() => artPending.delete(hash));

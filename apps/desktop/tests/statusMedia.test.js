@@ -47,13 +47,23 @@ describe("resolveStatusArt", () => {
     expect(artCalls()).toHaveLength(1);
   });
 
-  it("remembers a failed lookup as null and never retries", async () => {
+  it("retries a failed lookup once the retry window passes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    let broken = true;
     handle("asset_data_url", () => {
-      throw new Error("gone");
+      if (broken) throw new Error("gone");
+      return "data:back";
     });
-    await expect(resolve("dead")).resolves.toBeNull();
-    await expect(resolve("dead")).resolves.toBeNull();
+    // the miss resolves null and does not poison the hash forever
+    await expect(resolve("flaky")).resolves.toBeNull();
+    await expect(resolve("flaky")).resolves.toBeNull();
     expect(artCalls()).toHaveLength(1);
+    // ten seconds later the same hash fetches again and wins
+    broken = false;
+    vi.setSystemTime(20_000);
+    await expect(resolve("flaky")).resolves.toBe("data:back");
+    expect(artCalls()).toHaveLength(2);
   });
 
   it("caps the memo at 32 covers, dropping the oldest insertion", async () => {

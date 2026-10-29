@@ -57,4 +57,8 @@ data class StatusData(
     val image: String? = null,
     /** Playback progress; null when nothing plays. */
     val progress: StatusProgress? = null,
+    /** Source brand the producer declared ("spotify"); null or an
+     *  unknown brand draws no corner mark, so a browser session never
+     *  wears Spotify's mark. */
+    val provider: String? = null,
 )

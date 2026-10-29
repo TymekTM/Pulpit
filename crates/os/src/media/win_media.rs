@@ -496,7 +496,6 @@ pub(crate) fn spawn_push(
                     None => (None, None, None, String::new(), None),
                 };
 
-                let is_playing = playback.as_ref().is_some_and(|p| p.is_playing);
                 let art_ref = art.as_ref().map(|(b, ext)| (b.as_slice(), *ext));
                 let snapshot = build_snapshot(
                     props.as_ref(),
@@ -506,12 +505,14 @@ pub(crate) fn spawn_push(
                     art_ref,
                 );
 
-                // Change detection: compare serialized string without art data
-                let mut compare_val = snapshot.clone();
-                if let Some(obj) = compare_val.as_object_mut() {
-                    obj.remove(super::ART_DATA_KEY);
-                }
-                let snapshot_str = compare_val.to_string();
+                // Change detection: compare the serialized snapshot WITH
+                // the art data. Players publish their SMTC thumbnail a
+                // beat after the metadata (Spotify does), so the poll
+                // right after a track change can carry the new title
+                // with the OLD cover - the art-only swap on the next
+                // poll must still count as a change. Stripping the art
+                // from the compare is exactly what made covers stick.
+                let snapshot_str = snapshot.to_string();
                 if snapshot_str != last_snapshot_str {
                     last_snapshot_str = snapshot_str;
                     if tx.send(snapshot).is_err() {
@@ -519,10 +520,13 @@ pub(crate) fn spawn_push(
                     }
                 }
 
-                // If playing, sleep with 2.5s timeout for natural track changes;
-                // if paused/idle, sleep up to 10s or until event wakes us
-                let sleep_duration = if is_playing {
-                    Duration::from_millis(2500)
+                // Any live session re-polls every second, paused or not:
+                // events wake the loop in realtime for players that fire
+                // them (Chrome), and the 1 s tick catches players that
+                // fire none or publish their cover late (Spotify). No
+                // session at all stays quiet at 10 s.
+                let sleep_duration = if current_session.is_some() {
+                    Duration::from_secs(1)
                 } else {
                     Duration::from_secs(10)
                 };

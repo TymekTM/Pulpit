@@ -457,6 +457,12 @@ disconnect and retries as usual.
     advances `position_ms` locally (clamped to `duration_ms`) until the
     next patch replaces it. The server polls every few seconds and does
     not push per-second ticks. Absent means no progress bar.
+  - `provider`: optional string naming the payload's source brand -
+    `"spotify"`, set by both `ext.spotify-now-playing` and
+    `ext.media-now-playing` (when the SMTC session is Spotify). The
+    media card's corner brand mark renders only for a provider the
+    client knows; absent or unknown means no mark, so a browser
+    session's cover stays unbranded.
 
   Additive optional fields per §10 - `v` stays 2.
 - Wire compatibility is pinned by golden fixtures
