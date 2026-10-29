@@ -226,3 +226,108 @@ fn tool_manager_gestures_and_change_stream() {
     let loaded = DiskStore::load(&file);
     assert!(loaded.tools.contains_key("42"));
 }
+
+fn manager(
+    clock: Arc<FakeClock>,
+) -> (
+    Arc<ToolManager>,
+    UnboundedReceiver<Value>,
+    tempfile::TempDir,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tx, rx) = unbounded_channel();
+    let mgr = Arc::new(ToolManager::new(dir.path().join("tools.json"), clock, tx));
+    (mgr, rx, dir)
+}
+
+const ONE_SECOND_TIMER: &str = r#"{"duration":1}"#;
+
+#[test]
+fn next_timer_wait_tracks_only_running_timers() {
+    let clock = Arc::new(FakeClock::new(1_000));
+    let (mgr, _rx, _dir) = manager(clock.clone());
+    assert_eq!(mgr.next_timer_wait(), None);
+
+    mgr.execute(
+        1,
+        "tool-timer",
+        Some(r#"{"duration":60}"#),
+        ToolGesture::Tap,
+    );
+    mgr.execute(
+        2,
+        "tool-timer",
+        Some(r#"{"duration":20}"#),
+        ToolGesture::Tap,
+    );
+    mgr.execute(3, "tool-stopwatch", None, ToolGesture::Tap);
+    mgr.execute(
+        4,
+        "tool-timer",
+        Some(r#"{"duration":5}"#),
+        ToolGesture::Reset,
+    );
+    assert_eq!(mgr.next_timer_wait(), Some(Duration::from_millis(20_000)));
+
+    clock.advance(5_000);
+    assert_eq!(mgr.next_timer_wait(), Some(Duration::from_millis(15_000)));
+
+    // pausing the nearest timer moves the deadline to the next one
+    mgr.execute(2, "tool-timer", None, ToolGesture::Tap);
+    assert_eq!(mgr.next_timer_wait(), Some(Duration::from_millis(55_000)));
+
+    mgr.execute(1, "tool-timer", None, ToolGesture::Reset);
+    assert_eq!(mgr.next_timer_wait(), None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn finish_loop_sleeps_to_the_deadline_and_never_ticks_while_idle() {
+    let clock = Arc::new(FakeClock::new(0));
+    let (mgr, mut rx, _dir) = manager(clock.clone());
+    tokio::spawn(mgr.clone().run_timer_loop());
+
+    // nothing running: an hour passes with no wake (a periodic tick would
+    // not change what is observable, so assert the parked state directly)
+    tokio::time::sleep(Duration::from_secs(3600)).await;
+    assert!(rx.try_recv().is_err());
+
+    mgr.execute(7, "tool-timer", Some(ONE_SECOND_TIMER), ToolGesture::Tap);
+    let started = rx.recv().await.unwrap();
+    assert_eq!(started["tool-7"]["running"], true);
+
+    // just before the deadline: not finished yet
+    clock.advance(999);
+    tokio::time::sleep(Duration::from_millis(999)).await;
+    assert!(rx.try_recv().is_err());
+
+    // exactly at the deadline the one scheduled wake finishes it
+    clock.advance(1);
+    tokio::time::sleep(Duration::from_millis(1)).await;
+    let finished = rx.recv().await.unwrap();
+    assert_eq!(finished["tool-7"]["finished"], true);
+    assert_eq!(finished["tool-7"]["running"], false);
+
+    // and the loop is parked again
+    tokio::time::sleep(Duration::from_secs(3600)).await;
+    assert!(rx.try_recv().is_err());
+    assert_eq!(mgr.next_timer_wait(), None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn pausing_a_timer_cancels_its_scheduled_finish() {
+    let clock = Arc::new(FakeClock::new(0));
+    let (mgr, mut rx, _dir) = manager(clock.clone());
+    tokio::spawn(mgr.clone().run_timer_loop());
+
+    mgr.execute(7, "tool-timer", Some(ONE_SECOND_TIMER), ToolGesture::Tap);
+    rx.recv().await.unwrap();
+    clock.advance(400);
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    mgr.execute(7, "tool-timer", None, ToolGesture::Tap); // pause
+    let paused = rx.recv().await.unwrap();
+    assert_eq!(paused["tool-7"]["running"], false);
+
+    clock.advance(5_000);
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    assert!(rx.try_recv().is_err());
+}

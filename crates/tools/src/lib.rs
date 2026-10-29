@@ -6,6 +6,9 @@
 //!   pushed through `pulpit_host::forward_producer` on change only.
 //! - For the legacy client, formatted labels are pushed at 1 Hz only while a
 //!   timer/stopwatch runs and a legacy client is connected.
+//! - Nothing wakes periodically while no timer runs: the finish loop sleeps
+//!   until the nearest running timer's deadline and the label loop parks on
+//!   a [`Notify`]; any gesture re-arms both.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -15,6 +18,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::Notify;
 
 pub mod state;
 #[cfg(test)]
@@ -79,6 +83,10 @@ pub struct ToolManager {
     state: Mutex<HashMap<i64, ToolState>>,
     change_tx: UnboundedSender<Value>,
     board_tx: Mutex<Option<UnboundedSender<i64>>>,
+    /// Re-arms the finish loop (deadline changed).
+    deadline_wake: Notify,
+    /// Re-arms the legacy label loop (something may be running now).
+    labels_wake: Notify,
 }
 
 impl ToolManager {
@@ -100,6 +108,8 @@ impl ToolManager {
             state: Mutex::new(map),
             change_tx,
             board_tx: Mutex::new(None),
+            deadline_wake: Notify::new(),
+            labels_wake: Notify::new(),
         }
     }
 
@@ -208,7 +218,69 @@ impl ToolManager {
             let _ = self.change_tx.send(json!({ key: val }));
         }
 
+        // a timer may have started, paused or reset: recompute the deadline
+        self.deadline_wake.notify_one();
+        self.labels_wake.notify_one();
+
         true
+    }
+
+    /// How long until the nearest running timer finishes, or `None` when no
+    /// timer runs (nothing to schedule).
+    pub fn next_timer_wait(&self) -> Option<Duration> {
+        let now = self.clock.now_ms();
+        let guard = self.state.lock().unwrap();
+        guard
+            .values()
+            .filter_map(|tool| match tool {
+                ToolState::Timer(t) if t.running => Some(t.remaining_ms(now)),
+                _ => None,
+            })
+            .min()
+            .map(Duration::from_millis)
+    }
+
+    /// Finish loop: sleeps until the nearest running timer's deadline (or
+    /// parks while none runs) and re-arms whenever a gesture changes it.
+    async fn run_timer_loop(self: Arc<Self>) {
+        loop {
+            // `notify_one` stores a permit, so a gesture landing between
+            // computing the wait and awaiting is not lost
+            match self.next_timer_wait() {
+                None => self.deadline_wake.notified().await,
+                Some(wait) => {
+                    tokio::select! {
+                        () = tokio::time::sleep(wait) => self.tick_timers(),
+                        () = self.deadline_wake.notified() => {}
+                    }
+                }
+            }
+        }
+    }
+
+    /// Legacy label loop: 1 Hz while a timer/stopwatch runs, parked otherwise.
+    async fn run_legacy_label_loop(self: Arc<Self>, hub: Arc<pulpit_legacy::Hub>) {
+        loop {
+            if !self.has_running_tools() {
+                self.labels_wake.notified().await;
+                continue;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            // Only while a timer/stopwatch runs AND a legacy client is connected
+            let legacy_connected = hub.try_len().unwrap_or(0) > 0;
+            if legacy_connected && self.has_running_tools() {
+                let labels = self.legacy_formatted_labels();
+                if !labels.is_empty() {
+                    let data = serde_json::to_value(&labels).unwrap_or(Value::Null);
+                    let payload = json!({
+                        "app": "APP_CUSTOM_VALUE",
+                        "data": data,
+                    })
+                    .to_string();
+                    hub.broadcast("app_status_update", Some(&payload)).await;
+                }
+            }
+        }
     }
 
     /// Get current compact state for a button.
@@ -307,41 +379,11 @@ pub fn spawn_tools(
     let clock = Arc::new(SystemClock);
     let manager = Arc::new(ToolManager::new(store_path, clock, tx));
 
-    // Background timer tick loop (every 100 ms to catch timer finish promptly)
-    let tick_mgr = manager.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_millis(100));
-        loop {
-            interval.tick().await;
-            tick_mgr.tick_timers();
-        }
-    });
+    // Finish loop: one sleep to the nearest deadline, none while idle
+    tokio::spawn(manager.clone().run_timer_loop());
 
-    // Background legacy 1 Hz push loop
-    let legacy_mgr = manager.clone();
-    let legacy_hub_clone = legacy_hub.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
-        loop {
-            interval.tick().await;
-            // Only while a timer/stopwatch runs AND a legacy client is connected
-            let legacy_connected = legacy_hub_clone.try_len().unwrap_or(0) > 0;
-            if legacy_connected && legacy_mgr.has_running_tools() {
-                let labels = legacy_mgr.legacy_formatted_labels();
-                if !labels.is_empty() {
-                    let data = serde_json::to_value(&labels).unwrap_or(Value::Null);
-                    let payload = json!({
-                        "app": "APP_CUSTOM_VALUE",
-                        "data": data,
-                    })
-                    .to_string();
-                    legacy_hub_clone
-                        .broadcast("app_status_update", Some(&payload))
-                        .await;
-                }
-            }
-        }
-    });
+    // Legacy 1 Hz label push, only while something runs
+    tokio::spawn(manager.clone().run_legacy_label_loop(legacy_hub));
 
     (manager, rx)
 }
