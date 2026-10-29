@@ -384,6 +384,85 @@ pub fn build_snapshot_keyed(
     snapshot
 }
 
+/// Longest a playing track may go without a push: the resync heartbeat
+/// that bounds the clients' local position extrapolation drift.
+pub const POSITION_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The snapshot with its volatile, position-derived keys normalized out:
+/// `media-progress` (a 3-decimal fraction of the position) and
+/// `media-now-playing.progress.position_ms`. Everything else - titles,
+/// play state, shuffle/repeat, `duration_ms`, the art digest - is semantic
+/// and stays, so two snapshots of one playing track at different positions
+/// share an identity.
+pub fn identity_string(snapshot: &Value) -> String {
+    let mut identity = snapshot.clone();
+    if let Some(map) = identity.as_object_mut() {
+        map.remove("media-progress");
+    }
+    if let Some(progress) = identity
+        .get_mut("media-now-playing")
+        .and_then(|np| np.get_mut("progress"))
+        .and_then(Value::as_object_mut)
+    {
+        progress.remove("position_ms");
+    }
+    identity.to_string()
+}
+
+/// Outcome of [`PushGate::decide`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PushDecision {
+    /// Push this snapshot to the receiver.
+    pub send: bool,
+    /// A semantic field changed since the last push (not just the
+    /// position). The late-cover follow-up keys on this.
+    pub identity_changed: bool,
+}
+
+/// Position dead-band for the SMTC push: clients interpolate a playing
+/// track's position locally, so a poll that only moved the position is not
+/// worth a fan-out. Sends on any semantic change, on any change while
+/// paused (a paused position move is a user-visible seek), and on a
+/// [`POSITION_HEARTBEAT`] resync while playing; skips the rest.
+#[derive(Debug, Default)]
+pub struct PushGate {
+    last_identity: Option<String>,
+    last_full: String,
+    last_send: Option<std::time::Instant>,
+}
+
+impl PushGate {
+    pub fn decide(&mut self, snapshot: &Value, now: std::time::Instant) -> PushDecision {
+        let identity = identity_string(snapshot);
+        let identity_changed = self.last_identity.as_deref() != Some(identity.as_str());
+        let paused = snapshot["media-playing"] != "ON";
+        let full = if paused {
+            snapshot.to_string()
+        } else {
+            String::new()
+        };
+        // The heartbeat resyncs extrapolating clients; a paused track
+        // does not extrapolate, so it needs none.
+        let heartbeat_due = !paused
+            && self
+                .last_send
+                .is_none_or(|at| now.duration_since(at) >= POSITION_HEARTBEAT);
+        // Paused polls repeat the same position until a seek moves it:
+        // push only when the whole snapshot differs, not every tick.
+        let paused_moved = paused && full != self.last_full;
+        let send = identity_changed || paused_moved || heartbeat_due;
+        if send {
+            self.last_identity = Some(identity);
+            self.last_full = full;
+            self.last_send = Some(now);
+        }
+        PushDecision {
+            send,
+            identity_changed,
+        }
+    }
+}
+
 /// Execute a media playback command against the active or target session.
 pub fn control(target_app: Option<&str>, action: &str, slider_value: Option<f64>) -> Result<bool> {
     #[cfg(windows)]
@@ -617,6 +696,149 @@ mod tests {
         attach_art_data(&mut attached, bytes, "jpg");
         let whole = build_snapshot(None, None, None, "Spotify", Some((bytes, "jpg")));
         assert_eq!(attached, whole);
+    }
+
+    fn gate_snapshot(title: &str, playing: bool, position_ms: u64, art: Option<&str>) -> Value {
+        let props = MediaProperties {
+            title: title.into(),
+            artist: "Queen".into(),
+            ..Default::default()
+        };
+        let playback = PlaybackInfo {
+            is_playing: playing,
+            ..Default::default()
+        };
+        let timeline = TimelineProperties {
+            position_ms,
+            duration_ms: 354000,
+            ..Default::default()
+        };
+        build_snapshot_keyed(
+            Some(&props),
+            Some(&playback),
+            Some(&timeline),
+            "Spotify",
+            art,
+        )
+    }
+
+    #[test]
+    fn identity_ignores_position_but_sees_semantic_changes() {
+        let base = identity_string(&gate_snapshot("Song", true, 1000, Some("a")));
+        // position moves: both position-derived keys are normalized away
+        assert_eq!(
+            base,
+            identity_string(&gate_snapshot("Song", true, 61000, Some("a")))
+        );
+        assert_ne!(
+            gate_snapshot("Song", true, 1000, Some("a")).to_string(),
+            gate_snapshot("Song", true, 61000, Some("a")).to_string()
+        );
+        // art, title and play state are semantic
+        assert_ne!(
+            base,
+            identity_string(&gate_snapshot("Song", true, 1000, Some("b")))
+        );
+        assert_ne!(
+            base,
+            identity_string(&gate_snapshot("Song", true, 1000, None))
+        );
+        assert_ne!(
+            base,
+            identity_string(&gate_snapshot("Other", true, 1000, Some("a")))
+        );
+        assert_ne!(
+            base,
+            identity_string(&gate_snapshot("Song", false, 1000, Some("a")))
+        );
+        // the duration stays in the identity
+        let mut longer = gate_snapshot("Song", true, 1000, Some("a"));
+        longer["media-now-playing"]["progress"]["duration_ms"] = json!(999);
+        assert_ne!(base, identity_string(&longer));
+    }
+
+    #[test]
+    fn push_gate_dead_bands_playing_position_only() {
+        use std::time::{Duration, Instant};
+        let t0 = Instant::now();
+        let mut gate = PushGate::default();
+
+        // first snapshot always goes out
+        let first = gate.decide(&gate_snapshot("Song", true, 1000, Some("a")), t0);
+        assert!(first.send && first.identity_changed);
+
+        // position-only polls inside the window are skipped
+        let tick = gate.decide(
+            &gate_snapshot("Song", true, 2000, Some("a")),
+            t0 + Duration::from_secs(1),
+        );
+        assert!(!tick.send && !tick.identity_changed);
+        let tick = gate.decide(
+            &gate_snapshot("Song", true, 9000, Some("a")),
+            t0 + Duration::from_secs(9),
+        );
+        assert!(!tick.send);
+
+        // heartbeat resyncs the position after 10 s
+        let beat = gate.decide(
+            &gate_snapshot("Song", true, 10000, Some("a")),
+            t0 + Duration::from_secs(10),
+        );
+        assert!(beat.send && !beat.identity_changed);
+        let after = gate.decide(
+            &gate_snapshot("Song", true, 11000, Some("a")),
+            t0 + Duration::from_secs(11),
+        );
+        assert!(!after.send);
+
+        // a late cover (art-only swap) and a title change send at once
+        let art = gate.decide(
+            &gate_snapshot("Song", true, 12000, Some("b")),
+            t0 + Duration::from_secs(12),
+        );
+        assert!(art.send && art.identity_changed);
+        let title = gate.decide(
+            &gate_snapshot("Next", true, 0, Some("b")),
+            t0 + Duration::from_secs(13),
+        );
+        assert!(title.send && title.identity_changed);
+    }
+
+    #[test]
+    fn push_gate_sends_paused_position_moves_but_not_repeats() {
+        use std::time::{Duration, Instant};
+        let t0 = Instant::now();
+        let mut gate = PushGate::default();
+        assert!(
+            gate.decide(&gate_snapshot("Song", true, 5000, Some("a")), t0)
+                .send
+        );
+
+        // pausing is a semantic change
+        let pause = gate.decide(
+            &gate_snapshot("Song", false, 5000, Some("a")),
+            t0 + Duration::from_secs(1),
+        );
+        assert!(pause.send && pause.identity_changed);
+
+        // the same paused snapshot polled again is not re-pushed...
+        let same = gate.decide(
+            &gate_snapshot("Song", false, 5000, Some("a")),
+            t0 + Duration::from_secs(2),
+        );
+        assert!(!same.send);
+        let long_idle = gate.decide(
+            &gate_snapshot("Song", false, 5000, Some("a")),
+            t0 + Duration::from_secs(60),
+        );
+        assert!(!long_idle.send);
+
+        // ...but a seek while paused is
+        let seek = gate.decide(
+            &gate_snapshot("Song", false, 90000, Some("a")),
+            t0 + Duration::from_secs(61),
+        );
+        assert!(seek.send && !seek.identity_changed);
     }
 
     #[test]
