@@ -557,7 +557,10 @@ mod tests {
         let spotify_feed = feed();
         let (b_tx, b_rx) = tokio::sync::mpsc::unbounded_channel();
         let fetch: ArtFetch = Arc::new(|url: &str| {
-            Some((format!("spotify-art-{url}").into_bytes(), "jpg" as &'static str))
+            Some((
+                format!("spotify-art-{url}").into_bytes(),
+                "jpg" as &'static str,
+            ))
         });
         let b_assets = Some(assets.clone());
         let b_art = art.clone();
@@ -633,7 +636,10 @@ mod tests {
                 .expect("cover hash attached")
                 .to_string()
         };
-        assert!(assets.get(&a_hash(0)).is_none(), "A's oldest covers were evicted");
+        assert!(
+            assets.get(&a_hash(0)).is_none(),
+            "A's oldest covers were evicted"
+        );
         assert!(assets.get(&a_hash(1)).is_none());
         assert!(assets.get(&a_hash(count - 1)).is_some());
     }
