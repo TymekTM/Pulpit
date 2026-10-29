@@ -224,9 +224,10 @@ pub enum AssetBody {
 }
 
 /// Parses a single-range `Range: bytes=...` header against a body of
-/// `total` bytes. Returns inclusive `(start, end)`. Multi-range requests
-/// are not supported (callers pass `None` and serve the full body); a
-/// syntactically valid but out-of-bounds range yields `None` (HTTP 416).
+/// `total` bytes. Returns inclusive `(start, end)`. Multi-range
+/// requests are refused: like an out-of-bounds range they yield `None`,
+/// which `read_for_serving` maps to `AssetBody::Unsatisfiable` (HTTP
+/// 416).
 pub fn parse_byte_range(spec: &str, total: u64) -> Option<(u64, u64)> {
     let rest = spec.trim().strip_prefix("bytes=")?;
     if rest.contains(',') {
