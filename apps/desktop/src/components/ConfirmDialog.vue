@@ -1,6 +1,7 @@
 <script setup>
 import { nextTick, onUnmounted, ref, watch } from "vue";
 import { answerConfirm, confirmState } from "../confirm";
+import { t } from "../i18n";
 
 // The single in-app confirmation popup behind confirm.js `ask()`. Cancel
 // holds the initial focus, so a stray Enter/Space never confirms a
@@ -68,7 +69,7 @@ onUnmounted(() => {
           aria-hidden="true"
         ></i>
       </div>
-      <h2 id="confirm-title">{{ confirmState.title || "Potwierdź" }}</h2>
+      <h2 id="confirm-title">{{ confirmState.title || t("Confirm") }}</h2>
       <p id="confirm-message" class="confirm-message">{{ confirmState.message }}</p>
       <div class="confirm-actions">
         <button ref="cancelBtn" class="act" @click="answerConfirm(false)">

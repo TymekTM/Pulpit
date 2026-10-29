@@ -230,6 +230,7 @@ pub fn run() {
             list_audio_devices,
             exec_slider,
             get_settings,
+            set_lang,
             set_touch_mode_hotkey,
             set_server_port,
             set_start_minimized,
@@ -2857,7 +2858,54 @@ async fn get_settings(state: State<'_, DesktopState>) -> Result<serde_json::Valu
         "port": state.port,
         "port_locked": std::env::var_os("PULPIT_PORT").is_some(),
         "start_minimized": state.start_minimized,
+        "lang": stored_lang(state.settings_path.as_deref()),
     }))
+}
+
+/// The UI language choice persisted in editor.json: `auto` (follow the
+/// system locale), `pl` or `en`. Anything else - or no file - is `auto`.
+fn stored_lang(path: Option<&std::path::Path>) -> &'static str {
+    let stored: serde_json::Value = path
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::Value::Null);
+    match stored.get("lang").and_then(|v| v.as_str()) {
+        Some("pl") => "pl",
+        Some("en") => "en",
+        _ => "auto",
+    }
+}
+
+/// Persist the UI language choice (Settings -> Language) and mirror the
+/// effective locale to the payload-text layer (`pulpit_i18n`). The
+/// webview switches immediately; this only remembers the choice for the
+/// next launch. `locale` is the RESOLVED locale ("pl" / "en") - the
+/// frontend resolves `auto` because only it knows the system locale -
+/// and the Rust side stores it verbatim (unknown codes fall back to
+/// English inside pulpit-i18n).
+#[tauri::command]
+async fn set_lang(
+    state: State<'_, DesktopState>,
+    lang: String,
+    locale: Option<String>,
+) -> Result<(), String> {
+    if !matches!(lang.as_str(), "auto" | "pl" | "en") {
+        return Err(format!("Unknown language: {lang}"));
+    }
+    if let Some(locale) = locale.as_deref() {
+        pulpit_i18n::set_locale(locale);
+    }
+    // The startup report below re-sends the just-read choice on every
+    // launch; skip the rewrite when it matches storage so only a real
+    // change (Settings -> Language) touches editor.json.
+    if stored_lang(state.settings_path.as_deref()) == lang.as_str() {
+        return Ok(());
+    }
+    let path = state
+        .settings_path
+        .as_ref()
+        .ok_or_else(|| "No settings path (fallback launch).".to_string())?;
+    persist_editor_setting(path, "lang", serde_json::json!(lang))
 }
 
 /// Validate, register and persist a new touch-mode hotkey combo. The new

@@ -146,7 +146,7 @@ describe("OperatorAskModal", () => {
     const w = await mountAsk();
     emit("operator-ask", { id: 7, kind: "pair-request", name: "Tablet", code: "123456" });
     await flushPromises();
-    expect(w.find("h2").text()).toBe("Żądanie parowania");
+    expect(w.find("h2").text()).toBe("Pairing request");
     expect(w.find(".ask-name").text()).toBe("Tablet");
     expect(w.find(".ask-code").text()).toBe("123456");
   });
@@ -155,13 +155,13 @@ describe("OperatorAskModal", () => {
     const w = await mountAsk();
     emit("operator-ask", { id: 8, kind: "pairing-code", name: "Phone" });
     await flushPromises();
-    expect(w.find("h2").text()).toBe("Zaufać urządzeniu?");
+    expect(w.find("h2").text()).toBe("Trust this device?");
     expect(w.find(".ask-code").exists()).toBe(false);
   });
 
   it.each([
-    ["Zaufaj", true],
-    ["Odrzuć", false],
+    ["Trust", true],
+    ["Deny", false],
   ])("answers %s with approved=%s and closes", async (label, approved) => {
     const w = await mountAsk();
     emit("operator-ask", { id: 9, kind: "pair-request", name: "T", code: "1" });

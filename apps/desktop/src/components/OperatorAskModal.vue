@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "../api";
+import { t } from "../i18n";
 
 // The operator gate as an in-app popup (native-dialog replacement): the
 // backend emits `operator-ask` whenever a tablet wants to pair, and this
@@ -50,29 +51,26 @@ async function answer(approved) {
         <i class="fas fa-mobile-screen-button" aria-hidden="true"></i>
       </div>
       <h2 id="ask-title">
-        {{ ask.kind === "pair-request" ? "Żądanie parowania" : "Zaufać urządzeniu?" }}
+        {{ ask.kind === "pair-request" ? t("Pairing request") : t("Trust this device?") }}
       </h2>
       <p class="ask-name">{{ ask.name }}</p>
 
       <template v-if="ask.kind === 'pair-request' && ask.code">
-        <p class="ask-label">Kod weryfikacyjny (ten sam musi być na tablecie):</p>
+        <p class="ask-label">{{ t("Verification code (must match the one on the tablet):") }}</p>
         <div class="ask-code">{{ ask.code }}</div>
       </template>
 
       <p v-if="ask.kind === 'pair-request'" class="ask-warn">
-        Zaufaj tylko wtedy, gdy kod powyżej zgadza się z kodem na tablecie.
-        Zaufanie wydaje urządzeniu token; odrzucenie - lub brak odpowiedzi do
-        wygaśnięcia żądania - odrzuca parowanie.
+        {{ t("Trust only if the code above matches the code on the tablet. Trusting issues a token to the device; denying - or not answering before the request expires - rejects the pairing.") }}
       </p>
       <p v-else class="ask-warn">
-        Urządzenie używa jednorazowego kodu parowania. Zaufanie wydaje token;
-        brak odpowiedzi do wygaśnięcia kodu odrzuca parowanie.
+        {{ t("The device uses a one-time pairing code. Trusting issues a token; not answering before the code expires rejects the pairing.") }}
       </p>
 
       <div class="ask-actions">
-        <button class="act" :disabled="busy" @click="answer(false)">Odrzuć</button>
+        <button class="act" :disabled="busy" @click="answer(false)">{{ t("Deny") }}</button>
         <button class="act trust" :disabled="busy" @click="answer(true)">
-          <i class="fas fa-shield-halved" aria-hidden="true"></i> Zaufaj
+          <i class="fas fa-shield-halved" aria-hidden="true"></i> {{ t("Trust") }}
         </button>
       </div>
     </div>

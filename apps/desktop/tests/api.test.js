@@ -26,6 +26,7 @@ describe("api", () => {
     ["getAutostart", [], "get_autostart", undefined],
     ["setAutostart", [true], "set_autostart", { enable: true }],
     ["setStartMinimized", [true], "set_start_minimized", { enable: true }],
+    ["setLang", ["pl", "en"], "set_lang", { lang: "pl", locale: "en" }],
     ["readImageData", ["C:/a.png"], "read_image_data", { path: "C:/a.png" }],
     ["listKnownInputs", [], "list_known_inputs", undefined],
     ["listLanAddresses", [], "list_lan_addresses", undefined],
@@ -72,7 +73,7 @@ describe("api", () => {
   });
 
   it("covers every method in the table above", () => {
-    expect(Object.keys(api)).toHaveLength(59);
+    expect(Object.keys(api)).toHaveLength(60);
   });
 
   it("passes the command's result through", async () => {

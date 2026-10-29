@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watchEffect } from "vue";
 import { api } from "../../api";
+import { i18n, t } from "../../i18n";
 
 // One native utility tile (catalog group "Tools"): clock, countdown
 // timer, stopwatch, counter. The state lives on the server
@@ -88,6 +89,11 @@ function parseDuration(raw) {
 const clockTwelve = computed(() => props.cmd.format === "12h");
 const clockSeconds = computed(() => props.cmd.seconds === "yes");
 const clockShowDate = computed(() => props.cmd.date === "yes");
+// The clock renders in the ACTIVE UI language, not a hardcoded tag:
+// `locale` is a ref, so reading it here (through the template's
+// clockParts() call) re-renders the time and date on a language switch.
+// "pl" / "en" are valid BCP-47 tags on their own.
+const clockLocale = computed(() => i18n.global.locale.value);
 const clockZone = computed(() => {
   const tz = String(props.cmd.timezone || "").trim();
   if (!tz) return null;
@@ -99,31 +105,31 @@ const clockZone = computed(() => {
   }
 });
 
-// Plain literals in one place (translation lane extracts them); the same
-// strings the Android renderer shows.
+// Plain literals in one place; t() translates them for this surface (the
+// Android renderer ships its own strings).
 const STR = {
-  running: "Działa",
-  paused: "Pauza",
-  ready: "Gotowy",
-  finished: "KONIEC!",
+  running: "Running",
+  paused: "Paused",
+  ready: "Ready",
+  finished: "FINISHED!",
 };
 
 const timerStatus = computed(() =>
-  timerFinished.value ? STR.finished
-    : props.state?.running ? STR.running
-      : Number(props.state?.elapsedMs || 0) > 0 ? STR.paused
-        : STR.ready,
+  timerFinished.value ? t(STR.finished)
+    : props.state?.running ? t(STR.running)
+      : Number(props.state?.elapsedMs || 0) > 0 ? t(STR.paused)
+        : t(STR.ready),
 );
 
 const stopwatchStatus = computed(() =>
-  props.state?.running ? STR.running
-    : stopwatchElapsedMs.value > 0 ? STR.paused
+  props.state?.running ? t(STR.running)
+    : stopwatchElapsedMs.value > 0 ? t(STR.paused)
       : "00:00",
 );
 
 const counterLabel = computed(() => {
   const label = String(props.cmd.label || "").trim();
-  return label || props.tile.title || "Licznik";
+  return label || props.tile.title || t("Counter");
 });
 
 const toolTitle = computed(() => props.tile.title || "");
@@ -137,9 +143,9 @@ function clockParts() {
     ...(clockSeconds.value ? { second: "2-digit" } : {}),
     ...(clockZone.value ? { timeZone: clockZone.value } : {}),
   };
-  const time = new Intl.DateTimeFormat("pl-PL", opts).format(now);
+  const time = new Intl.DateTimeFormat(clockLocale.value, opts).format(now);
   const date = clockShowDate.value
-    ? new Intl.DateTimeFormat("pl-PL", {
+    ? new Intl.DateTimeFormat(clockLocale.value, {
         weekday: "short",
         day: "numeric",
         month: "short",
@@ -277,7 +283,7 @@ function onResetClick(event) {
     <button
       v-if="touch && kind !== 'tool-clock'"
       class="tool-reset"
-      title="Reset"
+      :title="t('Reset')"
       @click.stop="onResetClick"
       @pointerdown.stop
       @pointerup.stop

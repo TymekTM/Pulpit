@@ -3698,6 +3698,7 @@ dependencies = [
  "pulpit-discord",
  "pulpit-ext",
  "pulpit-host",
+ "pulpit-i18n",
  "pulpit-legacy",
  "pulpit-obs",
  "pulpit-os",
@@ -3783,6 +3784,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulpit-i18n"
+version = "1.5.3"
+
+[[package]]
 name = "pulpit-legacy"
 version = "1.5.3"
 dependencies = [
@@ -3822,6 +3827,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "image",
+ "pulpit-i18n",
  "serde",
  "serde_json",
  "tempfile",
@@ -3853,6 +3859,7 @@ dependencies = [
  "pulpit-discord",
  "pulpit-ext",
  "pulpit-host",
+ "pulpit-i18n",
  "pulpit-legacy",
  "pulpit-obs",
  "pulpit-os",
@@ -3874,6 +3881,7 @@ version = "1.5.3"
 dependencies = [
  "base64 0.23.1",
  "pulpit-db",
+ "pulpit-i18n",
  "rand 0.8.8",
  "serde",
  "serde_json",

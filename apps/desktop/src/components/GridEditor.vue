@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref } from "vue";
 import { CELL_W, ROW_H, MAX_BOARD_DIM, clamp } from "../catalog";
+import { t } from "../i18n";
 import TileCell from "./TileCell.vue";
 
 // Edit-mode grid: drag to move, corner handle to resize, double-click to
@@ -211,13 +212,13 @@ function startDrag(tile, mode, event) {
           const nx = t.x + d.cx;
           const ny = t.y + d.cy;
           if (nx < 0 || ny < 0 || nx + t.w > props.board.width || ny + t.h > props.board.height) {
-            invalidReason = "Nie można przesunąć: kafelki wychodziłyby poza siatkę";
+            invalidReason = t("Cannot move: tiles would leave the grid");
             break;
           }
           for (const u of unselectedTiles) {
             const overlap = !(nx + t.w <= u.x || nx >= u.x + u.w || ny + t.h <= u.y || ny >= u.y + u.h);
             if (overlap) {
-              invalidReason = "Nie można przesunąć: kafelki nakładałyby się na inne kafelki";
+              invalidReason = t("Cannot move: tiles would overlap other tiles");
               break;
             }
           }

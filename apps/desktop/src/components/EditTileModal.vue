@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { ask } from "../confirm";
 import { CATALOG, parsePlanWindows, setPlanWindows } from "../catalog";
 import { api, vmDevicesState, refreshVmDevices } from "../api";
+import { t } from "../i18n";
 import SelectField from "./SelectField.vue";
 import ActionPicker from "./ActionPicker.vue";
 import { ICON_GROUPS, searchIcons } from "../icons";
@@ -141,13 +142,13 @@ function extFieldShape(f) {
     };
   }
   if (f.kind === "input:key") {
-    return { key: f.key, label: f.label, placeholder: "e.g. CTRL + K" };
+    return { key: f.key, label: f.label, placeholder: t("e.g. CTRL + K") };
   }
   if (f.kind === "input:file" || f.kind === "input:folder") {
     return {
       key: f.key,
       label: f.label,
-      placeholder: f.kind === "input:file" ? "file path" : "folder path",
+      placeholder: f.kind === "input:file" ? t("file path") : t("folder path"),
     };
   }
   return { key: f.key, label: f.label };
@@ -457,10 +458,10 @@ function stepTypeMeta(type) {
 // button/toggle tiles offer the section - sliders keep their drag surface
 // and display modes have nothing to trigger.
 const GESTURE_DEFS = [
-  { key: "long-press", label: "Przytrzymanie" },
-  { key: "double-tap", label: "Podwójne tapnięcie" },
-  { key: "swipe-left", label: "Przeciągnięcie w lewo" },
-  { key: "swipe-right", label: "Przeciągnięcie w prawo" },
+  { key: "long-press", label: "Hold" },
+  { key: "double-tap", label: "Double tap" },
+  { key: "swipe-left", label: "Swipe left" },
+  { key: "swipe-right", label: "Swipe right" },
 ];
 
 const gestures = reactive({});
@@ -562,9 +563,9 @@ function onGestureTypePicked(key, value) {
 // the tile's own action" (value "") on top of the shared action catalog
 const gesturePickerGroups = computed(() => [
   {
-    header: "Gest",
+    header: t("Gesture"),
     items: [
-      { value: "", label: "Akcja kafla (domyślnie)", icon: "hand-pointer", color: "#4a6a8a" },
+      { value: "", label: t("Tile action (default)"), icon: "hand-pointer", color: "#4a6a8a" },
     ],
   },
   ...actionGroups.value,
@@ -595,7 +596,7 @@ const gestureError = computed(() => {
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return "";
   } catch {}
-  return "Pole „Opcje” zawiera już argumenty programu - gesty wymagają zapisu JSON i nie mogą współdzielić tego pola.";
+  return t('The "Options" field already contains program arguments - gestures require JSON and cannot share this field.');
 });
 
 function applyGestures() {
@@ -680,7 +681,7 @@ const sliderDefaultError = computed(() => {
   if (!raw) return "";
   const v = Number(raw.replace(",", "."));
   if (!Number.isFinite(v) || v < 0 || v > 100) {
-    return "Wartość domyślna musi być liczbą 0-100.";
+    return t("Default value must be a number 0-100.");
   }
   const stored = String(form.options || "").trim();
   if (!stored) return "";
@@ -688,7 +689,7 @@ const sliderDefaultError = computed(() => {
     const parsed = JSON.parse(stored);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return "";
   } catch {}
-  return "Pole „Opcje” zawiera już treść nie-JSON - wartość domyślna wymaga zapisu JSON.";
+  return t('The "Options" field already contains non-JSON content - the default value requires JSON.');
 });
 
 function applySliderDefault() {
@@ -788,10 +789,10 @@ async function requestClose() {
     emit("close");
     return;
   }
-  const ok = await ask("Zamknąć okno i porzucić niezapisane zmiany?", {
-    title: "Niezapisane zmiany",
-    okLabel: "Porzuć zmiany",
-    cancelLabel: "Wróć",
+  const ok = await ask(t("Close the window and discard unsaved changes?"), {
+    title: t("Unsaved changes"),
+    okLabel: t("Discard changes"),
+    cancelLabel: t("Go back"),
     kind: "warning",
   });
   if (ok) emit("close");
@@ -862,7 +863,7 @@ function colorOr(val, fallback) {
   <div class="overlay" @click.self="overlayClose">
     <div class="modal btn-modal">
       <div class="modal-head" :style="{ '--tint': boardBackground }">
-        {{ isCreate ? "New Button" : "Edit Button" }}
+        {{ isCreate ? t("New Button") : t("Edit Button") }}
       </div>
 
       <div class="btn-body">
@@ -910,19 +911,19 @@ function colorOr(val, fallback) {
                  ['image', 'Image'],
                ]" :key="row[0]" class="prop-wrap">
               <button class="prop-row" @click="toggleProp(row[0])">
-                <span class="plabel">{{ row[1] }}</span>
+                <span class="plabel">{{ t(row[1]) }}</span>
                 <span class="pvalue">
-                  <template v-if="row[0] === 'shape'">{{ form.shape === 1 ? "Round" : "Square" }}</template>
+                  <template v-if="row[0] === 'shape'">{{ form.shape === 1 ? t("Round") : t("Square") }}</template>
                   <template v-else-if="row[0] === 'title_position'">
-                    {{ ["Bottom", "Center", "Top"][form.title_position ?? 0] }}
+                    {{ [t("Bottom"), t("Center"), t("Top")][form.title_position ?? 0] }}
                   </template>
-                  <template v-else-if="row[0] === 'mode'">{{ prettify(form.mode || "button") }}</template>
+                  <template v-else-if="row[0] === 'mode'">{{ t(prettify(form.mode || "button")) }}</template>
                   <template v-else-if="row[0] === 'icon'">
                     <i v-if="form.icon || effIcon" class="fas" :class="'fa-' + (form.icon || effIcon)"></i>
-                    <template v-else>N/A</template>
+                    <template v-else>{{ t("N/A") }}</template>
                   </template>
                   <template v-else-if="row[0] === 'image'">
-                    {{ form.img ? "Replace" : "Pick" }}
+                    {{ form.img ? t("Replace") : t("Pick") }}
                   </template>
                   <template v-else>
                     <span
@@ -930,7 +931,7 @@ function colorOr(val, fallback) {
                       class="chip"
                       :style="{ background: form[row[0]] }"
                     ></span>
-                    {{ form[row[0]] || "N/A" }}
+                    {{ form[row[0]] || t("N/A") }}
                   </template>
                 </span>
               </button>
@@ -939,46 +940,46 @@ function colorOr(val, fallback) {
                 <div v-if="openProp === row[0]" class="prop-pop">
                   <!-- shape -->
                   <div v-if="row[0] === 'shape'" class="opt-row">
-                    <button class="opt" :class="{ on: form.shape !== 1 }" @click="form.shape = 0; closeProps()">Square</button>
-                    <button class="opt" :class="{ on: form.shape === 1 }" @click="form.shape = 1; closeProps()">Round</button>
+                    <button class="opt" :class="{ on: form.shape !== 1 }" @click="form.shape = 0; closeProps()">{{ t("Square") }}</button>
+                    <button class="opt" :class="{ on: form.shape === 1 }" @click="form.shape = 1; closeProps()">{{ t("Round") }}</button>
                   </div>
 
                   <!-- text position -->
                   <div v-else-if="row[0] === 'title_position'" class="opt-row">
                     <button class="opt" :class="{ on: (form.title_position ?? 0) === 2 }" @click="form.title_position = 2; closeProps()">
-                      <i class="fas fa-arrow-up"></i> Top
+                      <i class="fas fa-arrow-up"></i> {{ t("Top") }}
                     </button>
                     <button class="opt" :class="{ on: (form.title_position ?? 0) === 1 }" @click="form.title_position = 1; closeProps()">
-                      <i class="fas fa-dot-circle"></i> Center
+                      <i class="fas fa-dot-circle"></i> {{ t("Center") }}
                     </button>
                     <button class="opt" :class="{ on: (form.title_position ?? 0) === 0 }" @click="form.title_position = 0; closeProps()">
-                      <i class="fas fa-arrow-down"></i> Bottom
+                      <i class="fas fa-arrow-down"></i> {{ t("Bottom") }}
                     </button>
                   </div>
 
                   <!-- tile mode -->
                   <div v-else-if="row[0] === 'mode'" class="opt-row">
-                    <button class="opt" :class="{ on: (form.mode || 'button') === 'button' }" @click="form.mode = 'button'; closeProps()">Button</button>
-                    <button class="opt" :class="{ on: form.mode === 'toggle' }" @click="form.mode = 'toggle'; closeProps()">Toggle</button>
-                    <button class="opt" :class="{ on: form.mode === 'slider' }" @click="form.mode = 'slider'; closeProps()">Slider</button>
+                    <button class="opt" :class="{ on: (form.mode || 'button') === 'button' }" @click="form.mode = 'button'; closeProps()">{{ t("Button") }}</button>
+                    <button class="opt" :class="{ on: form.mode === 'toggle' }" @click="form.mode = 'toggle'; closeProps()">{{ t("Toggle") }}</button>
+                    <button class="opt" :class="{ on: form.mode === 'slider' }" @click="form.mode = 'slider'; closeProps()">{{ t("Slider") }}</button>
                   </div>
 
                   <!-- icon -->
                   <template v-else-if="row[0] === 'icon'">
                     <div class="icon-edit">
-                      <input v-model="form.icon" placeholder="fontawesome 5 icon name" @keydown.enter.prevent />
+                      <input v-model="form.icon" :placeholder="t('fontawesome 5 icon name')" @keydown.enter.prevent />
                       <i v-if="form.icon" class="fas big" :class="'fa-' + form.icon"></i>
                     </div>
                     <input
                       v-model="iconQuery"
                       class="icon-search"
                       type="search"
-                      placeholder="Search icons (e.g. mic, arrow, chart)"
+                      :placeholder="t('Search icons (e.g. mic, arrow, chart)')"
                       @keydown.enter.prevent
                     />
                     <div class="icon-grid">
                       <template v-if="iconQuery.trim()">
-                        <p v-if="!iconMatches.length" class="icon-empty">No icons match "{{ iconQuery.trim() }}"</p>
+                        <p v-if="!iconMatches.length" class="icon-empty">{{ t('No icons match "{q}"', { q: iconQuery.trim() }) }}</p>
                         <button
                           v-for="ic in iconMatches"
                           :key="ic"
@@ -1022,7 +1023,7 @@ function colorOr(val, fallback) {
                         @input="form[row[0]] = $event.target.value"
                         @keydown.enter.prevent
                       />
-                      <button class="mini" @click="form[row[0]] = ''; closeProps()">None</button>
+                      <button class="mini" @click="form[row[0]] = ''; closeProps()">{{ t("None") }}</button>
                     </div>
                   </template>
                 </div>
@@ -1034,12 +1035,12 @@ function colorOr(val, fallback) {
         <!-- right column: behavior -->
         <div class="right-col">
           <label class="field">
-            Label
-            <input v-model="form.title" placeholder="Button label" @keydown.enter.prevent />
+            {{ t("Label") }}
+            <input v-model="form.title" :placeholder="t('Button label')" @keydown.enter.prevent />
           </label>
 
           <div class="field sel-field">
-            <span class="sel-label">Action</span>
+            <span class="sel-label">{{ t("Action") }}</span>
             <ActionPicker
               :model-value="form.type"
               :groups="actionGroups"
@@ -1049,9 +1050,9 @@ function colorOr(val, fallback) {
 
           <!-- board picker -->
           <label v-if="form.type === 'board'" class="field">
-            Switch to
+            {{ t("Switch to") }}
             <select v-model="boardId">
-              <option value="">- pick board -</option>
+              <option value="">{{ t("- pick board -") }}</option>
               <option v-for="b in boards.filter((b) => b.id !== form.board_id)" :key="b.id" :value="b.id">
                 {{ b.name }}
               </option>
@@ -1060,10 +1061,10 @@ function colorOr(val, fallback) {
 
           <!-- select-style command (vol) -->
           <label v-else-if="catalogEntry?.select" class="field">
-            {{ catalogEntry.label }}
+            {{ t(catalogEntry.label) }}
             <select :value="form.command || catalogEntry.init" @change="applySelect">
               <option v-for="o in catalogEntry.select" :key="o.value" :value="o.value">
-                {{ o.label }}
+                {{ t(o.label) }}
               </option>
             </select>
           </label>
@@ -1073,8 +1074,8 @@ function colorOr(val, fallback) {
             <div class="steps">
               <div v-for="(step, i) in steps" :key="i" class="step">
                 <select v-model="step.type" class="step-type">
-                  <option v-for="t in stepConfig.types" :key="t.value" :value="t.value">
-                    {{ t.label }}
+                  <option v-for="st in stepConfig.types" :key="st.value" :value="st.value">
+                    {{ t(st.label) }}
                   </option>
                 </select>
                 <select
@@ -1082,20 +1083,20 @@ function colorOr(val, fallback) {
                   :value="stepBoardId(step)"
                   @change="stepBoardChange(step, $event)"
                 >
-                  <option value="">- board -</option>
+                  <option value="">{{ t("- board -") }}</option>
                   <option v-for="b in boards" :key="b.id" :value="b.id">{{ b.name }}</option>
                 </select>
                 <input
                   v-else
                   v-model="step.command"
                   :inputmode="stepTypeMeta(step.type)?.number ? 'numeric' : undefined"
-                  :placeholder="stepTypeMeta(step.type)?.number ? 'milliseconds' : 'value'"
+                  :placeholder="stepTypeMeta(step.type)?.number ? t('milliseconds') : t('value')"
                 />
-                <button class="step-del" title="Remove step" @click="removeStep(i)">
+                <button class="step-del" :title="t('Remove step')" @click="removeStep(i)">
                   <i class="fas fa-times"></i>
                 </button>
               </div>
-              <button class="mini add-step" @click="addStep"><i class="fas fa-plus"></i> Add step</button>
+              <button class="mini add-step" @click="addStep"><i class="fas fa-plus"></i> {{ t("Add step") }}</button>
             </div>
           </template>
 
@@ -1105,11 +1106,11 @@ function colorOr(val, fallback) {
               <!-- select leaves the <label>: clicking a label would forward
                    the click to the first chip / trigger inside -->
               <div v-if="f.kind === 'select'" class="field sel-field">
-                <span class="sel-label">{{ f.label }}</span>
-                <SelectField v-model="fields[f.key]" :options="f.options" :label="f.label" />
+                <span class="sel-label">{{ t(f.label) }}</span>
+                <SelectField v-model="fields[f.key]" :options="f.options" :label="t(f.label)" />
               </div>
               <label v-else class="field">
-                {{ f.label }}
+                {{ t(f.label) }}
                 <textarea
                   v-if="f.kind === 'textarea'"
                   v-model="fields[f.key]"
@@ -1129,25 +1130,25 @@ function colorOr(val, fallback) {
 
           <!-- extension action without declared options: command is fixed -->
           <div v-else-if="catalogEntry?.extInput" class="no-opts">
-            This action has no options.
+            {{ t("This action has no options.") }}
           </div>
 
           <!-- unknown / custom type -->
           <label v-else class="field">
-            Command
-            <input v-model="form.command" placeholder="command" @keydown.enter.prevent />
+            {{ t("Command") }}
+            <input v-model="form.command" :placeholder="t('command')" @keydown.enter.prevent />
           </label>
 
           <template v-if="isMediaTile">
             <div class="field sel-field">
-              <span class="sel-label">Aplikacja (opcjonalnie)</span>
+              <span class="sel-label">{{ t("App (optional)") }}</span>
               <SelectField
                 :model-value="mediaApp"
                 :options="[
-                  { value: '', label: '- bieżąca sesja -' },
+                  { value: '', label: t('- current session -') },
                   ...mediaApps.map((a) => ({ value: a, label: a })),
                 ]"
-                label="Aplikacja"
+                :label="t('App')"
                 @update:model-value="setMediaApp"
               />
             </div>
@@ -1155,7 +1156,7 @@ function colorOr(val, fallback) {
 
           <template v-if="isPlanTile">
             <div class="field">
-              Usage windows
+              {{ t("Usage windows") }}
               <div class="win-row">
                 <label class="win-check">
                   <input
@@ -1163,7 +1164,7 @@ function colorOr(val, fallback) {
                     :checked="planWindows.five"
                     @change="setPlanWindow('five', $event)"
                   />
-                  5-hour
+                  {{ t("5-hour") }}
                 </label>
                 <label class="win-check">
                   <input
@@ -1171,23 +1172,23 @@ function colorOr(val, fallback) {
                     :checked="planWindows.week"
                     @change="setPlanWindow('week', $event)"
                   />
-                  Weekly
+                  {{ t("Weekly") }}
                 </label>
               </div>
             </div>
           </template>
 
           <label v-if="catalogEntry?.options" class="field">
-            Options (program arguments)
-            <input v-model="form.options" placeholder="--flag" @keydown.enter.prevent />
+            {{ t("Options (program arguments)") }}
+            <input v-model="form.options" :placeholder="t('--flag')" @keydown.enter.prevent />
           </label>
 
           <!-- second state for toggles -->
           <template v-if="showDual">
-            <div class="dual-head">Second state (toggle)</div>
+            <div class="dual-head">{{ t("Second state (toggle)") }}</div>
             <div class="dual-grid">
               <label class="field">
-                Background 2
+                {{ t("Background 2") }}
                 <input
                   type="color"
                   class="color-inline"
@@ -1196,31 +1197,30 @@ function colorOr(val, fallback) {
                 />
               </label>
               <label class="field">
-                Icon 2
-                <input v-model="form.icon2" placeholder="icon name" @keydown.enter.prevent />
+                {{ t("Icon 2") }}
+                <input v-model="form.icon2" :placeholder="t('icon name')" @keydown.enter.prevent />
               </label>
             </div>
             <button class="mini" @click="pickImage('img2')">
-              <i class="fas fa-image"></i> {{ form.img2 ? "Replace image 2" : "Pick image 2" }}
+              <i class="fas fa-image"></i> {{ form.img2 ? t("Replace image 2") : t("Pick image 2") }}
             </button>
             <div v-if="imageError" class="dual-error">{{ imageError }}</div>
           </template>
 
           <!-- custom gestures (desktop touch mode + tablets) -->
           <template v-if="gesturesAvailable">
-            <div class="dual-head">Gesty</div>
+            <div class="dual-head">{{ t("Gestures") }}</div>
             <p class="gesture-note">
-              Zaznacz gest i opcjonalnie wybierz akcję - bez wyboru gest uruchamia
-              akcję kafla. Działa w trybie dotykowym i na tabletach.
+              {{ t("Tick a gesture and optionally pick an action - with no action picked, the gesture runs the tile's own action. Works in touch mode and on tablets.") }}
             </p>
             <div v-for="def in GESTURE_DEFS" :key="def.key" class="gesture-row">
               <label class="gesture-check">
                 <input type="checkbox" v-model="gestures[def.key].enabled" />
-                {{ def.label }}
+                {{ t(def.label) }}
               </label>
               <template v-if="gestures[def.key].enabled">
                 <div class="field sel-field gesture-action">
-                  <span class="sel-label">Akcja</span>
+                  <span class="sel-label">{{ t("Action") }}</span>
                   <ActionPicker
                     :model-value="gestures[def.key].type"
                     :groups="gesturePickerGroups"
@@ -1229,11 +1229,11 @@ function colorOr(val, fallback) {
                 </div>
                 <template v-for="f in gestureFieldList(def.key).filter((f) => gestureFieldVisible(gestures[def.key], f))" :key="f.key">
                   <div v-if="f.kind === 'select'" class="field sel-field">
-                    <span class="sel-label">{{ f.label }}</span>
-                    <SelectField v-model="gestures[def.key].fields[f.key]" :options="f.options" :label="f.label" />
+                    <span class="sel-label">{{ t(f.label) }}</span>
+                    <SelectField v-model="gestures[def.key].fields[f.key]" :options="f.options" :label="t(f.label)" />
                   </div>
                   <label v-else class="field">
-                    {{ f.label }}
+                    {{ t(f.label) }}
                     <textarea
                       v-if="f.kind === 'textarea'"
                       v-model="gestures[def.key].fields[f.key]"
@@ -1256,19 +1256,16 @@ function colorOr(val, fallback) {
 
           <!-- slider/knob: the double-tap reset value -->
           <template v-if="sliderDefaultAvailable">
-            <div class="dual-head">Wartość domyślna</div>
+            <div class="dual-head">{{ t("Default value") }}</div>
             <p class="gesture-note">
-              Podwójne tapnięcie suwaka przywraca tę wartość - np. Voicemeeter
-              0 dB, Spotify 50%. Te dwa mają wartości wbudowane; wpisana liczba
-              je nadpisze, a puste pole wyłącza reset dla pozostałych suwaków.
-              Działa w trybie dotykowym i na tabletach.
+              {{ t("Double-tapping the slider restores this value - e.g. Voicemeeter 0 dB, Spotify 50%. Those two have built-in values; a typed number overrides them, and an empty field disables the reset for the remaining sliders. Works in touch mode and on tablets.") }}
             </p>
             <label class="field">
-              Domyślna wartość (% 0-100)
+              {{ t("Default value (% 0-100)") }}
               <input
                 v-model="sliderDefault"
                 inputmode="decimal"
-                placeholder="np. 50"
+                :placeholder="t('e.g. 50')"
                 @keydown.enter.prevent
               />
             </label>
@@ -1278,9 +1275,9 @@ function colorOr(val, fallback) {
       </div>
 
       <div class="modal-actions">
-        <button v-if="!isCreate" class="btn-text danger left" @click="removeTile">Delete</button>
-        <button class="btn-text" @click="requestClose">Cancel</button>
-        <button class="btn-text accent" @click="save">{{ isCreate ? "Add" : "Save" }}</button>
+        <button v-if="!isCreate" class="btn-text danger left" @click="removeTile">{{ t("Delete") }}</button>
+        <button class="btn-text" @click="requestClose">{{ t("Cancel") }}</button>
+        <button class="btn-text accent" @click="save">{{ isCreate ? t("Add") : t("Save") }}</button>
       </div>
     </div>
   </div>

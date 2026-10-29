@@ -30,6 +30,7 @@ export const api = {
   getAutostart: () => invoke("get_autostart"),
   setAutostart: (enable) => invoke("set_autostart", { enable }),
   setStartMinimized: (enable) => invoke("set_start_minimized", { enable }),
+  setLang: (lang, locale) => invoke("set_lang", { lang, locale }),
   readImageData: (path) => invoke("read_image_data", { path }),
   listKnownInputs: () => invoke("list_known_inputs"),
   listLanAddresses: () => invoke("list_lan_addresses"),

@@ -7,6 +7,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, refreshVmDevices } from "../../api";
+import { t } from "../../i18n";
 
 const props = defineProps({
   focused: { type: Boolean, default: false },
@@ -42,25 +43,25 @@ let pollTimer = null;
 
 const chip = computed(() => {
   if (!status.value.installed) {
-    return { text: "brak DLL", ok: false };
+    return { text: t("no DLL"), ok: false };
   }
   if (status.value.logged_in) {
-    return { text: status.value.vm_type || "połączono", ok: true };
+    return { text: status.value.vm_type || t("connected"), ok: true };
   }
-  return { text: "nie połączono", ok: false };
+  return { text: t("not connected"), ok: false };
 });
 
 const facts = computed(() => {
   const s = status.value;
   return [
-    { dt: "DLL", dd: s.dll_path || "nie znaleziono (Voicemeeter zainstalowany?)" },
-    { dt: "Wersja", dd: s.version || "—" },
-    { dt: "Typ", dd: s.vm_type || "—" },
+    { dt: "DLL", dd: s.dll_path || t("not found (is Voicemeeter installed?)") },
+    { dt: t("Version"), dd: s.version || "—" },
+    { dt: t("Type"), dd: s.vm_type || "—" },
     {
-      dt: "Wejścia / wyjścia",
+      dt: t("Inputs / outputs"),
       dd:
         s.logged_in && s.vm_type
-          ? `${s.strip_count} stripów / ${s.bus_count} busów`
+          ? t("{strips} strips / {buses} buses", { strips: s.strip_count, buses: s.bus_count })
           : "—",
     },
   ];
@@ -77,7 +78,7 @@ async function refresh() {
   try {
     status.value = (await api.vmStatus()) || { ...emptyStatus };
   } catch (e) {
-    error.value = e ? String(e) : "Nie udało się pobrać statusu Voicemeeter.";
+    error.value = e ? String(e) : t("Could not load the Voicemeeter status.");
   }
 }
 
@@ -95,11 +96,11 @@ async function setOverride(path) {
   error.value = "";
   try {
     await api.vmSetDllOverride(path);
-    flashNote(path ? "Zapisano ścieżkę DLL." : "Wyczyszczono ścieżkę DLL.");
+    flashNote(path ? t("DLL path saved.") : t("DLL path cleared."));
     await refresh();
     refreshVmDevices();
   } catch (e) {
-    error.value = e ? String(e) : "Nie udało się zapisać ścieżki DLL.";
+    error.value = e ? String(e) : t("Could not save the DLL path.");
   } finally {
     busy.value = false;
   }
@@ -110,11 +111,11 @@ async function reconnect() {
   error.value = "";
   try {
     await api.vmReconnect();
-    flashNote("Połączono z Voicemeeter.");
+    flashNote(t("Connected to Voicemeeter."));
     await refresh();
     refreshVmDevices();
   } catch (e) {
-    error.value = e ? String(e) : "Połączenie z Voicemeeter nie powiodło się.";
+    error.value = e ? String(e) : t("Connecting to Voicemeeter failed.");
     await refresh();
   } finally {
     busy.value = false;
@@ -126,13 +127,13 @@ async function runVoicemeeter() {
   error.value = "";
   try {
     await api.vmRun(runType.value);
-    flashNote("Uruchamiam Voicemeeter — status odświeży się za chwilę.");
+    flashNote(t("Starting Voicemeeter - the status refreshes in a moment."));
     // the engine needs a moment to come up before the probe reports it
     setTimeout(() => {
       if (props.focused) refresh();
     }, 2500);
   } catch (e) {
-    error.value = e ? String(e) : "Nie udało się uruchomić Voicemeeter.";
+    error.value = e ? String(e) : t("Could not start Voicemeeter.");
   } finally {
     busy.value = false;
   }
@@ -173,7 +174,7 @@ onUnmounted(stopPolling);
       v-if="!focused"
       class="hit"
       tabindex="0"
-      aria-label="Rozwiń: Voicemeeter"
+      :aria-label="t('Expand: Voicemeeter')"
       @click="emit('expand')"
     ></button>
     <header class="tile-head">
@@ -181,8 +182,7 @@ onUnmounted(stopPolling);
       <span class="chip" :class="chip.ok ? 'ok' : ''">{{ chip.text }}</span>
     </header>
     <p class="sum">
-      Sterowanie głośnością, tranzytami i routingiem przez Voicemeeter Remote — kafelki
-      Voicemeeter w edytorze dostają live etykiety stripów i busów.
+      {{ t("Volume, transitions and routing control through Voicemeeter Remote - the Voicemeeter tiles in the editor get live strip and bus labels.") }}
     </p>
     <div v-show="focused" class="detail">
       <dl class="facts">
@@ -194,51 +194,49 @@ onUnmounted(stopPolling);
 
       <div class="ctl">
         <div class="ctl-text">
-          <span class="ctl-name">Ścieżka DLL</span>
+          <span class="ctl-name">{{ t("DLL path") }}</span>
           <span class="ctl-note">
             <template v-if="status.dll_override">
-              Nadpisana: <span class="mono">{{ status.dll_override }}</span>
+              {{ t("Overridden:") }} <span class="mono">{{ status.dll_override }}</span>
             </template>
             <template v-else>
-              Auto-detekcja (Program Files / Program Files (x86)). Wskaż plik tylko przy
-              niestandardowej instalacji.
+              {{ t("Auto-detection (Program Files / Program Files (x86)). Point at the file only for a non-standard install.") }}
             </template>
           </span>
         </div>
         <span class="btn-row">
-          <button class="act" :disabled="busy" @click="pickDll">Wybierz plik…</button>
+          <button class="act" :disabled="busy" @click="pickDll">{{ t("Browse…") }}</button>
           <button
             v-if="status.dll_override"
             class="act danger"
             :disabled="busy"
             @click="setOverride('')"
-          >Wyczyść</button>
+          >{{ t("Clear") }}</button>
         </span>
       </div>
 
       <div class="ctl">
         <div class="ctl-text">
-          <span class="ctl-name">Połączenie</span>
+          <span class="ctl-name">{{ t("Connection") }}</span>
           <span class="ctl-note">
-            {{ status.logged_in ? "Zalogowano do remote API." : "Połącz, aby czytać typ, wersję i etykiety." }}
+            {{ status.logged_in ? t("Logged in to the remote API.") : t("Connect to read the type, version and labels.") }}
           </span>
         </div>
         <span class="btn-row">
-          <button class="act" :disabled="busy" @click="reconnect">Połącz ponownie</button>
+          <button class="act" :disabled="busy" @click="reconnect">{{ t("Reconnect") }}</button>
           <template v-if="status.installed && !status.logged_in">
-            <select v-model.number="runType" class="run-select" aria-label="Typ Voicemeeter">
-              <option v-for="t in RUN_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+            <select v-model.number="runType" class="run-select" :aria-label="t('Voicemeeter type')">
+              <option v-for="rt in RUN_TYPES" :key="rt.value" :value="rt.value">{{ rt.label }}</option>
             </select>
             <button class="act accent" :disabled="busy" @click="runVoicemeeter">
-              Uruchom Voicemeeter
+              {{ t("Start Voicemeeter") }}
             </button>
           </template>
         </span>
       </div>
 
       <p class="note">
-        Liczba stripów i busów zależy od edycji: Voicemeeter 3/2, Banana 5/5, Potato 8/8.
-        Etykiety z zakładki Labels widać w edytorze kafelków po połączeniu.
+        {{ t("Strip and bus counts depend on the edition: Voicemeeter 3/2, Banana 5/5, Potato 8/8. Labels from the Labels tab show in the tile editor once connected.") }}
       </p>
       <p v-if="error" class="err">{{ error }}</p>
       <p v-else-if="note" class="note pending">{{ note }}</p>
