@@ -279,7 +279,7 @@ describe("App boards and tiles", () => {
     await w.vm.tileMoved(t, 2, 1, 1, 1);
     expect(t.x).toBe(0);
     expect(cmds("list_boards")).toHaveLength(2);
-    expect(w.vm.flash).toContain("Przesuwanie kafla nie powiodło się");
+    expect(w.vm.flash).toContain("Moving the tile failed");
   });
 
   it("creates a tile in two steps and reopens it for editing", async () => {
@@ -403,9 +403,9 @@ describe("App clipboard and context menus", () => {
       "Edit tile",
       "Run now",
       "Copy",
-      "Duplikuj",
-      "Przenieś do tablicy...",
-      "Kopiuj do tablicy...",
+      "Duplicate",
+      "Move to board...",
+      "Copy to board...",
       "Delete",
     ]);
     await w.findAll(".ctx-menu .menu-item")[1].trigger("click");
@@ -492,7 +492,7 @@ describe("App shell", () => {
     const w = await mountApp();
     vi.useFakeTimers();
     await w.vm.doImport();
-    expect(w.vm.flash).toBe("Import tablic nie powiódł się: too many tiles");
+    expect(w.vm.flash).toBe("Importing boards failed: too many tiles");
     vi.advanceTimersByTime(6000);
     expect(w.vm.flash).toBeNull();
   });

@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { ask, confirmState } from "./confirm";
 import { api } from "./api";
+import { t } from "./i18n";
 import { CATALOG, clamp } from "./catalog";
 import GridEditor from "./components/GridEditor.vue";
 import EditTileModal from "./components/EditTileModal.vue";
@@ -50,7 +51,7 @@ async function doUndo() {
     await loadBoards();
     updateHistoryFlags();
   } catch (e) {
-    flashError("Cofanie operacji nie powiodło się", e);
+    flashError(t("Undo failed"), e);
   }
 }
 
@@ -63,7 +64,7 @@ const targetBoardModal = ref(null); // { mode: 'move'|'copy', tiles: [...], targ
 function openTargetBoardModal(mode, tiles) {
   const otherBoards = boards.value.filter((b) => b.id !== currentId.value);
   if (!otherBoards.length) {
-    flashError("Brak innych tablic do wyboru");
+    flashError(t("No other boards to choose from"));
     return;
   }
   targetBoardModal.value = {
@@ -162,7 +163,7 @@ async function executeTransferToBoard() {
     targetBoardModal.value = null;
     await loadBoards();
   } catch (e) {
-    flashError(mode === "move" ? "Przenoszenie kafli nie powiodło się" : "Kopiowanie kafli nie powiodło się", e);
+    flashError(mode === "move" ? t("Moving tiles failed") : t("Copying tiles failed"), e);
     await loadBoards();
   }
 }
@@ -216,7 +217,7 @@ async function onTilesBulkMoved(moves) {
     updateHistoryFlags();
     await loadBoards();
   } catch (e) {
-    flashError("Przesuwanie grupy kafli nie powiodło się", e);
+    flashError(t("Moving the tile group failed"), e);
     await loadBoards();
   }
 }
@@ -232,12 +233,12 @@ async function deleteSelectedTiles() {
   const count = tilesToDelete.length;
   const ok = await ask(
     count === 1
-      ? `Usunąć kafel "${tilesToDelete[0].title || tilesToDelete[0].type}"?`
-      : `Usunąć ${count} zaznaczonych kafli?`,
+      ? t(`Delete tile "{name}"?`, { name: tilesToDelete[0].title || tilesToDelete[0].type })
+      : t(`Delete {count} selected tiles?`, { count }),
     {
-      title: "Usuń kafle",
-      okLabel: "Usuń",
-      cancelLabel: "Anuluj",
+      title: t("Delete tiles"),
+      okLabel: t("Delete"),
+      cancelLabel: t("Cancel"),
       kind: "warning",
     }
   );
@@ -252,7 +253,7 @@ async function deleteSelectedTiles() {
     selectedTileIds.value = new Set();
     await loadBoards();
   } catch (e) {
-    flashError("Usuwanie kafli nie powiodło się", e);
+    flashError(t("Deleting tiles failed"), e);
     await loadBoards();
   }
 }
@@ -353,7 +354,7 @@ async function duplicateTiles(tiles) {
     selectedTileIds.value = newSelection;
     await loadBoards();
   } catch (e) {
-    flashError("Duplikowanie kafli nie powiodło się", e);
+    flashError(t("Duplicating tiles failed"), e);
     await loadBoards();
   }
 }
@@ -437,7 +438,7 @@ async function pasteClipboardTiles() {
     selectedTileIds.value = newSelection;
     await loadBoards();
   } catch (e) {
-    flashError("Wklejanie kafli nie powiodło się", e);
+    flashError(t("Pasting tiles failed"), e);
     await loadBoards();
   }
 }
@@ -470,7 +471,7 @@ async function nudgeSelection(dx, dy) {
   }
 
   if (invalid) {
-    flashError("Nie można przesunąć: kafelki wychodziłyby poza siatkę lub nachodziły na inne");
+    flashError(t("Cannot move: tiles would leave the grid or overlap others"));
     return;
   }
 
@@ -501,7 +502,7 @@ async function applyBulkColor(color) {
     bulkColorModal.value = null;
     await loadBoards();
   } catch (e) {
-    flashError("Zmiana koloru kafli nie powiodła się", e);
+    flashError(t("Changing tile colors failed"), e);
     await loadBoards();
   }
 }
@@ -513,7 +514,7 @@ async function doRedo() {
     await loadBoards();
     updateHistoryFlags();
   } catch (e) {
-    flashError("Ponawianie operacji nie powiodło się", e);
+    flashError(t("Redo failed"), e);
   }
 }
 
@@ -714,7 +715,7 @@ async function pasteTile(snapshot, pos) {
     updateHistoryFlags();
     await loadBoards();
   } catch (e) {
-    flashError("Pasting the tile failed", e);
+    flashError(t("Pasting the tile failed"), e);
   }
 }
 
@@ -723,13 +724,13 @@ function tileContextMenu(tile, event) {
     const count = selectedTileIds.value.size;
     const selectedTiles = currentBoard.value?.buttons.filter(b => selectedTileIds.value.has(b.id)) || [];
     openContextMenu(event, [
-      { label: `Kopiuj (${count} kafli)`, icon: "copy", run: copySelectedTiles },
-      { label: `Duplikuj (${count} kafli)`, icon: "clone", run: () => duplicateTiles(selectedTiles) },
-      { label: "Przenieś do tablicy...", icon: "arrows-alt", run: () => openTargetBoardModal("move", selectedTiles) },
-      { label: "Kopiuj do tablicy...", icon: "copy", run: () => openTargetBoardModal("copy", selectedTiles) },
-      { label: "Zmień kolor...", icon: "palette", run: () => (bulkColorModal.value = { color: tile.color || "#ef4836" }) },
+      { label: t(`Copy ({count} tiles)`, { count }), icon: "copy", run: copySelectedTiles },
+      { label: t(`Duplicate ({count} tiles)`, { count }), icon: "clone", run: () => duplicateTiles(selectedTiles) },
+      { label: t("Move to board..."), icon: "arrows-alt", run: () => openTargetBoardModal("move", selectedTiles) },
+      { label: t("Copy to board..."), icon: "copy", run: () => openTargetBoardModal("copy", selectedTiles) },
+      { label: t("Change color..."), icon: "palette", run: () => (bulkColorModal.value = { color: tile.color || "#ef4836" }) },
       {
-        label: `Usuń (${count} kafli)`,
+        label: t(`Delete ({count} tiles)`, { count }),
         icon: "trash",
         danger: true,
         run: deleteSelectedTiles,
@@ -738,14 +739,14 @@ function tileContextMenu(tile, event) {
     return;
   }
   openContextMenu(event, [
-    { label: "Edit tile", icon: "pen", run: () => (editingTile.value = tile) },
-    { label: "Run now", icon: "play", run: () => runTileNow(tile.id) },
-    { label: "Copy", icon: "copy", run: () => copyTile(tile) },
-    { label: "Duplikuj", icon: "clone", run: () => duplicateTiles([tile]) },
-    { label: "Przenieś do tablicy...", icon: "arrows-alt", run: () => openTargetBoardModal("move", [tile]) },
-    { label: "Kopiuj do tablicy...", icon: "copy", run: () => openTargetBoardModal("copy", [tile]) },
+    { label: t("Edit tile"), icon: "pen", run: () => (editingTile.value = tile) },
+    { label: t("Run now"), icon: "play", run: () => runTileNow(tile.id) },
+    { label: t("Copy"), icon: "copy", run: () => copyTile(tile) },
+    { label: t("Duplicate"), icon: "clone", run: () => duplicateTiles([tile]) },
+    { label: t("Move to board..."), icon: "arrows-alt", run: () => openTargetBoardModal("move", [tile]) },
+    { label: t("Copy to board..."), icon: "copy", run: () => openTargetBoardModal("copy", [tile]) },
     {
-      label: "Delete",
+      label: t("Delete"),
       icon: "trash",
       danger: true,
       run: () => tileDeleted(tile),
@@ -756,14 +757,14 @@ function tileContextMenu(tile, event) {
 function emptyContextMenu(pos, event) {
   openContextMenu(event, [
     {
-      label: "New button here",
+      label: t("New button here"),
       icon: "plus",
       run: () => (createFlow.value = { ...pos, boardId: currentId.value }),
     },
     ...(tileClipboard.value
       ? [
           {
-            label: "Paste button here",
+            label: t("Paste button here"),
             icon: "paste",
             run: () => {
               const tiles = Array.isArray(tileClipboard.value) ? tileClipboard.value : [tileClipboard.value];
@@ -782,23 +783,22 @@ function emptyContextMenu(pos, event) {
 function boardContextMenu(board, event) {
   openContextMenu(event, [
     {
-      label: "Edit board",
+      label: t("Edit board"),
       icon: "pen",
       run: () => (boardModal.value = { mode: "edit", board }),
     },
     {
-      label: "Set current",
+      label: t("Set current"),
       icon: "check",
       run: () => (currentId.value = board.id),
     },
     {
-      label: "Clear tiles",
+      label: t("Clear tiles"),
       icon: "eraser",
       run: async () => {
-        const ok = await ask(`Clear every tile from "${board.name}"?`, {
-          title: "Clear board",
-    okLabel: "Clear",
-          okLabel: "Clear",
+        const ok = await ask(t(`Clear every tile from "{name}"?`, { name: board.name }), {
+          title: t("Clear board"),
+          okLabel: t("Clear"),
           kind: "warning",
         });
         if (ok) {
@@ -808,7 +808,7 @@ function boardContextMenu(board, event) {
             history.push(boardClearCommand({ boardId: board.id, tilesSnapshot }));
             updateHistoryFlags();
           } catch (e) {
-            flashError("Czyszczenie tablicy nie powiodło się", e);
+            flashError(t("Clearing the board failed"), e);
             return;
           }
           await loadBoards();
@@ -816,14 +816,13 @@ function boardContextMenu(board, event) {
       },
     },
     {
-      label: "Delete board",
+      label: t("Delete board"),
       icon: "trash",
       danger: true,
       run: async () => {
-        const ok = await ask(`Delete board "${board.name}"?`, {
-          title: "Delete board",
-    okLabel: "Delete",
-          okLabel: "Delete",
+        const ok = await ask(t(`Delete board "{name}"?`, { name: board.name }), {
+          title: t("Delete board"),
+          okLabel: t("Delete"),
           kind: "warning",
         });
         if (ok) {
@@ -836,7 +835,7 @@ function boardContextMenu(board, event) {
             history.push(boardDeleteCommand({ boardSnapshot }));
             updateHistoryFlags();
           } catch (e) {
-            flashError("Usuwanie tablicy nie powiodło się", e);
+            flashError(t("Deleting the board failed"), e);
             return;
           }
           await loadBoards();
@@ -878,7 +877,7 @@ const currentBoard = computed(
 );
 const boardBg = computed(() => currentBoard.value?.background || "#437072");
 const boardNames = computed(() =>
-  Object.fromEntries(boards.value.map((b) => [b.id, b.name || "Untitled"]))
+  Object.fromEntries(boards.value.map((b) => [b.id, b.name || t("Untitled")]))
 );
 
 // Panel data that only changes on restart or settings edits: fetched at
@@ -994,7 +993,7 @@ async function boardDrop() {
   try {
     await api.reorderBoards(next.map((b) => b.id));
   } catch (e) {
-    flashError("Reordering boards failed", e);
+    flashError(t("Reordering boards failed"), e);
     loadBoards();
   }
 }
@@ -1031,14 +1030,14 @@ async function tileCreated(form) {
     if (tile) editingTile.value = tile;
   } catch (e) {
     // keep the dialog open with the entered values on a failed save
-    flashError("Creating the tile failed", e);
+    flashError(t("Creating the tile failed"), e);
   }
 }
 
 function tileSlider(tile, value) {
   api
     .execSlider(tile.id, value)
-    .catch((e) => flashError("Slider change failed", e));
+    .catch((e) => flashError(t("Slider change failed"), e));
 }
 
 // "Run now" (context menu) and touch-mode taps share one failure surface:
@@ -1048,12 +1047,12 @@ async function onTileGesture({ tile, gesture }) {
   try {
     await api.execButtonGesture(tile.id, gesture);
   } catch (e) {
-    flashError(`Gest "${gesture}" nie powiódł się`, e);
+    flashError(t(`Gesture "{gesture}" failed`, { gesture }), e);
   }
 }
 
 function runTileNow(id) {
-  api.execButton(id).catch((e) => flashError("Running the tile failed", e));
+  api.execButton(id).catch((e) => flashError(t("Running the tile failed"), e));
 }
 
 async function tileMoved(tile, x, y, w, h) {
@@ -1063,7 +1062,7 @@ async function tileMoved(tile, x, y, w, h) {
     history.push(tileMoveCommand({ id: tile.id, boardId: tile.board_id, prevGeom, nextGeom: { x, y, w, h } }));
     updateHistoryFlags();
   } catch (e) {
-    flashError("Przesuwanie kafla nie powiodło się", e);
+    flashError(t("Moving the tile failed"), e);
     await loadBoards();
     return;
   }
@@ -1082,7 +1081,7 @@ async function tileEdited(button) {
     await api.updateButton(button);
   } catch (e) {
     // keep the dialog open so the edits are not lost
-    flashError("Zapisywanie kafla nie powiodło się", e);
+    flashError(t("Saving the tile failed"), e);
     return;
   }
   if (prevSnapshot) {
@@ -1096,9 +1095,9 @@ async function tileEdited(button) {
 async function tileDeleted(tile) {
   // single confirmation for both entry points: the context menu and the
   // edit dialog's Delete button (012 A9)
-  const ok = await ask(`Delete tile "${tile.title || tile.type}"?`, {
-    title: "Delete tile",
-    okLabel: "Delete",
+  const ok = await ask(t(`Delete tile "{name}"?`, { name: tile.title || tile.type }), {
+    title: t("Delete tile"),
+    okLabel: t("Delete"),
     kind: "warning",
   });
   if (!ok) return;
@@ -1107,7 +1106,7 @@ async function tileDeleted(tile) {
     history.push(tileDeleteCommand({ tileSnapshot: { ...tile } }));
     updateHistoryFlags();
   } catch (e) {
-    flashError("Usuwanie kafla nie powiodło się", e);
+    flashError(t("Deleting the tile failed"), e);
     return;
   }
   editingTile.value = null;
@@ -1118,14 +1117,14 @@ async function doExport() {
   kebabOpen.value = false;
   if (!boards.value.length) return;
   const path = await save({
-    filters: [{ name: "Board JSON", extensions: ["boardjson"] }],
+    filters: [{ name: t("Board JSON"), extensions: ["boardjson"] }],
   });
   if (!path) return;
   const ids = boards.value.map((b) => b.id);
   try {
     await api.exportBoards(ids, path);
   } catch (e) {
-    flashError("Exporting boards failed", e);
+    flashError(t("Exporting boards failed"), e);
   }
 }
 
@@ -1133,7 +1132,7 @@ async function doImport() {
   kebabOpen.value = false;
   const path = await open({
     multiple: false,
-    filters: [{ name: "Board JSON", extensions: ["boardjson"] }],
+    filters: [{ name: t("Board JSON"), extensions: ["boardjson"] }],
   });
   if (!path) return;
   try {
@@ -1142,16 +1141,16 @@ async function doImport() {
     updateHistoryFlags();
     await loadBoards();
   } catch (e) {
-    flashError("Import tablic nie powiódł się", e);
+    flashError(t("Importing boards failed"), e);
   }
 }
 
 async function clearCurrentBoard() {
   kebabOpen.value = false;
   if (!currentBoard.value) return;
-  const ok = await ask(`Clear every tile from "${currentBoard.value.name}"?`, {
-    title: "Clear board",
-    okLabel: "Clear",
+  const ok = await ask(t(`Clear every tile from "{name}"?`, { name: currentBoard.value.name }), {
+    title: t("Clear board"),
+    okLabel: t("Clear"),
     kind: "warning",
   });
   if (!ok) return;
@@ -1161,7 +1160,7 @@ async function clearCurrentBoard() {
     history.push(boardClearCommand({ boardId: currentBoard.value.id, tilesSnapshot }));
     updateHistoryFlags();
   } catch (e) {
-    flashError("Czyszczenie tablicy nie powiodło się", e);
+    flashError(t("Clearing the board failed"), e);
     return;
   }
   await loadBoards();
@@ -1170,9 +1169,9 @@ async function clearCurrentBoard() {
 async function deleteCurrentBoard() {
   kebabOpen.value = false;
   if (!currentBoard.value) return;
-  const ok = await ask(`Delete board "${currentBoard.value.name}"?`, {
-    title: "Delete board",
-    okLabel: "Delete",
+  const ok = await ask(t(`Delete board "{name}"?`, { name: currentBoard.value.name }), {
+    title: t("Delete board"),
+    okLabel: t("Delete"),
     kind: "warning",
   });
   if (!ok) return;
@@ -1185,7 +1184,7 @@ async function deleteCurrentBoard() {
     history.push(boardDeleteCommand({ boardSnapshot }));
     updateHistoryFlags();
   } catch (e) {
-    flashError("Usuwanie tablicy nie powiodło się", e);
+    flashError(t("Deleting the board failed"), e);
     return;
   }
   await loadBoards();
@@ -1372,7 +1371,7 @@ function onKeydown(event) {
       <button
         class="rail-logo"
         :class="{ dim: !sidebarVisible }"
-        title="Toggle board list"
+        :title="t('Toggle board list')"
         @click="sidebarVisible = !sidebarVisible"
       >
         <i class="fas fa-th-large"></i>
@@ -1381,7 +1380,7 @@ function onKeydown(event) {
       <button
         class="rail-btn"
         :class="{ on: touchMode }"
-        title="Touch mode"
+        :title="t('Touch mode')"
         @click="toggleTouch"
         :disabled="!currentBoard"
       >
@@ -1392,7 +1391,7 @@ function onKeydown(event) {
         <button
           class="rail-btn"
           :class="{ on: railPopover === 'status' }"
-          title="Server status"
+          :title="t('Server status')"
           @click="toggleStatusPopover"
         >
           <i class="fas fa-wifi"></i>
@@ -1402,17 +1401,17 @@ function onKeydown(event) {
           <div v-if="railPopover === 'status'" class="rail-pop">
             <div class="pop-row strong">
               <span :class="['dot', status.dbOk ? 'ok' : 'bad']"></span>
-              {{ status.dbOk ? "Server running" : "Database unavailable" }}
+              {{ status.dbOk ? t("Server running") : t("Database unavailable") }}
             </div>
             <div class="pop-row tnum">0.0.0.0:{{ status.port }}</div>
-            <div class="pop-row tnum">{{ status.clients }} client(s) connected</div>
+            <div class="pop-row tnum">{{ t("{count} client(s) connected", { count: status.clients }) }}</div>
             <template v-if="status.dbOk">
               <div class="pop-sep"></div>
               <button
                 class="mini accent"
                 @click="railPopover = null; settingsOpen = true"
               >
-                <i class="fas fa-cog"></i> Ustawienia i parowanie tabletów
+                <i class="fas fa-cog"></i> {{ t("Settings and tablet pairing") }}
               </button>
             </template>
           </div>
@@ -1421,7 +1420,7 @@ function onKeydown(event) {
 
       <button
         class="rail-btn"
-        title="Ustawienia"
+        :title="t('Settings')"
         @click="settingsOpen = true"
       >
         <i class="fas fa-cog"></i>
@@ -1429,14 +1428,14 @@ function onKeydown(event) {
 
       <div class="rail-spacer"></div>
 
-      <button class="rail-add" title="New board" @click="newBoard" :disabled="!status.dbOk">
+      <button class="rail-add" :title="t('New board')" @click="newBoard" :disabled="!status.dbOk">
         <i class="fas fa-plus"></i>
       </button>
     </nav>
 
     <!-- board list -->
     <aside v-if="!touchMode && sidebarVisible" class="sidebar">
-      <div class="side-caption">Boards</div>
+      <div class="side-caption">{{ t("Boards") }}</div>
       <div class="boards" @dragover.prevent="boardDragOver" @drop.prevent="boardDrop">
         <button
           v-for="(b, i) in boards"
@@ -1450,10 +1449,10 @@ function onKeydown(event) {
           @dragstart="boardDragStart(b, $event)"
           @dragend="boardDragEnd"
         >
-          {{ b.name || "Untitled" }}
+          {{ b.name || t("Untitled") }}
         </button>
         <div v-if="!boards.length && status.dbOk" class="side-empty">
-          Brak tablic. Użyj <i class="fas fa-plus"></i>, aby utworzyć pierwszą.
+          {{ t("No boards yet. Use") }} <i class="fas fa-plus"></i> {{ t("to create the first one.") }}
         </div>
       </div>
     </aside>
@@ -1464,8 +1463,7 @@ function onKeydown(event) {
       :style="{ '--board-bg': boardBg }"
     >
       <div v-if="!status.dbOk" class="banner">
-        Database is locked or missing. Close the original Deckboard app and
-        restart the editor.
+        {{ t("Database is locked or missing. Close the original Deckboard app and restart the editor.") }}
       </div>
 
       <!-- transient failure feedback (save/import/export errors) -->
@@ -1481,7 +1479,7 @@ function onKeydown(event) {
               class="tool-btn"
               :class="{ disabled: !canUndo }"
               :disabled="!canUndo"
-              title="Cofnij (Ctrl+Z)"
+              :title="t('Undo (Ctrl+Z)')"
               @click="doUndo"
             >
               <i class="fas fa-undo"></i>
@@ -1490,36 +1488,35 @@ function onKeydown(event) {
               class="tool-btn"
               :class="{ disabled: !canRedo }"
               :disabled="!canRedo"
-              title="Ponów (Ctrl+Y / Ctrl+Shift+Z)"
+              :title="t('Redo (Ctrl+Y / Ctrl+Shift+Z)')"
               @click="doRedo"
             >
               <i class="fas fa-redo"></i>
             </button>
           </div>
           <div class="kebab-anchor">
-            <button class="kebab" title="Board menu" @click="kebabOpen = !kebabOpen">
+            <button class="kebab" :title="t('Board menu')" @click="kebabOpen = !kebabOpen">
               <i class="fas fa-ellipsis-v"></i>
             </button>
             <Transition name="pop">
               <div v-if="kebabOpen" class="kebab-menu">
                 <button class="menu-item" @click="editBoard" :disabled="!currentBoard">
-                  <i class="fas fa-pen"></i> Edit board
+                  <i class="fas fa-pen"></i> {{ t("Edit board") }}
                 </button>
                 <button class="menu-item" @click="doExport" :disabled="!boards.length">
-                  <i class="fas fa-file-export"></i> Export boards
+                  <i class="fas fa-file-export"></i> {{ t("Export boards") }}
                 </button>
                 <button class="menu-item" @click="doImport" :disabled="!status.dbOk">
-                  <i class="fas fa-file-import"></i> Import boards
+                  <i class="fas fa-file-import"></i> {{ t("Import boards") }}
                 </button>
                 <button class="menu-item" @click="clearCurrentBoard" :disabled="!currentBoard">
-                  <i class="fas fa-eraser"></i> Clear tiles
+                  <i class="fas fa-eraser"></i> {{ t("Clear tiles") }}
                 </button>
                 <button class="menu-item danger" @click="deleteCurrentBoard" :disabled="!currentBoard">
-                  <i class="fas fa-trash"></i> Delete board
+                  <i class="fas fa-trash"></i> {{ t("Delete board") }}
                 </button>
                 <div class="menu-note">
-                  double-click a tile to edit - drag to move - click an empty
-                  cell to add
+                  {{ t("double-click a tile to edit - drag to move - click an empty cell to add") }}
                 </div>
               </div>
             </Transition>
@@ -1562,30 +1559,30 @@ function onKeydown(event) {
             v-if="currentBoard && !touchMode && !currentBoard.buttons.length"
             class="canvas-hint"
           >
-            <div class="hint-title">Pusta tablica</div>
-            <div class="hint-line">Kliknij pustą komórkę, aby dodać pierwszy kafel</div>
+            <div class="hint-title">{{ t("Empty board") }}</div>
+            <div class="hint-line">{{ t("Click an empty cell to add the first tile") }}</div>
             <div class="hint-sub">
-              dwuklik — edycja kafla · przeciągnij — przesunięcie · Ctrl+Z — cofnij
+              {{ t("double-click — edit · drag — move · Ctrl+Z — undo") }}
             </div>
           </div>
 
           <template v-if="!touchMode">
             <div class="canvas-overlay zoom">
-              <button class="zoom-btn" title="Zoom out" @click="bumpZoom(-0.1)">
+              <button class="zoom-btn" :title="t('Zoom out')" @click="bumpZoom(-0.1)">
                 <i class="fas fa-search-minus"></i>
               </button>
               <span class="zoom-value tnum">{{ Math.round(zoom * 100) }}%</span>
-              <button class="zoom-btn" title="Zoom in" @click="bumpZoom(0.1)">
+              <button class="zoom-btn" :title="t('Zoom in')" @click="bumpZoom(0.1)">
                 <i class="fas fa-search-plus"></i>
               </button>
             </div>
             <div class="canvas-overlay version tnum">
               <i class="fas fa-puzzle-piece"></i>
-              Version {{ status.version || "0.1.1" }}
+              {{ t("Version {version}", { version: status.version || "0.1.1" }) }}
             </div>
           </template>
 
-          <button v-else class="touch-exit" title="Exit touch mode" @click="toggleTouch">
+          <button v-else class="touch-exit" :title="t('Exit touch mode')" @click="toggleTouch">
             <i class="fas fa-times"></i>
           </button>
         </div>
@@ -1678,10 +1675,10 @@ function onKeydown(event) {
     <Transition name="modal">
       <div v-if="bulkColorModal" class="overlay" @click.self="bulkColorModal = null">
         <div class="modal mini-modal">
-          <div class="modal-head">Zmień kolor zaznaczonych kafli</div>
+          <div class="modal-head">{{ t("Change the color of the selected tiles") }}</div>
           <div class="modal-body">
             <label class="field">
-              Wybierz kolor
+              {{ t("Pick a color") }}
               <div class="color-picker-row">
                 <input v-model="bulkColorModal.color" type="color" class="color-picker-input" />
                 <input v-model="bulkColorModal.color" class="hex" placeholder="#rrggbb" />
@@ -1689,8 +1686,8 @@ function onKeydown(event) {
             </label>
           </div>
           <div class="modal-actions">
-            <button class="btn-text" @click="bulkColorModal = null">Anuluj</button>
-            <button class="btn-text accent" @click="applyBulkColor(bulkColorModal.color)">Zastosuj</button>
+            <button class="btn-text" @click="bulkColorModal = null">{{ t("Cancel") }}</button>
+            <button class="btn-text accent" @click="applyBulkColor(bulkColorModal.color)">{{ t("Apply") }}</button>
           </div>
         </div>
       </div>
@@ -1702,26 +1699,26 @@ function onKeydown(event) {
       <div v-if="targetBoardModal" class="overlay" @click.self="targetBoardModal = null">
         <div class="modal mini-modal">
           <div class="modal-head">
-            {{ targetBoardModal.mode === 'move' ? "Przenieś do tablicy" : "Kopiuj do tablicy" }}
+            {{ targetBoardModal.mode === 'move' ? t("Move to board") : t("Copy to board") }}
           </div>
           <div class="modal-body">
             <label class="field">
-              Wybierz tablicę docelową
+              {{ t("Choose the target board") }}
               <select v-model="targetBoardModal.targetBoardId" class="board-target-select">
                 <option
                   v-for="b in boards.filter((b) => b.id !== currentId)"
                   :key="b.id"
                   :value="b.id"
                 >
-                  {{ b.name || "Untitled" }} ({{ b.width }}x{{ b.height }})
+                  {{ b.name || t("Untitled") }} ({{ b.width }}x{{ b.height }})
                 </option>
               </select>
             </label>
           </div>
           <div class="modal-actions">
-            <button class="btn-text" @click="targetBoardModal = null">Anuluj</button>
+            <button class="btn-text" @click="targetBoardModal = null">{{ t("Cancel") }}</button>
             <button class="btn-text accent" @click="executeTransferToBoard">
-              {{ targetBoardModal.mode === 'move' ? "Przenieś" : "Kopiuj" }}
+              {{ targetBoardModal.mode === 'move' ? t("Move") : t("Copy") }}
             </button>
           </div>
         </div>
