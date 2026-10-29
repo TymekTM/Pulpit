@@ -121,9 +121,10 @@ fn now_playing_payload(player: Option<&Value>) -> Value {
         "rows": [],
     });
     let Some(player) = player else {
-        payload["rows"] = json!([{ "label": "Status", "value": "Nic nie jest odtwarzane" }]);
-        payload["compact"] = json!("Nic nie jest odtwarzane");
-        payload["summary"] = json!("Nic nie jest odtwarzane");
+        let idle = pulpit_i18n::spotify_idle();
+        payload["rows"] = json!([{ "label": "Status", "value": idle }]);
+        payload["compact"] = json!(idle);
+        payload["summary"] = json!(idle);
         return payload;
     };
     let track = track_name(player);
@@ -145,9 +146,10 @@ fn now_playing_payload(player: Option<&Value>) -> Value {
     }
     if rows.is_empty() {
         // a player object without an item (ad breaks report no item)
-        rows.push(json!({ "label": "Status", "value": "Nic nie jest odtwarzane" }));
-        payload["compact"] = json!("Nic nie jest odtwarzane");
-        payload["summary"] = json!("Nic nie jest odtwarzane");
+        let idle = pulpit_i18n::spotify_idle();
+        rows.push(json!({ "label": "Status", "value": idle }));
+        payload["compact"] = json!(idle);
+        payload["summary"] = json!(idle);
     } else {
         let compact = if artist.is_empty() {
             track.clone()
@@ -208,11 +210,12 @@ pub fn build_snapshot(
             "spotify-auth": auth.as_str(),
             "spotify-art-url": "",
         });
+        let hint = pulpit_i18n::spotify_login_hint();
         payload["spotify-now-playing"] = json!({
             "title": "Spotify",
-            "rows": [{ "label": "Status", "value": "Log in via Pulpit settings" }],
-            "compact": "Log in via Pulpit settings",
-            "summary": "Log in via Pulpit settings",
+            "rows": [{ "label": "Status", "value": hint }],
+            "compact": hint,
+            "summary": hint,
         });
         return payload;
     }
@@ -283,6 +286,20 @@ mod tests {
                 }
             }
         })
+    }
+
+    // The payload-text locale is process-global (pulpit-i18n) and cargo
+    // runs a crate's tests on a thread pool: locale-dependent tests
+    // serialize on this guard, each pinning the locale it asserts under
+    // and restoring the default afterwards.
+    static LOCALE_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn pin_locale(locale: &str) -> std::sync::MutexGuard<'static, ()> {
+        let guard = LOCALE_GUARD
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        pulpit_i18n::set_locale(locale);
+        guard
     }
 
     #[test]
@@ -376,6 +393,7 @@ mod tests {
 
     #[test]
     fn nothing_playing_and_needs_login_shapes() {
+        let guard = pin_locale("pl");
         let idle = build_snapshot(None, None, AuthState::Ok, Some(42));
         assert_eq!(idle["spotify-playing"], "OFF");
         assert_eq!(idle["spotify-volume"], "42");
@@ -383,6 +401,7 @@ mod tests {
         assert_eq!(idle["spotify-art-url"], "");
         let payload = &idle["spotify-now-playing"];
         assert_eq!(payload["rows"][0]["value"], "Nic nie jest odtwarzane");
+        assert_eq!(payload["compact"], "Nic nie jest odtwarzane");
         assert!(payload.get("progress").is_none());
         // idle payloads still name their brand
         assert_eq!(payload["provider"], "spotify");
@@ -391,12 +410,51 @@ mod tests {
         assert_eq!(login["spotify-auth"], "needs-login");
         assert_eq!(
             login["spotify-now-playing"]["rows"][0]["value"],
+            "Zaloguj się w ustawieniach Pulpita"
+        );
+        assert_eq!(
+            login["spotify-now-playing"]["compact"],
+            "Zaloguj się w ustawieniach Pulpita"
+        );
+        pulpit_i18n::reset_locale();
+        drop(guard);
+    }
+
+    #[test]
+    fn idle_and_login_texts_follow_the_locale() {
+        let guard = pin_locale("en");
+        let idle =
+            build_snapshot(None, None, AuthState::Ok, Some(42))["spotify-now-playing"].clone();
+        assert_eq!(idle["rows"][0]["value"], "Nothing is playing");
+        assert_eq!(idle["compact"], "Nothing is playing");
+        assert_eq!(idle["summary"], "Nothing is playing");
+        let login = build_snapshot(None, None, AuthState::NeedsLogin, None);
+        assert_eq!(
+            login["spotify-now-playing"]["rows"][0]["value"],
             "Log in via Pulpit settings"
         );
         assert_eq!(
             login["spotify-now-playing"]["compact"],
             "Log in via Pulpit settings"
         );
+        pulpit_i18n::reset_locale();
+        drop(guard);
+    }
+
+    #[test]
+    fn trackless_player_reports_the_idle_text_in_the_payload_locale() {
+        let guard = pin_locale("en");
+        let mut player = player_json();
+        // an ad break: a live player object without a track and with no
+        // device name - every row source is empty
+        player["item"] = serde_json::Value::Null;
+        player["device"]["name"] = serde_json::Value::Null;
+        let payload =
+            build_snapshot(Some(&player), None, AuthState::Ok, None)["spotify-now-playing"].clone();
+        assert_eq!(payload["rows"][0]["value"], "Nothing is playing");
+        assert_eq!(payload["compact"], "Nothing is playing");
+        pulpit_i18n::reset_locale();
+        drop(guard);
     }
 
     #[test]

@@ -2876,12 +2876,30 @@ fn stored_lang(path: Option<&std::path::Path>) -> &'static str {
     }
 }
 
-/// Persist the UI language choice (Settings -> Language). The webview
-/// switches immediately; this only remembers it for the next launch.
+/// Persist the UI language choice (Settings -> Language) and mirror the
+/// effective locale to the payload-text layer (`pulpit_i18n`). The
+/// webview switches immediately; this only remembers the choice for the
+/// next launch. `locale` is the RESOLVED locale ("pl" / "en") - the
+/// frontend resolves `auto` because only it knows the system locale -
+/// and the Rust side stores it verbatim (unknown codes fall back to
+/// English inside pulpit-i18n).
 #[tauri::command]
-async fn set_lang(state: State<'_, DesktopState>, lang: String) -> Result<(), String> {
+async fn set_lang(
+    state: State<'_, DesktopState>,
+    lang: String,
+    locale: Option<String>,
+) -> Result<(), String> {
     if !matches!(lang.as_str(), "auto" | "pl" | "en") {
         return Err(format!("Unknown language: {lang}"));
+    }
+    if let Some(locale) = locale.as_deref() {
+        pulpit_i18n::set_locale(locale);
+    }
+    // The startup report below re-sends the just-read choice on every
+    // launch; skip the rewrite when it matches storage so only a real
+    // change (Settings -> Language) touches editor.json.
+    if stored_lang(state.settings_path.as_deref()) == lang.as_str() {
+        return Ok(());
     }
     let path = state
         .settings_path

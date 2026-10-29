@@ -285,7 +285,7 @@ pub fn build_snapshot(
     }
 
     let mut now_playing = json!({
-        "title": if !app_name.is_empty() { app_name } else { "Multimedia" },
+        "title": if !app_name.is_empty() { app_name } else { pulpit_i18n::media_idle_title() },
         "compact": "",
         "summary": "",
         "rows": [],
@@ -299,9 +299,10 @@ pub fn build_snapshot(
 
     let has_content = props.is_some_and(|p| !p.title.is_empty() || !p.artist.is_empty());
     if !has_content {
-        now_playing["rows"] = json!([{ "label": "Status", "value": "Nic nie jest odtwarzane" }]);
-        now_playing["compact"] = json!("Nic nie jest odtwarzane");
-        now_playing["summary"] = json!("Nic nie jest odtwarzane");
+        let idle = pulpit_i18n::media_idle();
+        now_playing["rows"] = json!([{ "label": "Status", "value": idle }]);
+        now_playing["compact"] = json!(idle);
+        now_playing["summary"] = json!(idle);
     } else {
         let p = props.unwrap();
         let track = p.title.clone();
@@ -414,8 +415,23 @@ mod tests {
         assert_eq!(aumid_to_friendly_name("F0DC299D809B9700"), "Zen Browser");
     }
 
+    // The payload-text locale is process-global (pulpit-i18n) and cargo
+    // runs a crate's tests on a thread pool: locale-dependent tests
+    // serialize on this guard, each pinning the locale it asserts under
+    // and restoring the default afterwards.
+    static LOCALE_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn pin_locale(locale: &str) -> std::sync::MutexGuard<'static, ()> {
+        let guard = LOCALE_GUARD
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        pulpit_i18n::set_locale(locale);
+        guard
+    }
+
     #[test]
     fn build_snapshot_idle_shape() {
+        let guard = pin_locale("pl");
         let snapshot = build_snapshot(None, None, None, "", None);
         assert_eq!(snapshot["media-playing"], "OFF");
         assert_eq!(snapshot["media-progress"], "0.000");
@@ -432,6 +448,44 @@ mod tests {
         assert!(np.get("progress").is_none());
         assert!(np.get("provider").is_none());
         assert!(snapshot.get(ART_DATA_KEY).is_none());
+        pulpit_i18n::reset_locale();
+        drop(guard);
+    }
+
+    #[test]
+    fn build_snapshot_idle_shape_english() {
+        let guard = pin_locale("en");
+        let snapshot = build_snapshot(None, None, None, "", None);
+        let np = &snapshot["media-now-playing"];
+        assert_eq!(np["title"], "Media");
+        assert_eq!(np["compact"], "Nothing is playing");
+        assert_eq!(np["summary"], "Nothing is playing");
+        assert_eq!(np["rows"][0]["label"], "Status");
+        assert_eq!(np["rows"][0]["value"], "Nothing is playing");
+        // a known app still names itself in the title; the idle text
+        // stays the payload-text locale's
+        let with_app = build_snapshot(None, None, None, "Spotify", None);
+        assert_eq!(with_app["media-now-playing"]["title"], "Spotify");
+        assert_eq!(
+            with_app["media-now-playing"]["compact"],
+            "Nothing is playing"
+        );
+        pulpit_i18n::reset_locale();
+        drop(guard);
+    }
+
+    #[test]
+    fn locale_switch_changes_the_next_idle_payload() {
+        let guard = pin_locale("en");
+        let english =
+            build_snapshot(None, None, None, "", None)["media-now-playing"]["compact"].clone();
+        pulpit_i18n::set_locale("pl");
+        let polish =
+            build_snapshot(None, None, None, "", None)["media-now-playing"]["compact"].clone();
+        assert_eq!(english, "Nothing is playing");
+        assert_eq!(polish, "Nic nie jest odtwarzane");
+        pulpit_i18n::reset_locale();
+        drop(guard);
     }
 
     #[test]

@@ -65,12 +65,23 @@ function applyLang(lang) {
 /// Read the persisted choice (editor settings "lang") and switch to it.
 /// A failed read keeps the system locale - never blocks the launch.
 export async function initUiLang() {
+  let choice = "auto";
   try {
     const settings = await api.getSettings();
-    applyLang(LANG_CHOICES.includes(settings?.lang) ? settings.lang : "auto");
+    if (LANG_CHOICES.includes(settings?.lang)) choice = settings.lang;
   } catch {
-    applyLang("auto");
+    // keep the system locale
   }
+  applyLang(choice);
+  reportLocale(choice);
+}
+
+/// Tell the host the RESOLVED locale: only the webview can resolve
+/// `auto` (system locale), and the host stays dumb - it mirrors the
+/// answer into the payload-text layer (media/Spotify idle strings).
+/// Best effort: a failed report leaves English for this session.
+function reportLocale(choice) {
+  api.setLang(choice, resolveLocale(choice, systemLang())).catch(() => {});
 }
 
 /// Switch the UI language and persist the choice. The switch is optimistic;
@@ -80,7 +91,7 @@ export async function setUiLang(lang) {
   const prev = uiLang.value;
   applyLang(lang);
   try {
-    await api.setLang(lang);
+    await api.setLang(lang, resolveLocale(lang, systemLang()));
   } catch (e) {
     applyLang(prev);
     throw e;

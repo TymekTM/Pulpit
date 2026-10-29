@@ -63,6 +63,16 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or(serde_json::Value::Null);
+    // Payload-text locale (media/Spotify idle strings): the same "lang"
+    // key the desktop's UI language uses. "auto" or a missing key stays
+    // "en" - a headless box has no system locale to follow. Producers
+    // read the global per snapshot build, so this must land before the
+    // producer pumps spawn below.
+    match settings.get("lang").and_then(|v| v.as_str()) {
+        Some("pl") => pulpit_i18n::set_locale("pl"),
+        Some("en") => pulpit_i18n::set_locale("en"),
+        _ => {}
+    }
     let ext_dir = std::env::var_os("PULPIT_EXT_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| data_dir.join("extensions"));
