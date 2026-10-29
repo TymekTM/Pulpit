@@ -33,12 +33,12 @@ when done.
 | 019 | Full Polish/English i18n in the desktop UI | P1 | L | - | DONE (chunks A-D by delegated GLM-5.3-Flash + one Sonnet start (rate-limited mid-step-2, work preserved), all reviewed; branch `t3/i18n-desktop-integration`. Follow-ups: re-source the Polish callurl labels in catalog.js + editorHistory.js descriptions into t(); quote-style normalization in pl-chrome.json) |
 | 020 | Polish/English string resources in the Android client | P2 | M | - | DONE (executor GLM-5.3-Flash, reviewed; localized branch `t3/mobile-i18n`; first-ever local `gradle :app:testDebugUnitTest` on the Linux box — JDK17 + Gradle + SDK installed under /home/ttm-server by the executor) |
 | 021 | Locale-aware media/Spotify payload texts (host locale) | P2 | M | 019 | DONE (executor GLM-5.3-Flash, reviewed; crates/i18n + media/spotify texts + set_lang locale param + server config; landed with 019 on `t3/i18n-desktop-integration`. Follow-up: Discord statusLine from Rust still untranslated) |
-| 022 | SMTC art off the per-second path + per-session app-name cache | P1 | M | - | TODO (round 7; audits A-PERF-01/03) |
+| 022 | SMTC art off the per-second path + per-session app-name cache | P1 | M | - | DONE (executor Sonnet, reviewed; PR #35, merge f6ba40ed; thumbnail read deliberately kept per the plan's STOP - late covers arrive with no event) |
 | 023 | Ext runtimes: thread exit when drained, one-shot laziness, no idle wake | P1 | M | - | TODO (round 7; audit C measured 17→169 MB after one execute; stacks stay 64 MiB — confirmed virtual-only, shrinking REJECTED) |
 | 024 | Asset GC across restarts + fast low-RSS startup | P2 | S-M | - | TODO (round 7; A-MEM-01 + C-SRV-2: unbounded cover disk growth, 1.8 s/160 MB open) |
-| 025 | WebView papercuts: tool-tile tick, media-tile effects, clock formatters, art-cache LRU | P3 | S | - | TODO (round 7; audit B) |
+| 025 | WebView papercuts: tool-tile tick, media-tile effects, clock formatters, art-cache LRU | P3 | S | - | DONE (executor Sonnet, reviewed; PR #34, merge 2a3d58fe; bonus: clock never read the tick ref - fixed) |
 | 026 | Tools 100 ms tick → event-driven; Spotify transient keeps last values | P2 | S-M | - | TODO (round 7; C-SRV-1 + A correctness) |
-| 027 | Push dead-band + follow-up gating to MediaPropertiesChanged | P2 | S-M | 022 | QUEUED (after 022; A-PERF-02) |
+| 027 | Push dead-band + follow-up gating to MediaPropertiesChanged | P2 | S-M | 022 | TODO (round 7; plan written, wave 2) |
 | 028 | Tablet update UX: offer uninstall+reinstall on signature mismatch | P3 | S | - | QUEUED (user hit INSTALL_FAILED_UPDATE_INCOMPATIBLE on 2026-10-29; i18n-aware dialog) |
 
 Plans 006-011 come from the second audit (see "Round 2: mobile battery
