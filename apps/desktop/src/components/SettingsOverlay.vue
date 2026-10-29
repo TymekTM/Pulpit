@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "../api";
+import { LANG_CHOICES, setUiLang, t, uiLang } from "../i18n";
 import DiscordSettings from "./settings/DiscordSettings.vue";
 import VoicemeeterSettings from "./settings/VoicemeeterSettings.vue";
 import ObsSettings from "./settings/ObsSettings.vue";
@@ -68,7 +69,7 @@ const adbBusy = ref(false);
 const adbNote = ref("");
 const adbNoteBad = ref(false);
 
-// AI usage (Ustawienia): the aidev producer detects the plan-limits rows
+// AI usage (Settings): the aidev producer detects the plan-limits rows
 // automatically; the user picks which ones the tile shows. An empty
 // stored selection means "everything detected" and is materialized into
 // checked boxes on load; saving writes [] only while nothing is hidden.
@@ -88,14 +89,14 @@ const AIDEV_PROVIDERS = {
   openrouter: "OpenRouter",
   "anthropic-api": "Anthropic API",
   antigravity: "Antigravity",
-  custom: "Inne",
+  custom: null, // translated where the groups are built
 };
 
 const aidevGroups = computed(() => {
   const groups = new Map();
   for (const row of aidevDetected.value) {
     const slug = String(row.id).split(":")[0];
-    const name = AIDEV_PROVIDERS[slug] ?? slug;
+    const name = AIDEV_PROVIDERS[slug] ?? (slug === "custom" ? t("Other") : slug);
     if (!groups.has(name)) groups.set(name, []);
     groups.get(name).push(row);
   }
@@ -114,7 +115,7 @@ async function refreshAidev() {
     aidevSummary.value = cfg.summary !== false;
     aidevRowStyle.value = cfg.row_style === "logo" ? "logo" : "name";
   } catch (e) {
-    aidevError.value = e ? String(e) : "Nie udało się pobrać ustawień AI usage.";
+    aidevError.value = e ? String(e) : t("Could not load the AI usage settings.");
   }
 }
 
@@ -131,12 +132,12 @@ async function saveAidev() {
       aidevSummary.value,
       aidevRowStyle.value,
     );
-    aidevNote.value = "Zapisano — zadziała przy następnym odświeżeniu kafelka.";
+    aidevNote.value = t("Saved - takes effect on the tile's next refresh.");
     setTimeout(() => {
       aidevNote.value = "";
     }, 4000);
   } catch (e) {
-    aidevError.value = e ? String(e) : "Nie udało się zapisać ustawień AI usage.";
+    aidevError.value = e ? String(e) : t("Could not save the AI usage settings.");
   } finally {
     aidevBusy.value = false;
   }
@@ -151,7 +152,7 @@ function toggleAidevRow(id) {
     ? aidevShow.value.filter((x) => x !== id)
     : [...aidevShow.value, id];
   if (!next.length) {
-    aidevNote.value = "Przynajmniej jeden wiersz musi zostać zaznaczony.";
+    aidevNote.value = t("At least one row must stay selected.");
     setTimeout(() => {
       aidevNote.value = "";
     }, 4000);
@@ -172,7 +173,7 @@ function setAidevRowStyle(style) {
   saveAidev();
 }
 
-// Spotify (Ustawienia): BYO client id + PKCE login (design §2/§5). The
+// Spotify (Settings): BYO client id + PKCE login (design §2/§5). The
 // status line combines the spotify_status command with the live
 // customValues pushes (spotify-auth / spotify-device), so an expired
 // login flips the line without reopening the panel.
@@ -203,7 +204,7 @@ async function refreshSpotify() {
     };
     spotifyClientIdDraft.value = s.clientId || "";
   } catch (e) {
-    spotifyError.value = e ? String(e) : "Nie udało się pobrać statusu Spotify.";
+    spotifyError.value = e ? String(e) : t("Could not load the Spotify status.");
   }
 }
 
@@ -215,29 +216,31 @@ const spotifyLoggedIn = computed(
 
 const spotifyStatusLine = computed(() => {
   if (!spotify.value.configured) {
-    return "Spotify wyłączony — plik spotify.json jest uszkodzony.";
+    return t("Spotify is disabled - the spotify.json file is corrupted.");
   }
   const auth = spotifyAuthLive.value || (spotify.value.loggedIn ? "ok" : "needs-login");
-  if (auth === "off") return "Spotify nieaktywne — wklej Client ID i zaloguj się.";
+  if (auth === "off") return t("Spotify is inactive - paste a Client ID and log in.");
   if (auth === "needs-login" || !spotifyLoggedIn.value) {
-    return "Wymaga logowania — sesja wygasła albo nie była jeszcze ustawiona.";
+    return t("Login required - the session expired or was never set up.");
   }
-  const who = spotify.value.user ? `jako ${spotify.value.user}` : "";
+  const user = spotify.value.user;
   const plan =
     spotify.value.product === "free"
-      ? "Free — sterowanie odtwarzaniem wymaga Premium"
+      ? t("Free - controlling playback requires Premium")
       : "Premium";
   const device = props.customValues["spotify-device"];
-  const on = device ? ` — urządzenie: ${device}` : "";
-  return `Zalogowano ${who} (${plan})${on}`.trim();
+  const base = user
+    ? t("Logged in as {user} ({plan})", { user, plan })
+    : t("Logged in ({plan})", { plan });
+  return device ? t("{status} - device: {device}", { status: base, device }) : base;
 });
 
 const spotifyChip = computed(() => {
-  if (!spotify.value.configured) return { text: "wył.", ok: false };
+  if (!spotify.value.configured) return { text: t("off"), ok: false };
   const auth = spotifyAuthLive.value || (spotify.value.loggedIn ? "ok" : "needs-login");
-  if (auth === "ok") return { text: spotify.value.user || "zalogowano", ok: true };
-  if (auth === "needs-login") return { text: "wymaga logowania", ok: false };
-  return { text: "wył.", ok: false };
+  if (auth === "ok") return { text: spotify.value.user || t("logged in"), ok: true };
+  if (auth === "needs-login") return { text: t("login required"), ok: false };
+  return { text: t("off"), ok: false };
 });
 
 function flashSpotifyNote(text) {
@@ -252,10 +255,10 @@ async function saveSpotifyClientId() {
   spotifyError.value = "";
   try {
     await api.spotifySetClientId(spotifyClientIdDraft.value.trim());
-    flashSpotifyNote("Zapisano Client ID.");
+    flashSpotifyNote(t("Client ID saved."));
     await refreshSpotify();
   } catch (e) {
-    spotifyError.value = e ? String(e) : "Nie udało się zapisać Client ID.";
+    spotifyError.value = e ? String(e) : t("Could not save the Client ID.");
   } finally {
     spotifyBusy.value = false;
   }
@@ -264,13 +267,13 @@ async function saveSpotifyClientId() {
 async function doSpotifyLogin() {
   spotifyBusy.value = true;
   spotifyError.value = "";
-  flashSpotifyNote("Otwieram przeglądarkę — zaloguj się i wróć do Pulpitu.");
+  flashSpotifyNote(t("Opening the browser - log in and come back to Pulpit."));
   try {
     const r = await api.spotifyLogin();
-    flashSpotifyNote(r?.user ? `Zalogowano jako ${r.user}.` : "Zalogowano.");
+    flashSpotifyNote(r?.user ? t("Logged in as {user}.", { user: r.user }) : t("Logged in."));
     await refreshSpotify();
   } catch (e) {
-    spotifyError.value = e ? String(e) : "Logowanie do Spotify nie powiodło się.";
+    spotifyError.value = e ? String(e) : t("Spotify login failed.");
   } finally {
     spotifyBusy.value = false;
   }
@@ -281,10 +284,10 @@ async function doSpotifyLogout() {
   spotifyError.value = "";
   try {
     await api.spotifyLogout();
-    flashSpotifyNote("Wylogowano. Client ID został zapisany.");
+    flashSpotifyNote(t("Logged out. The Client ID was kept."));
     await refreshSpotify();
   } catch (e) {
-    spotifyError.value = e ? String(e) : "Nie udało się wylogować.";
+    spotifyError.value = e ? String(e) : t("Could not log out.");
   } finally {
     spotifyBusy.value = false;
   }
@@ -293,9 +296,9 @@ async function doSpotifyLogout() {
 async function copyRedirectUri() {
   try {
     await navigator.clipboard.writeText(spotify.value.redirectUri);
-    flashSpotifyNote("Skopiowano redirect URI.");
+    flashSpotifyNote(t("Redirect URI copied."));
   } catch {
-    spotifyError.value = "Nie udało się skopiować — zaznacz i skopiuj ręcznie.";
+    spotifyError.value = t("Could not copy - select it and copy manually.");
   }
 }
 
@@ -318,10 +321,10 @@ async function installApk() {
   });
   if (!path) return;
   adbBusy.value = true;
-  adbNote.value = "Instaluję (adb install -r, dane aplikacji zostają)...";
+  adbNote.value = t("Installing (adb install -r, app data is kept)...");
   adbNoteBad.value = false;
   try {
-    adbNote.value = (await api.adbInstallApk(String(path))) || "Gotowe.";
+    adbNote.value = (await api.adbInstallApk(String(path))) || t("Done.");
     await refreshAdb();
   } catch (e) {
     adbNote.value = String(e);
@@ -336,10 +339,10 @@ async function installApk() {
 // attached tablet that is behind.
 async function updateTablet() {
   adbBusy.value = true;
-  adbNote.value = "Pobieram APK z GitHuba i instaluję na tablecie...";
+  adbNote.value = t("Downloading the APK from GitHub and installing it on the tablet...");
   adbNoteBad.value = false;
   try {
-    adbNote.value = (await api.installTabletUpdate()) || "Gotowe.";
+    adbNote.value = (await api.installTabletUpdate()) || t("Done.");
     await refreshAdb();
   } catch (e) {
     adbNote.value = String(e);
@@ -359,15 +362,15 @@ const updateReady = ref(""); // version string when a newer build is staged on t
 
 async function checkUpdates() {
   updateBusy.value = true;
-  updateNote.value = "Sprawdzam...";
+  updateNote.value = t("Checking...");
   updateNoteBad.value = false;
   updateReady.value = "";
   try {
     const r = await api.checkForUpdates();
     updateReady.value = r.update_available ? r.latest : "";
     updateNote.value = r.update_available
-      ? `Dostępna wersja ${r.latest} (masz ${r.current}).`
-      : `System jest aktualny (v${r.current}).`;
+      ? t("Version {latest} is available (you have {current}).", { latest: r.latest, current: r.current })
+      : t("Up to date (v{current}).", { current: r.current });
   } catch (e) {
     updateNote.value = String(e);
     updateNoteBad.value = true;
@@ -378,7 +381,7 @@ async function checkUpdates() {
 
 async function installUpdate() {
   updateBusy.value = true;
-  updateNote.value = "Pobieram i instaluję...";
+  updateNote.value = t("Downloading and installing...");
   updateNoteBad.value = false;
   try {
     updateNote.value = await api.installUpdate();
@@ -434,7 +437,7 @@ async function generatePairing() {
   } catch (e) {
     pairingError.value = e
       ? String(e)
-      : "Nie udało się wygenerować kodu parowania.";
+      : t("Could not generate a pairing code.");
   } finally {
     pairingBusy.value = false;
   }
@@ -477,7 +480,7 @@ async function doRevoke() {
     await api.revokeDevice(device.id);
   } catch (e) {
     // keep the popup open with the reason; the device list is stale anyway
-    revokeError.value = e ? String(e) : "Nie udało się odwołać urządzenia.";
+    revokeError.value = e ? String(e) : t("Could not revoke the device.");
     return;
   } finally {
     devicesBusy.value = false;
@@ -495,7 +498,7 @@ watch(confirmRevoke, (device) => {
 async function savePort() {
   const value = Number(portDraft.value.trim());
   if (!Number.isInteger(value) || value < 1024 || value > 65535) {
-    portError.value = "Port musi być liczbą z zakresu 1024–65535.";
+    portError.value = t("The port must be a number between 1024 and 65535.");
     return;
   }
   portBusy.value = true;
@@ -505,18 +508,18 @@ async function savePort() {
     portPending.value = value === (props.status.port || 8500) ? null : value;
   } catch (e) {
     // the backend message says why the port was refused
-    portError.value = e ? String(e) : "Nie udało się zapisać portu.";
+    portError.value = e ? String(e) : t("Could not save the port.");
   } finally {
     portBusy.value = false;
   }
 }
 
 function lastSeenLabel(unixSecs) {
-  if (!unixSecs) return "nigdy";
+  if (!unixSecs) return t("never");
   const diff = Math.max(0, Date.now() / 1000 - unixSecs);
-  if (diff < 90) return "teraz";
-  if (diff < 3600) return `${Math.floor(diff / 60)} min temu`;
-  if (diff < 48 * 3600) return `${Math.floor(diff / 3600)} godz. temu`;
+  if (diff < 90) return t("now");
+  if (diff < 3600) return t("{n} min ago", { n: Math.floor(diff / 60) });
+  if (diff < 48 * 3600) return t("{n} h ago", { n: Math.floor(diff / 3600) });
   return new Date(unixSecs * 1000).toLocaleDateString();
 }
 
@@ -532,7 +535,7 @@ async function saveHotkey() {
     // another app, unparseable) - show it instead of a generic guess
     hotkeyError.value = e
       ? String(e)
-      : "Ten skrót jest zajęty lub niedozwolony — wybierz inną kombinację.";
+      : t("This shortcut is taken or not allowed - pick another combination.");
   }
 }
 
@@ -546,7 +549,7 @@ async function toggleAutostart() {
   } catch (e) {
     // flip back and say why - a silent revert leaves the user guessing
     autostart.value = !next;
-    autostartError.value = e ? String(e) : "Nie udało się zapisać autostartu.";
+    autostartError.value = e ? String(e) : t("Could not save the autostart setting.");
   } finally {
     autostartBusy.value = false;
   }
@@ -562,7 +565,7 @@ async function toggleStartMinimized() {
   } catch (e) {
     // flip back and say why - a silent revert leaves the user guessing
     startMinimized.value = !next;
-    startMinimizedError.value = e ? String(e) : "Nie udało się zapisać opcji startu.";
+    startMinimizedError.value = e ? String(e) : t("Could not save the start option.");
   } finally {
     startMinimizedBusy.value = false;
   }
