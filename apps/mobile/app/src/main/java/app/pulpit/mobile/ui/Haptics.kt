@@ -15,12 +15,15 @@ import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.compose.runtime.staticCompositionLocalOf
+import app.pulpit.mobile.R
 
-/** Local intensity preference: Lekkie / Normalne / Mocne. */
-enum class HapticIntensity(val label: String) {
-    Light("Lekkie"),
-    Normal("Normalne"),
-    Strong("Mocne");
+/** Local intensity preference: Lekkie / Normalne / Mocne (resource
+ *  backed; the label is display-only, [fromString] keeps parsing the
+ *  persisted preference words in both languages). */
+enum class HapticIntensity(val labelRes: Int) {
+    Light(R.string.main_haptic_light),
+    Normal(R.string.main_haptic_normal),
+    Strong(R.string.main_haptic_strong);
 
     companion object {
         fun fromString(value: String?, default: HapticIntensity = Normal): HapticIntensity =

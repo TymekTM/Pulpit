@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import android.content.Intent
@@ -43,6 +44,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import app.pulpit.mobile.R
+import app.pulpit.mobile.net.AddressError
 import app.pulpit.mobile.net.ConnState
 import app.pulpit.mobile.net.DiscoveredDesktop
 import app.pulpit.mobile.net.NsdDiscovery
@@ -60,7 +63,7 @@ fun ConnectScreen(vm: PulpitViewModel) {
     var pairCode by remember { mutableStateOf("") }
     // MOB-01: set when the typed host/port cannot become a URL - shown
     // instead of connecting (and before saveConfig persists the bad pair)
-    var addressError by remember { mutableStateOf<String?>(null) }
+    var addressError by remember { mutableStateOf<AddressError?>(null) }
     val paired = !cfg.token.isNullOrBlank()
 
     // M8 pairing modes: Auto (pick a desktop discovered over mDNS, both
@@ -96,12 +99,12 @@ fun ConnectScreen(vm: PulpitViewModel) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "Pulpit",
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineMedium,
             color = Color.White,
         )
         Text(
-            text = "connect to your desktop server",
+            text = stringResource(R.string.main_connect_subtitle),
             style = MaterialTheme.typography.bodySmall,
             color = Color.White.copy(alpha = 0.6f),
             modifier = Modifier.padding(bottom = 24.dp),
@@ -110,7 +113,7 @@ fun ConnectScreen(vm: PulpitViewModel) {
         OutlinedTextField(
             value = host,
             onValueChange = { host = it },
-            label = { Text("PC IP address") },
+            label = { Text(stringResource(R.string.main_field_host)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -118,7 +121,7 @@ fun ConnectScreen(vm: PulpitViewModel) {
             OutlinedTextField(
                 value = port,
                 onValueChange = { port = it.filter(Char::isDigit).take(5) },
-                label = { Text("Port") },
+                label = { Text(stringResource(R.string.main_field_port)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.weight(1f),
@@ -126,7 +129,7 @@ fun ConnectScreen(vm: PulpitViewModel) {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Device name") },
+                label = { Text(stringResource(R.string.main_field_device_name)) },
                 singleLine = true,
                 modifier = Modifier.weight(1.4f).padding(start = 8.dp),
             )
@@ -134,7 +137,7 @@ fun ConnectScreen(vm: PulpitViewModel) {
 
         if (paired) {
             Text(
-                text = "paired - Connect uses the stored device token",
+                text = stringResource(R.string.main_paired_hint),
                 color = Color.White.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 12.dp),
             )
@@ -145,7 +148,7 @@ fun ConnectScreen(vm: PulpitViewModel) {
             val pkg = context.packageName
             if (pm != null && !pm.isIgnoringBatteryOptimizations(pkg)) {
                 TextButton(
-                    text = "Zezwól na pracę w tle (omijaj oszczędzanie baterii)",
+                    text = stringResource(R.string.main_battery_whitelist),
                     onClick = {
                         runCatching {
                             context.startActivity(
@@ -159,7 +162,7 @@ fun ConnectScreen(vm: PulpitViewModel) {
                 )
             }
             TextButton(
-                text = "Forget pairing",
+                text = stringResource(R.string.main_forget_pairing),
                 onClick = { vm.forgetPairing() },
             )
         } else {
@@ -171,11 +174,11 @@ fun ConnectScreen(vm: PulpitViewModel) {
                     onClick = { autoMode = true },
                     colors = if (autoMode) ButtonDefaults.buttonColors() else ButtonDefaults.outlinedButtonColors(),
                     modifier = Modifier.weight(1f),
-                ) { Text("Auto (w sieci)") }
+                ) { Text(stringResource(R.string.pair_mode_auto)) }
                 OutlinedButton(
                     onClick = { autoMode = false },
                     modifier = Modifier.weight(1f).padding(start = 8.dp),
-                ) { Text("Ręcznie (kod)") }
+                ) { Text(stringResource(R.string.pair_mode_manual)) }
             }
 
             val waiting = pairReq
@@ -190,17 +193,17 @@ fun ConnectScreen(vm: PulpitViewModel) {
                         modifier = Modifier.padding(top = 16.dp),
                     )
                     Text(
-                        text = "Potwierdź na komputerze, że kody są zgodne...",
+                        text = stringResource(R.string.pair_confirm_match),
                         color = Color.White.copy(alpha = 0.7f),
                         modifier = Modifier.padding(top = 4.dp),
                     )
                     OutlinedButton(
                         onClick = { vm.cancelPairRequest() },
                         modifier = Modifier.padding(top = 8.dp),
-                    ) { Text("Przerwij") }
+                    ) { Text(stringResource(R.string.pair_cancel)) }
                 } else if (discovered.isEmpty()) {
                     Text(
-                        text = "Szukam komputerów w sieci... (upewnij się, że Pulpit działa)",
+                        text = stringResource(R.string.pair_searching),
                         color = Color.White.copy(alpha = 0.6f),
                         modifier = Modifier.padding(top = 12.dp),
                     )
@@ -216,6 +219,8 @@ fun ConnectScreen(vm: PulpitViewModel) {
                             },
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                         ) {
+                            // payload-driven: the desktop's advertised name
+                            // and socket, no translatable words in the frame
                             Text("${desktop.name}  (${desktop.host}:${desktop.port})")
                         }
                     }
@@ -224,7 +229,7 @@ fun ConnectScreen(vm: PulpitViewModel) {
                 OutlinedTextField(
                     value = pairCode,
                     onValueChange = { pairCode = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(8) },
-                    label = { Text("Pairing code (desktop: \"Dodaj urządzenie\")") },
+                    label = { Text(stringResource(R.string.pair_code_field)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -232,11 +237,11 @@ fun ConnectScreen(vm: PulpitViewModel) {
                 // USB path (ROADMAP M4): with the desktop reachable over adb
                 // reverse, the server answers on the phone's own loopback.
                 TextButton(
-                    text = "Przez USB (adb reverse) - wstaw 127.0.0.1",
+                    text = stringResource(R.string.pair_usb_button),
                     onClick = { host = "127.0.0.1" },
                 )
                 Text(
-                    text = "na PC: adb reverse tcp:8500 tcp:8500",
+                    text = stringResource(R.string.pair_usb_command),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.5f),
                     modifier = Modifier.padding(top = 4.dp),
@@ -255,7 +260,7 @@ fun ConnectScreen(vm: PulpitViewModel) {
                     // indeterminate spinner would freeze into a dot
                     RingSpinner()
                     Text(
-                        text = "Connecting to ${cfg.host}:${cfg.port}...",
+                        text = stringResource(R.string.main_connecting_to, cfg.host, cfg.port),
                         color = Color.White.copy(alpha = 0.7f),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 10.dp),
@@ -264,7 +269,7 @@ fun ConnectScreen(vm: PulpitViewModel) {
             }
             is ConnState.Failed -> {
                 Text(
-                    text = (conn as ConnState.Failed).reason,
+                    text = failedText(conn as ConnState.Failed),
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(8.dp),
                 )
@@ -272,9 +277,16 @@ fun ConnectScreen(vm: PulpitViewModel) {
             else -> {}
         }
 
-        addressError?.let {
+        addressError?.let { err ->
             Text(
-                text = it,
+                // resolved in composition: onClick handlers cannot call
+                // stringResource themselves
+                text = when (err) {
+                    is AddressError.BlankHost -> stringResource(R.string.main_error_blank_host)
+                    is AddressError.BadPort -> stringResource(R.string.main_error_bad_port)
+                    is AddressError.BadAddress ->
+                        stringResource(R.string.main_error_bad_address, err.host)
+                },
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 8.dp),
             )
@@ -314,7 +326,7 @@ fun ConnectScreen(vm: PulpitViewModel) {
                 },
                 modifier = Modifier.padding(top = 16.dp).fillMaxWidth(),
             ) {
-                Text(if (paired) "Connect" else "Pair")
+                Text(if (paired) stringResource(R.string.main_connect) else stringResource(R.string.main_pair))
             }
         }
     }
@@ -326,6 +338,16 @@ private fun TextButton(text: String, onClick: () -> Unit) {
         Text(text, color = Color.White.copy(alpha = 0.7f))
     }
 }
+
+/** A Failed state's user-facing text: the localized resource form when
+ *  one rides along (client-side chrome - V2Client, the ViewModel, the
+ *  address oracle), else the raw reason as it arrived (server error
+ *  messages and OkHttp text are wire content, shown as-is). */
+@Composable
+private fun failedText(failed: ConnState.Failed): String =
+    failed.reasonRes?.let { res ->
+        failed.reasonResArg?.let { arg -> stringResource(res, arg) } ?: stringResource(res)
+    } ?: failed.reason
 
 @Composable
 fun HapticsSettings(
@@ -349,12 +371,19 @@ fun HapticsSettings(
         ) {
             Column {
                 Text(
-                    text = "Wibracje",
+                    text = stringResource(R.string.main_haptics_title),
                     style = MaterialTheme.typography.titleSmall,
                     color = Color.White,
                 )
                 Text(
-                    text = if (config.enabled) "Włączone (${config.intensity.label})" else "Wyłączone",
+                    text = if (config.enabled) {
+                        stringResource(
+                            R.string.main_haptics_on,
+                            stringResource(config.intensity.labelRes),
+                        )
+                    } else {
+                        stringResource(R.string.main_haptics_off)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.6f),
                 )
@@ -385,7 +414,10 @@ fun HapticsSettings(
                             },
                             modifier = Modifier.weight(1f),
                         ) {
-                            Text(intensity.label, style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                stringResource(intensity.labelRes),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
                         }
                     } else {
                         OutlinedButton(
@@ -395,7 +427,10 @@ fun HapticsSettings(
                             },
                             modifier = Modifier.weight(1f),
                         ) {
-                            Text(intensity.label, style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                stringResource(intensity.labelRes),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
                         }
                     }
                 }

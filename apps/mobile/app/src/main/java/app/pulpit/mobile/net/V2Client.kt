@@ -33,6 +33,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import app.pulpit.mobile.R
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -44,8 +45,20 @@ sealed class ConnState {
     data class Connected(val host: String, val port: Int) : ConnState()
     /** [retryable] = false: the desktop refused this device or app for
      *  good (unknown token, bad pairing code, outdated client). The same
-     *  credentials can never succeed, so nothing reconnects on its own. */
-    data class Failed(val reason: String, val retryable: Boolean = true) : ConnState()
+     *  credentials can never succeed, so nothing reconnects on its own.
+     *
+     *  [reason] stays the plain (English) text for logs and unit tests;
+     *  when the failure is client-side chrome, [reasonRes] names the
+     *  localized string resource the UI shows instead (with the single
+     *  optional [reasonResArg] format argument). Null [reasonRes] means
+     *  the reason arrived from the wire (server error message) and is
+     *  shown as-is. */
+    data class Failed(
+        val reason: String,
+        val retryable: Boolean = true,
+        val reasonRes: Int? = null,
+        val reasonResArg: String? = null,
+    ) : ConnState()
     /** The server sent `server.shutdown`: the exit is deliberate, and
      *  reconnecting would be pointless until it comes back. */
     data object ServerDown : ConnState()
@@ -56,7 +69,8 @@ fun ConnState.isTerminal(): Boolean =
     this is ConnState.ServerDown || (this is ConnState.Failed && !retryable)
 
 /** User-facing text for a fatal refusal (an error-frame code, or
- *  "unauthorized" for the upgrade's HTTP 401). */
+ *  "unauthorized" for the upgrade's HTTP 401). English fallback text -
+ *  the localized form travels through [fatalReasonRes]. */
 fun fatalReason(code: String): String = when (code) {
     "pair-invalid" -> "invalid pairing code - generate a new one on the desktop"
     "pair-expired" -> "pairing code expired - generate a new one on the desktop"
@@ -65,14 +79,46 @@ fun fatalReason(code: String): String = when (code) {
     else -> "the desktop refused the connection ($code)"
 }
 
+/** Codes [fatalReason] phrases without the code itself; every other
+ *  code (including "too-large") lands in the generic refusal, which
+ *  names it. */
+private val PARAMETERLESS_FATAL = setOf(
+    "pair-invalid",
+    "pair-expired",
+    "unauthorized",
+    "outdated-client",
+)
+
+/** Resource form of [fatalReason] for on-screen display; the pair with
+ *  [fatalReasonArg] feeds ConnState.Failed.reasonRes(+Arg). */
+fun fatalReasonRes(code: String): Int = when (code) {
+    "pair-invalid" -> R.string.main_error_pair_invalid
+    "pair-expired" -> R.string.main_error_pair_code_expired
+    "unauthorized" -> R.string.main_error_unauthorized
+    "outdated-client" -> R.string.main_error_outdated_client
+    else -> R.string.main_error_refused
+}
+
+/** The single format argument of [fatalReasonRes]; only the generic
+ *  refusal names the code. */
+fun fatalReasonArg(code: String): String? = code.takeIf { it !in PARAMETERLESS_FATAL }
+
 /** State for a socket failure. The `/v2/ws` upgrade answers 401 for an
  *  unknown or revoked token (crates/v2/src/service.rs), and retrying
  *  the same token cannot work. Everything else is a transient drop. */
 internal fun failureState(httpCode: Int?, message: String?): ConnState.Failed =
     if (httpCode == 401) {
-        ConnState.Failed(fatalReason("unauthorized"), retryable = false)
+        ConnState.Failed(
+            fatalReason("unauthorized"),
+            retryable = false,
+            reasonRes = fatalReasonRes("unauthorized"),
+            reasonResArg = fatalReasonArg("unauthorized"),
+        )
     } else {
-        ConnState.Failed(message ?: "connection failed")
+        ConnState.Failed(
+            message ?: "connection failed",
+            reasonRes = if (message == null) R.string.main_error_connection_failed else null,
+        )
     }
 
 /** One decoded server frame, ready for the ViewModel. */
@@ -123,7 +169,10 @@ class V2Client(
             !token.isNullOrBlank() -> "token=$token"
             !pairCode.isNullOrBlank() -> "pair=$pairCode"
             else -> {
-                _state.value = ConnState.Failed("no token or pairing code")
+                _state.value = ConnState.Failed(
+                    "no token or pairing code",
+                    reasonRes = R.string.main_error_no_credentials,
+                )
                 return
             }
         }
@@ -136,7 +185,12 @@ class V2Client(
         val invalid = addressError(host, port)
         if (invalid != null) {
             Plog.w(TAG, "invalid address \"$host:$port\" - not connecting")
-            _state.value = ConnState.Failed(invalid, retryable = false)
+            _state.value = ConnState.Failed(
+                invalid.fallbackText(),
+                retryable = false,
+                reasonRes = invalid.resId(),
+                reasonResArg = invalid.resArg(),
+            )
             return
         }
         val url = "ws://$host:$port/v2/ws?$auth"
@@ -146,7 +200,12 @@ class V2Client(
             http.newWebSocket(Request.Builder().url(url).build(), listener)
         }.getOrElse {
             Plog.w(TAG, "cannot build socket URL for \"$host:$port\": ${it.message}")
-            _state.value = ConnState.Failed("invalid address: \"$host:$port\"", retryable = false)
+            _state.value = ConnState.Failed(
+                "invalid address: \"$host:$port\"",
+                retryable = false,
+                reasonRes = R.string.main_error_invalid_address,
+                reasonResArg = "\"$host:$port\"",
+            )
             null
         }
     }
@@ -333,7 +392,14 @@ class V2Client(
                 if (fatal) {
                     // Terminal before the event and the close, so the
                     // onClosed that follows cannot downgrade it.
-                    setStateUnlessTerminal(ConnState.Failed(fatalReason(error.code), retryable = false))
+                    setStateUnlessTerminal(
+                        ConnState.Failed(
+                            fatalReason(error.code),
+                            retryable = false,
+                            reasonRes = fatalReasonRes(error.code),
+                            reasonResArg = fatalReasonArg(error.code),
+                        ),
+                    )
                 }
                 _events.trySend(V2Event.ServerError(error.code, error.message))
                 if (fatal) {

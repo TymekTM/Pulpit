@@ -6,6 +6,7 @@
 
 package app.pulpit.mobile.net
 
+import app.pulpit.mobile.R
 import app.pulpit.mobile.proto.PULPIT_JSON
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,8 +38,14 @@ data class DiscoveredDesktop(
     val port: Int,
 )
 
-/** A refused request: 409 (one already live), loopback, browser-origin. */
-class PairRequestRejected(message: String) : Exception(message)
+/** A refused request: 409 (one already live), loopback, browser-origin.
+ *  [message] is the English/plain log form; [resId] (+ optional single
+ *  [resArg]) names the localized string the UI shows instead. */
+class PairRequestRejected(
+    message: String,
+    val resId: Int? = null,
+    val resArg: String? = null,
+) : Exception(message)
 
 suspend fun createPairRequest(
     http: OkHttpClient,
@@ -54,10 +61,17 @@ suspend fun createPairRequest(
     http.newCall(request).execute().use { resp ->
         val text = resp.body?.string().orEmpty()
         if (resp.code == 409) {
-            throw PairRequestRejected("Na komputerze trwa już inne parowanie - spróbuj za chwilę")
+            throw PairRequestRejected(
+                "another pairing is already in progress on the desktop - try again in a moment",
+                resId = R.string.main_error_pair_busy,
+            )
         }
         if (!resp.isSuccessful) {
-            throw PairRequestRejected("Komputer odrzucił żądanie (HTTP ${resp.code})")
+            throw PairRequestRejected(
+                "the desktop rejected the request (HTTP ${resp.code})",
+                resId = R.string.main_error_pair_http_rejected,
+                resArg = "${resp.code}",
+            )
         }
         PULPIT_JSON.decodeFromString(PairRequestCreated.serializer(), text)
     }

@@ -28,8 +28,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.pulpit.mobile.R
 import app.pulpit.mobile.proto.Tile
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -321,10 +323,10 @@ fun ToolTimerTile(
             )
             Spacer(Modifier.height(4.dp))
             val statusLabel = when {
-                isFinished -> "KONIEC!"
-                running -> "Działa"
-                elapsedMs > 0 -> "Pauza"
-                else -> "Gotowy"
+                isFinished -> stringResource(R.string.tile_timer_finished)
+                running -> stringResource(R.string.tile_running)
+                elapsedMs > 0 -> stringResource(R.string.tile_paused)
+                else -> stringResource(R.string.tile_ready)
             }
             Text(
                 text = statusLabel,
@@ -426,7 +428,15 @@ fun ToolStopwatchTile(
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(4.dp))
-            val statusLabel = if (running) "Działa" else if (elapsed > 0) "Pauza" else "00:00"
+            // "00:00" is the reset stopwatch's numeric face, not a word -
+            // no translation, kept literal
+            val statusLabel = if (running) {
+                stringResource(R.string.tile_running)
+            } else if (elapsed > 0) {
+                stringResource(R.string.tile_paused)
+            } else {
+                "00:00"
+            }
             Text(
                 text = statusLabel,
                 color = titleColor.copy(alpha = 0.75f),
@@ -450,7 +460,9 @@ fun ToolCounterTile(
     val obj = rememberToolState(live)
     val startVal = tile.param("start_value")?.toLongOrNull() ?: 0L
     val count = obj?.get("count")?.jsonPrimitive?.longOrNull ?: startVal
-    val label = tile.param("label")?.ifBlank { null } ?: "Licznik"
+    // param("label") is payload (the board editor's own label); the app
+    // name only fills in when the tile has none
+    val label = tile.param("label")?.ifBlank { null } ?: stringResource(R.string.tile_counter_default)
 
     Box(
         modifier = modifier

@@ -7,24 +7,55 @@
 
 package app.pulpit.mobile.net
 
+import app.pulpit.mobile.R
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
+/** Why `host:port` cannot become a socket URL. The UI localizes these
+ *  through [resId]; [fallbackText] is the plain English form for logs
+ *  and the non-resource fallback path. */
+sealed interface AddressError {
+    /** Empty or whitespace-only host field. */
+    data object BlankHost : AddressError
+
+    /** Port outside 1..65535 (0 stands for "no parseable number" from
+     *  the text field). */
+    data object BadPort : AddressError
+
+    /** Parsing alone is not enough: "192.168.1.2/x" parses as host
+     *  192.168.1.2 with the port swallowed into the path, so the parsed
+     *  authority must be exactly what was typed. */
+    data class BadAddress(val host: String) : AddressError
+}
+
 /** Why `host:port` cannot become a socket URL; null when it can.
- *  Port 0 stands for "no parseable number" from the text field.
  *  The check parses the `http` form of the URL because that is exactly
  *  what OkHttp does internally: Request.Builder.url() rewrites
  *  ws/wss to http/https before HttpUrl parses the authority. */
-fun addressError(host: String, port: Int): String? {
-    if (host.isBlank()) return "enter the PC address"
-    if (port !in 1..65535) return "port must be between 1 and 65535"
-    // parsing alone is not enough: "192.168.1.2/x" parses as host
-    // 192.168.1.2 with the port swallowed into the path, so the parsed
-    // authority must be exactly what was typed
+fun addressError(host: String, port: Int): AddressError? {
+    if (host.isBlank()) return AddressError.BlankHost
+    if (port !in 1..65535) return AddressError.BadPort
     val url = "http://$host:$port/v2/ws".toHttpUrlOrNull()
     val typed = host.trim().removePrefix("[").removeSuffix("]")
     return if (url == null || !url.host.equals(typed, ignoreCase = true) || url.port != port) {
-        "\"$host\" is not a valid address"
+        AddressError.BadAddress(host)
     } else {
         null
     }
 }
+
+/** English fallback wording (logs, non-resource contexts). */
+fun AddressError.fallbackText(): String = when (this) {
+    is AddressError.BlankHost -> "enter the PC address"
+    is AddressError.BadPort -> "port must be between 1 and 65535"
+    is AddressError.BadAddress -> "\"$host\" is not a valid address"
+}
+
+/** Localized display form. */
+fun AddressError.resId(): Int = when (this) {
+    is AddressError.BlankHost -> R.string.main_error_blank_host
+    is AddressError.BadPort -> R.string.main_error_bad_port
+    is AddressError.BadAddress -> R.string.main_error_bad_address
+}
+
+/** The single optional format argument of [resId]. */
+fun AddressError.resArg(): String? = (this as? AddressError.BadAddress)?.host

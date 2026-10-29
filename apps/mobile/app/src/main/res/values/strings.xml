@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English (default). Polish lives in values-pl/; the resource system
+     applies it automatically on a pl system locale - no in-app switcher. -->
+<resources>
+
+    <!-- App identity -->
+    <string name="app_name">Pulpit</string>
+
+    <!-- Connect screen: identity, address fields, connect/pair actions -->
+    <string name="main_connect_subtitle">connect to your desktop server</string>
+    <string name="main_field_host">PC IP address</string>
+    <string name="main_field_port">Port</string>
+    <string name="main_field_device_name">Device name</string>
+    <string name="main_paired_hint">paired - Connect uses the stored device token</string>
+    <string name="main_battery_whitelist">Allow background work (skip battery saving)</string>
+    <string name="main_forget_pairing">Forget pairing</string>
+    <string name="main_connecting_to">Connecting to %1$s:%2$d…</string>
+    <string name="main_connect">Connect</string>
+    <string name="main_pair">Pair</string>
+
+    <!-- Connect screen: pairing modes and discovery -->
+    <string name="pair_mode_auto">Auto (on the network)</string>
+    <string name="pair_mode_manual">Manual (code)</string>
+    <string name="pair_confirm_match">Confirm on the desktop that the codes match…</string>
+    <string name="pair_cancel">Cancel</string>
+    <string name="pair_searching">Searching for desktops… (make sure Pulpit is running)</string>
+    <string name="pair_code_field">Pairing code (desktop: "Generate pairing code")</string>
+    <string name="pair_usb_button">Via USB (adb reverse) - fill in 127.0.0.1</string>
+    <string name="pair_usb_command">on the PC: adb reverse tcp:8500 tcp:8500</string>
+
+    <!-- Exit confirmation (Back on the deck) -->
+    <string name="main_exit_title">Leave to the main menu?</string>
+    <string name="main_exit_message">The connection to the desktop will be closed.</string>
+    <string name="main_yes">Yes</string>
+    <string name="main_no">No</string>
+
+    <!-- Server-shutdown standby screen -->
+    <string name="main_goodnight">Goodnight</string>
+    <string name="main_goodbye">Goodbye</string>
+    <string name="main_shutdown_hint">The server shut down. Tap anywhere to reconnect.</string>
+
+    <!-- Haptics settings -->
+    <string name="main_haptics_title">Vibration</string>
+    <string name="main_haptics_on">On (%1$s)</string>
+    <string name="main_haptics_off">Off</string>
+    <string name="main_haptic_light">Light</string>
+    <string name="main_haptic_normal">Normal</string>
+    <string name="main_haptic_strong">Strong</string>
+
+    <!-- Keep-alive foreground service notification -->
+    <string name="main_notification_channel">Pulpit link</string>
+    <string name="main_notification_text">keeps the link to the server</string>
+    <string name="main_notification_disconnect">Disconnect</string>
+    <string name="main_link_connected">connected to %1$s</string>
+    <string name="main_link_connecting">connecting to %1$s…</string>
+    <string name="main_link_server_down">server shut down - waiting</string>
+    <string name="main_link_unreachable">server unreachable - retrying</string>
+    <string name="main_link_refused">pairing refused</string>
+    <string name="main_link_disconnected">disconnected</string>
+
+    <!-- Connection errors: address form -->
+    <string name="main_error_blank_host">enter the PC address</string>
+    <string name="main_error_bad_port">port must be between 1 and 65535</string>
+    <string name="main_error_bad_address">"%1$s" is not a valid address</string>
+    <string name="main_error_invalid_address">invalid address: %1$s</string>
+
+    <!-- Connection errors: credentials and pairing -->
+    <string name="main_error_no_credentials">no token or pairing code</string>
+    <string name="main_error_not_paired">device not paired - enter a pairing code</string>
+    <string name="main_error_pairing_failed">pairing failed - generate a new code on the desktop</string>
+    <string name="main_error_pair_request_failed">pairing request failed</string>
+    <string name="main_error_pair_busy">Another pairing is already in progress on the desktop - try again in a moment</string>
+    <string name="main_error_pair_http_rejected">The desktop rejected the request (HTTP %1$s)</string>
+    <string name="main_error_pair_rejected">the desktop rejected the pairing</string>
+    <string name="main_error_pair_timeout">the desktop did not answer in time</string>
+    <string name="main_error_pair_decision_expired">the request expired - start pairing again</string>
+    <string name="main_error_connection_failed">connection failed</string>
+
+    <!-- Connection errors: fatal refusals (error-frame codes) -->
+    <string name="main_error_pair_invalid">invalid pairing code - generate a new one on the desktop</string>
+    <string name="main_error_pair_code_expired">pairing code expired - generate a new one on the desktop</string>
+    <string name="main_error_unauthorized">device revoked on the desktop - pair again</string>
+    <string name="main_error_outdated_client">this app is too old for the desktop - update it</string>
+    <string name="main_error_refused">the desktop refused the connection (%1$s)</string>
+
+    <!-- Board screen: link overlay status and the switcher chip -->
+    <string name="board_syncing">Syncing boards…</string>
+    <string name="board_connecting">Connecting…</string>
+    <string name="board_reconnecting_attempt">Reconnecting (attempt %1$d)…</string>
+    <string name="board_disconnected">Disconnected - retrying…</string>
+    <string name="board_disconnected_attempt">Disconnected - retrying (attempt %1$d)…</string>
+    <string name="board_name_fallback">board %1$d</string>
+
+    <!-- Tool tiles: countdown timer, stopwatch, counter status lines -->
+    <string name="tile_timer_finished">DONE!</string>
+    <string name="tile_running">Running</string>
+    <string name="tile_paused">Paused</string>
+    <string name="tile_ready">Ready</string>
+    <string name="tile_counter_default">Counter</string>
+
+</resources>

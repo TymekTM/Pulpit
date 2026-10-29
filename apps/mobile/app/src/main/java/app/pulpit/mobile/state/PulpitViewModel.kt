@@ -16,7 +16,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import app.pulpit.mobile.LinkService
+import app.pulpit.mobile.R
 import app.pulpit.mobile.net.ConnState
+import app.pulpit.mobile.net.PairRequestRejected
 import app.pulpit.mobile.net.V2Client
 import app.pulpit.mobile.net.V2Event
 import app.pulpit.mobile.net.createPairRequest
@@ -229,9 +231,14 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
                 pollPairDecision(host, port, created.request_id, created.expires_in_secs)
             } catch (e: Exception) {
                 _pairRequest.value = null
+                // A rejected request carries its own resource; every other
+                // failure (IO, malformed reply) gets the generic text.
+                val rejected = e as? PairRequestRejected
                 _connState.value = ConnState.Failed(
-                    e.message ?: "żądanie parowania nie powiodło się",
+                    e.message ?: "pairing request failed",
                     retryable = false,
+                    reasonRes = rejected?.resId ?: R.string.main_error_pair_request_failed,
+                    reasonResArg = rejected?.resArg,
                 )
             }
         }
@@ -276,14 +283,18 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
             }
             "rejected" -> {
                 _pairRequest.value = null
-                _connState.value =
-                    ConnState.Failed("komputer odrzucił parowanie", retryable = false)
+                _connState.value = ConnState.Failed(
+                    "the desktop rejected the pairing",
+                    retryable = false,
+                    reasonRes = R.string.main_error_pair_rejected,
+                )
             }
             "expired" -> {
                 _pairRequest.value = null
                 _connState.value = ConnState.Failed(
-                    "żądanie wygasło - uruchom parowanie ponownie",
+                    "the request expired - start pairing again",
                     retryable = false,
+                    reasonRes = R.string.main_error_pair_decision_expired,
                 )
             }
             // null = the deadline passed with no decision (the stillWaiting
@@ -291,8 +302,11 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
             // newer request owns it)
             null -> if (_pairRequest.value != null) {
                 _pairRequest.value = null
-                _connState.value =
-                    ConnState.Failed("komputer nie odpowiedział w czasie", retryable = false)
+                _connState.value = ConnState.Failed(
+                    "the desktop did not answer in time",
+                    retryable = false,
+                    reasonRes = R.string.main_error_pair_timeout,
+                )
             }
         }
     }
@@ -356,7 +370,7 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
      *  [closesLinkOnBackground] consults. */
     private fun startKeepAlive() {
         val app = getApplication<Application>()
-        LinkBus.status.value = linkStatusLine(_connState.value, _config.value.host)
+        LinkBus.status.value = linkStatus(_connState.value, _config.value.host)
         runCatching {
             val intent = Intent(app, LinkService::class.java)
             if (Build.VERSION.SDK_INT >= 26) {
@@ -528,7 +542,10 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
         _menuOpen.value = false
         val token = _config.value.token
         if (token.isNullOrBlank()) {
-            _connState.value = ConnState.Failed("device not paired - enter a pairing code")
+            _connState.value = ConnState.Failed(
+                "device not paired - enter a pairing code",
+                reasonRes = R.string.main_error_not_paired,
+            )
             return
         }
         openClient(token = token, pairCode = null)
@@ -645,7 +662,7 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
                 client.state.collect { st ->
                     _connState.value = st
                     // the keep-alive notification mirrors the link line
-                    LinkBus.status.value = linkStatusLine(st, _config.value.host)
+                    LinkBus.status.value = linkStatus(st, _config.value.host)
                     when (st) {
                         is ConnState.Connected -> {
                             reconnectAttempts = 0
@@ -775,7 +792,11 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
         if (token.isNullOrBlank()) {
             if (pendingPairCode != null) {
                 pendingPairCode = null
-                _connState.value = ConnState.Failed("pairing failed - generate a new code on the desktop")
+                _connState.value = ConnState.Failed(
+                    "pairing failed - generate a new code on the desktop",
+                    retryable = false,
+                    reasonRes = R.string.main_error_pairing_failed,
+                )
             }
             return
         }

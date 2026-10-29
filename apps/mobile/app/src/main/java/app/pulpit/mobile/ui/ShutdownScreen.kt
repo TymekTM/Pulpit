@@ -18,17 +18,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
+import app.pulpit.mobile.R
 
-/** Greeting for the standby screen: late evening and night say goodnight,
- *  everything else goodbye. [hour] is the tablet's local 0-23. */
-fun shutdownGreeting(hour: Int): String =
-    if (hour >= 21 || hour < 6) "Goodnight" else "Goodbye"
+/** Resource of the standby greeting: late evening and night say
+ *  goodnight, everything else goodbye. [hour] is the tablet's local
+ *  0-23. Returns the string resource so both locales translate it. */
+fun shutdownGreeting(hour: Int): Int =
+    if (hour >= 21 || hour < 6) R.string.main_goodnight else R.string.main_goodbye
 
 @Composable
 fun ShutdownScreen(onTap: () -> Unit) {
     // Captured once per standby visit: the greeting reflects when the
     // server went down, not whenever a recomposition happens to run.
-    val title = remember {
+    val titleRes = remember {
         val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         shutdownGreeting(hour)
     }
@@ -41,12 +44,12 @@ fun ShutdownScreen(onTap: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = title,
+            text = stringResource(titleRes),
             style = MaterialTheme.typography.headlineLarge,
             color = Color.White,
         )
         Text(
-            text = "The server shut down. Tap anywhere to reconnect.",
+            text = stringResource(R.string.main_shutdown_hint),
             style = MaterialTheme.typography.bodySmall,
             color = Color.White.copy(alpha = 0.6f),
         )

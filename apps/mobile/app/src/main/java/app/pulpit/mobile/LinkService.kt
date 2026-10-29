@@ -21,6 +21,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import app.pulpit.mobile.state.LinkBus
+import app.pulpit.mobile.state.LinkStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,9 +45,9 @@ class LinkService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
         scope.launch {
-            LinkBus.status.collect { text ->
+            LinkBus.status.collect { status ->
                 val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-                nm.notify(NOTIFICATION_ID, buildNotification(text))
+                nm.notify(NOTIFICATION_ID, buildNotification(status))
             }
         }
     }
@@ -76,16 +77,21 @@ class LinkService : Service() {
         super.onTaskRemoved(rootIntent)
     }
 
-    private fun buildNotification(text: String): Notification {
+    private fun buildNotification(status: LinkStatus?): Notification {
         if (Build.VERSION.SDK_INT >= 26) {
             val ch = NotificationChannel(
                 CHANNEL_ID,
-                "Łącze z Pulpitem",
+                getString(R.string.main_notification_channel),
                 NotificationManager.IMPORTANCE_LOW,
             )
             (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
                 .createNotificationChannel(ch)
         }
+        // the link line arrives resource-backed (see LinkStatus); the
+        // static fallback covers the "no line yet" state
+        val text = status?.let {
+            if (it.arg != null) getString(it.resId, it.arg) else getString(it.resId)
+        } ?: getString(R.string.main_notification_text)
         val open = PendingIntent.getActivity(
             this,
             0,
@@ -106,11 +112,11 @@ class LinkService : Service() {
         }
         return builder
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("Pulpit")
-            .setContentText(text.ifBlank { "utrzymuje łącze z serwerem" })
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(text)
             .setOngoing(true)
             .setContentIntent(open)
-            .addAction(0, "Rozłącz", stop)
+            .addAction(0, getString(R.string.main_notification_disconnect), stop)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
