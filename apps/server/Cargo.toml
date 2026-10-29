@@ -31,3 +31,4 @@ pulpit-obs = { path = "../../crates/obs" }
 pulpit-sysinfo = { path = "../../crates/sysinfo" }
 pulpit-aidev = { path = "../../crates/aidev" }
 pulpit-tools = { path = "../../crates/tools" }
+pulpit-i18n = { path = "../../crates/i18n" }
