@@ -26,6 +26,10 @@ when done.
 | 012 | Correctness/security audit findings (packages A-E, findings list with fix sketches) | P1 | L | E1 before C5; package D overlaps 006/007/009 - see the file | DONE (all packages incl. B2 step 6 + Android Keystore tokens; per-item table inside the file) |
 | 013 | M5 widget kit: capabilities negotiation + custom gestures | P2 | M | - | DONE (`1bc074d`; hello/welcome caps + long-press/double-tap/swipe gestures; editor UI for `gestures` deliberately out of scope) |
 | 014 | M8 discovery: Bluetooth-style pairing (mDNS + shared verification code) | P2 | M | - | DONE (`5f9e416` + fixes; mDNS advertise, pair-request + poll, Auto/Manual modes, custom in-app popup `2ef6cb6`; ADR-013). M8 leftovers (plugin API, APK sideload, updater) stay unchecked in ROADMAP |
+| 015 | Unify the idle now-playing text on the Polish string | P3 | S | - | DONE (executor GLM-5.3-Flash, reviewed; commit `a54646b`) |
+| 016 | Fix the multi-range doc on `parse_byte_range` (416, not full body) | P3 | S | - | DONE (executor GLM-5.3-Flash, reviewed; commit `1e7ea4a`; closes the deferred nit below) |
+| 017 | Gate the Discord pipe transport so the workspace builds off-Windows | P2 | M | - | TODO (round 5) |
+| 018 | Share one art LRU across the two media producers | P3 | S-M | 017 (for Linux host tests) | TODO (round 5) |
 
 Plans 006-011 come from the second audit (see "Round 2: mobile battery
 and bugs" at the end of this file). Order: 006 → 007 → 008 (the battery
@@ -205,3 +209,26 @@ is a findings handoff with fix sketches rather than step-by-step plans:
 the end of that file). Its Android package D was written in parallel with
 plans 006-011; overlaps are marked inside the file - execute 006-011
 first and only the leftover D items from 012.
+
+## Round 5: pre-release papercuts (2026-10-29, commit `6dcddf3`)
+
+Quick (`quick` effort) audit asked by the owner ahead of the v1.5.3
+release ("what else can be added/fixed today"). The media-cover delay,
+the corner-brand gating and the WebView art retry had already landed in
+PR #25 the same day and are NOT re-planned here. Findings (all vetted):
+
+| # | Finding | Where | Impact | Effort | Planned |
+|---|---------|-------|--------|--------|---------|
+| F1 | Idle now-playing text differs by producer: SMTC says "Nic nie jest odtwarzane" (PL), Spotify Web API says "Nothing playing" (EN) - same tile kind changes language with the source | `crates/spotify/src/snapshot.rs:121-126,143-150` vs `crates/os/src/media.rs:302-304` | UX consistency | S | 015 (owner picked Polish) |
+| F2 | Doc drift: `parse_byte_range` comment claims multi-range falls back to a full body; it is refused with 416 (the deferred nit above) | `crates/v2/src/assets.rs:226-229` | docs | S | 016 |
+| F3 | Workspace only builds on Windows: `pulpit-discord`'s `pipe` module is `#[cfg(windows)]` but `WAIT_WAKE` (:850), `WakeEvent`/`WakeHandle` (:1783-1825), the `Conn` transport and `actor_loop` are not - 38 unresolved-module errors on Linux, dragging backend/host/desktop/server. Blocked local `cargo test --workspace` during the 2026-10-29 session | `crates/discord/src/lib.rs:850,854,1213+,1783-1958` | DX (local verification on any OS) | M | 017 |
+| F4 | Two private 32-entry art LRUs evict from one shared AssetStore; one producer's eviction can delete a hash the other's payload still references (desktop retries after 10 s since PR #25, mobile has its ladder, but tablets can briefly lose the cover) | `crates/host/src/{media,spotify}.rs` | rare transient missing cover | S-M | 018 |
+
+Direction (not planned): brand glyphs beyond Spotify (TIDAL, VLC, Apple
+Music) riding the `provider` payload field from PR #25 - cheap follow-up
+once there is a user ask.
+
+Release mechanics are not a plan: bump `[workspace.package] version`,
+`apps/desktop/src-tauri/tauri.conf.json` and `apps/desktop/package.json`
+(+ lockfile, + `Cargo.lock` refresh), tag `v*`, push - `release.yml`
+builds exe+APK, publishes and commits the feed manifest to main.
