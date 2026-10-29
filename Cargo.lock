@@ -3826,10 +3826,12 @@ version = "1.6.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
+ "hex",
  "image",
  "pulpit-i18n",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

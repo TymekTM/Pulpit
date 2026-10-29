@@ -229,6 +229,27 @@ pub struct TimelineProperties {
 /// extension. Internal: stripped before any client forward, never rendered.
 pub const ART_DATA_KEY: &str = "media-art-data";
 pub const ART_EXT_KEY: &str = "media-art-ext";
+/// Internal digest of the raw thumbnail bytes (hex SHA-256). The per-poll
+/// change compare uses this instead of the base64 art, and the host lane
+/// memoizes imported covers by it. Internal like the two keys above:
+/// stripped before any client forward.
+pub const ART_KEY_KEY: &str = "media-art-key";
+
+/// Hex SHA-256 of the raw thumbnail bytes: the value of [`ART_KEY_KEY`].
+pub fn art_digest(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    hex::encode(sha2::Sha256::digest(bytes))
+}
+
+/// Attach the thumbnail bytes (base64) and extension to a snapshot built
+/// by [`build_snapshot_keyed`]. Kept separate so the poll loop encodes a
+/// cover only when it is about to send it.
+pub fn attach_art_data(snapshot: &mut Value, bytes: &[u8], ext: &str) {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    snapshot[ART_DATA_KEY] = Value::String(b64);
+    snapshot[ART_EXT_KEY] = Value::String(ext.to_string());
+}
 
 /// The media card's corner-brand source (see the desktop/mobile media
 /// renderers): the brand mark only renders for apps we carry a glyph
@@ -244,12 +265,31 @@ fn corner_provider(app_name: &str) -> Option<&'static str> {
 
 /// Build a snapshot payload matching the design §4 contract and
 /// spotify-now-playing shape so desktop and mobile renderers are shared.
+/// The cover, when given, travels as digest + base64 bytes + extension.
 pub fn build_snapshot(
     props: Option<&MediaProperties>,
     playback: Option<&PlaybackInfo>,
     timeline: Option<&TimelineProperties>,
     app_name: &str,
     art: Option<(&[u8], &'static str)>,
+) -> Value {
+    let digest = art.map(|(bytes, _)| art_digest(bytes));
+    let mut snapshot = build_snapshot_keyed(props, playback, timeline, app_name, digest.as_deref());
+    if let Some((bytes, ext)) = art {
+        attach_art_data(&mut snapshot, bytes, ext);
+    }
+    snapshot
+}
+
+/// [`build_snapshot`] without art bytes: only the cover's digest
+/// ([`ART_KEY_KEY`]) rides along, so serializing the snapshot for the
+/// change compare stays cheap. Add the bytes with [`attach_art_data`].
+pub fn build_snapshot_keyed(
+    props: Option<&MediaProperties>,
+    playback: Option<&PlaybackInfo>,
+    timeline: Option<&TimelineProperties>,
+    app_name: &str,
+    art_key: Option<&str>,
 ) -> Value {
     let is_playing = playback.map(|p| p.is_playing).unwrap_or(false);
     let shuffle = playback.and_then(|p| p.shuffle).unwrap_or(false);
@@ -277,11 +317,8 @@ pub fn build_snapshot(
         "media-app": app_name,
     });
 
-    if let Some((bytes, ext)) = art {
-        use base64::Engine as _;
-        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-        snapshot[ART_DATA_KEY] = Value::String(b64);
-        snapshot[ART_EXT_KEY] = Value::String(ext.to_string());
+    if let Some(key) = art_key {
+        snapshot[ART_KEY_KEY] = Value::String(key.to_string());
     }
 
     let mut now_playing = json!({
@@ -448,6 +485,7 @@ mod tests {
         assert!(np.get("progress").is_none());
         assert!(np.get("provider").is_none());
         assert!(snapshot.get(ART_DATA_KEY).is_none());
+        assert!(snapshot.get(ART_KEY_KEY).is_none());
         pulpit_i18n::reset_locale();
         drop(guard);
     }
@@ -532,6 +570,7 @@ mod tests {
         assert_eq!(snapshot["media-app"], "Spotify");
         assert!(snapshot.get(ART_DATA_KEY).is_some());
         assert_eq!(snapshot[ART_EXT_KEY], "jpg");
+        assert_eq!(snapshot[ART_KEY_KEY], art_digest(art_bytes));
 
         let np = &snapshot["media-now-playing"];
         let prog = &np["progress"];
@@ -549,6 +588,35 @@ mod tests {
             None,
         );
         assert!(chrome["media-now-playing"].get("provider").is_none());
+    }
+
+    #[test]
+    fn keyed_snapshot_carries_the_digest_but_never_the_art_bytes() {
+        let bytes = b"fake-jpg-content";
+        let key = art_digest(bytes);
+        assert_eq!(key.len(), 64);
+        let keyed = build_snapshot_keyed(None, None, None, "Spotify", Some(&key));
+        assert_eq!(keyed[ART_KEY_KEY], key.as_str());
+        assert!(keyed.get(ART_DATA_KEY).is_none());
+        assert!(keyed.get(ART_EXT_KEY).is_none());
+
+        // no cover: no key either
+        let bare = build_snapshot_keyed(None, None, None, "Spotify", None);
+        assert!(bare.get(ART_KEY_KEY).is_none());
+
+        // a different cover changes the compare string, the same one
+        // does not (the stuck-cover guard rides on this)
+        let other = art_digest(b"another-cover");
+        let swapped = build_snapshot_keyed(None, None, None, "Spotify", Some(&other));
+        assert_ne!(keyed.to_string(), swapped.to_string());
+        let again = build_snapshot_keyed(None, None, None, "Spotify", Some(&key));
+        assert_eq!(keyed.to_string(), again.to_string());
+
+        // attaching afterwards yields the same payload build_snapshot does
+        let mut attached = keyed.clone();
+        attach_art_data(&mut attached, bytes, "jpg");
+        let whole = build_snapshot(None, None, None, "Spotify", Some((bytes, "jpg")));
+        assert_eq!(attached, whole);
     }
 
     #[test]

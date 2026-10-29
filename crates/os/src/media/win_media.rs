@@ -21,8 +21,8 @@ use windows::Win32::System::Registry::{
 };
 
 use super::{
-    aumid_to_friendly_name, build_snapshot, AutoRepeatMode, MediaProperties, PlaybackInfo,
-    PlaybackStatus, TimelineProperties,
+    art_digest, attach_art_data, aumid_to_friendly_name, build_snapshot_keyed, AutoRepeatMode,
+    MediaProperties, PlaybackInfo, PlaybackStatus, TimelineProperties,
 };
 use crate::{OsError, Result};
 
@@ -447,7 +447,15 @@ pub(crate) fn spawn_push(
             }));
 
             let mut last_session_id = String::new();
+            // The friendly app name only depends on the session id, and
+            // resolving it can enumerate the HKCU registry: compute it
+            // when the session changes, not on every poll.
+            let mut app_name = String::new();
             let mut last_snapshot_str = String::new();
+            // Digest of the cover the receiver last got bytes for: the
+            // art travels only when this changes (the host memoizes the
+            // imported cover by digest).
+            let mut last_sent_art_digest: Option<String> = None;
 
             // Double-read pattern for late-published thumbnails: players
             // (Chrome, Spotify) publish their SMTC thumbnail reference a
@@ -485,6 +493,7 @@ pub(crate) fn spawn_push(
                 // Attach session events when session changes
                 if current_id != last_session_id {
                     last_session_id = current_id.clone();
+                    app_name = aumid_to_friendly_name(&current_id);
                     if let Some(session) = &current_session {
                         let w = waker.clone();
                         let _ =
@@ -508,37 +517,50 @@ pub(crate) fn spawn_push(
                     }
                 }
 
-                let (props, playback, timeline, app_name, art) = match &current_session {
+                let (props, playback, timeline, art) = match &current_session {
                     Some(session) => {
                         let (p, art) = read_media_properties(session);
                         let pb = read_playback_info(session);
                         let tl = read_timeline_properties(session);
-                        let name = aumid_to_friendly_name(&current_id);
-                        (Some(p), Some(pb), Some(tl), name, art)
+                        (Some(p), Some(pb), Some(tl), art)
                     }
-                    None => (None, None, None, String::new(), None),
+                    None => (None, None, None, None),
                 };
 
-                let art_ref = art.as_ref().map(|(b, ext)| (b.as_slice(), *ext));
-                let snapshot = build_snapshot(
+                // The thumbnail is still read every poll: players publish
+                // it late and fire no event for it, so only a fresh read
+                // can see the art-only swap. What no longer happens per
+                // poll is encoding, serializing or shipping it - the
+                // snapshot carries just the digest of the raw bytes.
+                let art_key = art.as_ref().map(|(bytes, _)| art_digest(bytes));
+                let mut snapshot = build_snapshot_keyed(
                     props.as_ref(),
                     playback.as_ref(),
                     timeline.as_ref(),
                     &app_name,
-                    art_ref,
+                    art_key.as_deref(),
                 );
 
-                // Change detection: compare the serialized snapshot WITH
-                // the art data. Players publish their SMTC thumbnail a
+                // Change detection: compare the serialized snapshot, art
+                // digest included. Players publish their SMTC thumbnail a
                 // beat after the metadata (Spotify does), so the poll
                 // right after a track change can carry the new title
                 // with the OLD cover - the art-only swap on the next
-                // poll must still count as a change. Stripping the art
-                // from the compare is exactly what made covers stick.
+                // poll must still count as a change. Leaving the art out
+                // of the compare entirely is exactly what made covers
+                // stick; the digest keeps it in at the cost of 64 bytes.
                 let snapshot_str = snapshot.to_string();
                 let changed = snapshot_str != last_snapshot_str;
                 if changed {
                     last_snapshot_str = snapshot_str;
+                    // Bytes go out only with a new cover; an unchanged
+                    // digest means the receiver already holds them.
+                    if art_key != last_sent_art_digest {
+                        if let Some((bytes, ext)) = &art {
+                            attach_art_data(&mut snapshot, bytes, ext);
+                        }
+                        last_sent_art_digest = art_key;
+                    }
                     if tx.send(snapshot).is_err() {
                         break; // receiver dropped
                     }
