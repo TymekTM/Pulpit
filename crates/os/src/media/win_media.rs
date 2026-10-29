@@ -47,14 +47,19 @@ impl Waker {
         self.condvar.notify_all();
     }
 
-    fn wait_timeout(&self, timeout: Duration) {
+    /// Wait until woken by `wake()` or until `timeout` elapses. Returns
+    /// `true` when the wait was ended by `wake()` (before or during the
+    /// wait), `false` on timeout. The triggered flag is reset either way.
+    fn wait_timeout(&self, timeout: Duration) -> bool {
         let mut triggered = self.mutex.lock().unwrap();
         if *triggered {
             *triggered = false;
-            return;
+            return true;
         }
-        let (mut guard, _) = self.condvar.wait_timeout(triggered, timeout).unwrap();
+        let (mut guard, wait_result) = self.condvar.wait_timeout(triggered, timeout).unwrap();
+        let woken = !wait_result.timed_out() || *guard;
         *guard = false;
+        woken
     }
 }
 
@@ -444,7 +449,25 @@ pub(crate) fn spawn_push(
             let mut last_session_id = String::new();
             let mut last_snapshot_str = String::new();
 
+            // Double-read pattern for late-published thumbnails: players
+            // (Chrome, Spotify) publish their SMTC thumbnail reference a
+            // beat AFTER the MediaPropertiesChanged event that carries the
+            // new title. The event-triggered poll therefore often reads the
+            // new title with the old (or empty) cover; when such a poll
+            // sent a change, re-poll once after a short bounded wait so
+            // the late art goes out immediately instead of waiting up to a
+            // full second for the next periodic tick. The compare below
+            // dedupes when the re-poll reads the same snapshot, and the
+            // 400 ms wait consumes any further event wakes fired in the
+            // meantime.
+            let mut do_follow_up = false;
+
             loop {
+                if do_follow_up {
+                    do_follow_up = false;
+                    waker.wait_timeout(Duration::from_millis(400));
+                }
+
                 let num_consumers = consumers();
                 if num_consumers == 0 {
                     // Plan 004 quiet idle loops: wait when nobody renders state
@@ -513,7 +536,8 @@ pub(crate) fn spawn_push(
                 // poll must still count as a change. Stripping the art
                 // from the compare is exactly what made covers stick.
                 let snapshot_str = snapshot.to_string();
-                if snapshot_str != last_snapshot_str {
+                let changed = snapshot_str != last_snapshot_str;
+                if changed {
                     last_snapshot_str = snapshot_str;
                     if tx.send(snapshot).is_err() {
                         break; // receiver dropped
@@ -530,7 +554,14 @@ pub(crate) fn spawn_push(
                 } else {
                     Duration::from_secs(10)
                 };
-                waker.wait_timeout(sleep_duration);
+                let event_woken = waker.wait_timeout(sleep_duration);
+
+                // One bounded follow-up only when this poll was triggered
+                // by an event AND it sent a change: that is exactly the
+                // case where the new title arrived with a stale thumbnail
+                // and the real art may be published moments later. The
+                // follow-up waits 400 ms at the top of the next iteration.
+                do_follow_up = event_woken && changed;
             }
         })
         .expect("spawn smtc worker thread");
