@@ -21,6 +21,7 @@ describe("api", () => {
     ["execButton", [9], "exec_button", { id: 9 }],
     ["execSlider", [9, 0.25], "exec_slider", { id: 9, value: 0.25 }],
     ["getSettings", [], "get_settings", undefined],
+    ["openDataDir", [true], "open_data_dir", { logs: true }],
     ["setHotkey", ["Ctrl+T"], "set_touch_mode_hotkey", { combo: "Ctrl+T" }],
     ["setServerPort", [8611], "set_server_port", { port: 8611 }],
     ["getAutostart", [], "get_autostart", undefined],
@@ -73,7 +74,7 @@ describe("api", () => {
   });
 
   it("covers every method in the table above", () => {
-    expect(Object.keys(api)).toHaveLength(60);
+    expect(Object.keys(api)).toHaveLength(61);
   });
 
   it("passes the command's result through", async () => {

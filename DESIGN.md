@@ -1,6 +1,6 @@
 ---
-name: Pulpit — ŚCIANA (Settings Wall)
-description: Settings as a streaming-style tile wall — one focused tile, a dimmed wall, teal reserved for focus and primary actions only.
+name: Pulpit — Settings
+description: Settings as a quiet dark sheet — a side nav of pages, each page a stack of grouped cards with one control per row; teal for intent and status-ok, red for errors only.
 colors:
   ground: "#171c21"
   tile: "#262e36"
@@ -19,32 +19,36 @@ colors:
 typography:
   bar-title:
     fontFamily: "Roboto, Segoe UI, system-ui, sans-serif"
-    fontSize: "18px"
+    fontSize: "17px"
     fontWeight: 600
     letterSpacing: "0.2px"
-  section-label:
+  page-title:
     fontFamily: "Roboto, Segoe UI, system-ui, sans-serif"
-    fontSize: "12.5px"
+    fontSize: "20px"
     fontWeight: 600
-    letterSpacing: "1.6px"
-  tile-title:
+  group-label:
     fontFamily: "Roboto, Segoe UI, system-ui, sans-serif"
-    fontSize: "15px"
+    fontSize: "11.5px"
     fontWeight: 600
-  control-label:
+    letterSpacing: "1.4px"
+  nav-item:
+    fontFamily: "Roboto, Segoe UI, system-ui, sans-serif"
+    fontSize: "13.5px"
+    fontWeight: 400
+  row-name:
     fontFamily: "Roboto, Segoe UI, system-ui, sans-serif"
     fontSize: "13.5px"
     fontWeight: 500
-  body:
+  lead:
     fontFamily: "Roboto, Segoe UI, system-ui, sans-serif"
-    fontSize: "12.5px"
+    fontSize: "13px"
     fontWeight: 400
-    lineHeight: 1.55
+    lineHeight: 1.6
   note:
     fontFamily: "Roboto, Segoe UI, system-ui, sans-serif"
     fontSize: "12px"
     fontWeight: 400
-    lineHeight: 1.6
+    lineHeight: 1.5
   chip:
     fontFamily: "Roboto, Segoe UI, system-ui, sans-serif"
     fontSize: "11px"
@@ -57,24 +61,27 @@ typography:
     fontFamily: "ui-monospace, Cascadia Mono, Consolas, monospace"
     fontSize: "30px"
     fontWeight: 700
-    lineHeight: 1.1
+    lineHeight: 1
     letterSpacing: "6px"
 rounded:
   control: "6px"
   panel: "8px"
-  tile: "12px"
+  card: "10px"
   chip: "999px"
 spacing:
-  tile-gap: "14px"
-  section-gap: "30px"
-  gutter: "34px"
-  bar-height: "64px"
+  bar-height: "56px"
+  nav-width: "220px"
+  page-max-width: "760px"
+  page-padding: "28px 40px 64px"
+  group-gap: "28px"
 components:
-  tile:
+  card:
+    backgroundColor: "{colors.tile}"
+    rounded: "{rounded.card}"
+    padding: "0 18px"
+  nav-item-current:
     backgroundColor: "{colors.tile}"
     textColor: "{colors.ink}"
-    rounded: "{rounded.tile}"
-    padding: "18px 20px"
   switch:
     backgroundColor: "{colors.tile-raised}"
     rounded: "13px"
@@ -85,8 +92,6 @@ components:
   chip:
     backgroundColor: "{colors.tile-raised}"
     textColor: "{colors.ink-2}"
-    typography:
-      fontSize: "11px"
     rounded: "{rounded.chip}"
     padding: "3px 9px"
   chip-ok:
@@ -98,342 +103,200 @@ components:
   act:
     backgroundColor: "{colors.tile-raised}"
     textColor: "{colors.ink}"
-    typography:
-      fontSize: "12.5px"
-    rounded: "{rounded.control}"
-    padding: "7px 12px"
-  act-hover:
-    backgroundColor: "{colors.lift}"
-  act-accent:
-    backgroundColor: "{colors.tile-raised}"
-    textColor: "{colors.accent}"
-    typography:
-      fontSize: "12.5px"
-      fontWeight: 500
     rounded: "{rounded.control}"
     padding: "7px 12px"
   act-primary:
     backgroundColor: "{colors.accent}"
     textColor: "#0c2a24"
-    typography:
-      fontSize: "12.5px"
-      fontWeight: 600
     rounded: "{rounded.control}"
-    padding: "9px 14px"
-  act-primary-hover:
-    backgroundColor: "{colors.accent-deep}"
-  combo:
-    backgroundColor: "{colors.tile-raised}"
-    textColor: "{colors.ink}"
-    typography:
-      fontFamily: "ui-monospace, Cascadia Mono, Consolas, monospace"
-      fontSize: "13px"
-    rounded: "{rounded.control}"
-    padding: "7px 12px"
-  combo-input:
+    padding: "8px 14px"
+  field:
     backgroundColor: "{colors.well}"
     textColor: "{colors.ink}"
-    typography:
-      fontSize: "13px"
     rounded: "{rounded.control}"
     padding: "7px 10px"
   code-display:
     backgroundColor: "{colors.well}"
-    textColor: "{colors.ink}"
-    typography:
-      fontFamily: "ui-monospace, Cascadia Mono, Consolas, monospace"
-      fontSize: "30px"
-      fontWeight: 700
-      letterSpacing: "6px"
     rounded: "{rounded.panel}"
-    padding: "14px 18px"
+    padding: "12px 18px"
   qr:
     backgroundColor: "#ffffff"
     rounded: "{rounded.panel}"
     padding: "6px"
-    width: "108px"
-    height: "108px"
+    width: "116px"
+    height: "116px"
 ---
 
-# Design System: Pulpit — ŚCIANA (Settings Wall)
+# Design System: Pulpit — Settings
 
 ## Overview
 
-**Creative North Star: "ŚCIANA — the streaming wall"**
+**North Star: "a quiet sheet you leave quickly"**
 
-Settings is a wall of content, not a form. A full-screen dark overlay replaces the
-editor window; every setting lives inside a **tile** — a live state container that
-shows its status before you touch it (a chip, a summary, a QR, a pairing code).
-Exactly one tile is expanded at a time: focus is the only mechanism that reveals
-controls, and the rest of the wall dims in response. There is no sidebar, no row of
-form fields, no wizard. The wall reads like a streaming service's shelf of title
-cards: scan first, expand one thing, act, leave.
+Settings is a full-screen dark overlay over the editor: a 56px top bar (title +
+close), a 220px side nav, and one scrolling page. The nav lists the core pages
+(Ogólne, Tablety), then the integrations under an "Integracje" label (OBS,
+Spotify, Discord, Voicemeeter, Limity AI), with "O Pulpicie" pinned to the bottom.
+A page is a title with an optional status chip, one lead sentence, and a stack of
+labeled groups; each group is a card of rows, one setting per row: name and note
+on the left, the control on the right.
 
-The world is deliberately quiet. Depth comes from tonal steps (ground → tile →
-raised, with wells dipping back to ground) plus 1px lines, not from stacked shadows
-— elevation is declared exactly once, on the focused tile. Color is rationed: a
-three-stop gray ink scale does all the talking, and the teal accent appears only
-where attention or life must land (focus border, switch-on state, one primary
-action per tile, focus rings, and "working" status chips). Red stays out of the
-accent conversation entirely — it is the error channel, with a lightened ink tint
-for small text. Type is Roboto for voice and a monospace stack with tabular
-numerals for every technical value: ports, IPs, hotkeys, pairing codes.
+Every page tells you its state before you touch anything: a chip in the page head
+(połączono / wymaga logowania / nie zainstalowano), the row notes, and the live
+values (addresses, the port, the hotkey). Changes apply as you make them: switches
+save on flip, the hotkey saves on capture, and the integration toggles connect at
+once. An explicit Save button appears only for typed text, and only while it differs
+from what is stored.
 
-**Scope of this world.** ŚCIANA currently owns exactly one surface: the settings
-overlay (`apps/desktop`, `SettingsOverlay.vue`, mounted from the rail in `App.vue`).
-Everything else — the light sidebar (`#ececec`), the board-colored canvas, and the
-light modal system (`#ffffff` modals, 4px radius, teal header strip) — is the
-**incumbent world** inherited from the original Deckboard look. The wall's palette
-is now sourced from the incumbent shell tokens (`style.css :root`: `--titlebar`,
-`--rail`, `--rail-hover`, `--border`, `--text`, `--text-muted`, `--accent`,
-`--danger`), so settings and shell share one color source — the earlier red and
-dark-text drifts are gone by design. What remains is structural drift, recorded
-here, not repaired: two modal languages (light dialogs vs this dark wall), two
-radius languages (4px vs 6/8/12px), and two shadow vocabularies (the modal's
-stacked shadows vs the wall's single focus ambient). Future surfaces decide world
-by world; settings is the first step of the renovation, not a mandate to repaint
-the editor.
+**Scope.** This world owns one surface: the settings overlay (`apps/desktop`,
+`SettingsOverlay.vue` as the shell, one component per page in
+`components/settings/`, shared sheet `components/settings/settings.css`). The
+light sidebar, the board canvas and the light modal system are the **incumbent
+world** inherited from Deckboard. Colors come from the shell tokens
+(`style.css :root`), so both worlds share one palette; their modal language,
+radii and shadows still differ, by decision.
 
 **Key Characteristics:**
-- Wall of tiles, one always focused; siblings dim to 0.42 opacity
-- Tiles are live state containers (chips, summaries, QR, pairing code) before they are forms
-- Tonal depth only; a single soft shadow marks the focused tile
-- Teal accent strictly for focus, primary actions, and status-ok; red is the error channel only
+- Side nav + one page at a time; pages mount only while shown, so integration
+  probes (Voicemeeter DLL, Discord RPC) run only on their own page
+- The overlay reopens on the last page shown
+- Grouped cards of rows; one control per row, right-aligned
+- Changes apply immediately; nothing waits for a global Save
+- Tonal depth, no elevation shadows
+- Teal for intent and status-ok, red for errors only
 - Roboto for prose, mono + tabular numerals for every technical value
-- Motion budget: 140–250ms ease-out state changes, one rise reveal per detail, no page-load choreography
 
 ## Colors
 
-An incumbent charcoal field (the shell's own dark family, not a blue-black of its
-own), one teal accent, and one error red — everything else is gray discipline.
-Every neutral and state value is lifted from the app shell's `:root` tokens
-(`--titlebar`, `--rail`, `--rail-hover`, `--border`, `--text`, `--text-muted`,
-`--accent`, `--danger` in `style.css`), so the wall and the rest of the editor
-draw from a single color source; only the derived tints (`--ink-3`, `--bad-ink`)
-are new here.
+The incumbent charcoal family, one teal accent and one error red. Every neutral
+and state value maps to a shell token (`--titlebar`, `--rail`, `--rail-hover`,
+`--border`, `--text`, `--text-muted`, `--accent`, `--danger`); only `--ink-3` and
+`--bad-ink` are derived here.
 
-### Primary
-- **Accent Teal** (#1abc9c, shell `--accent`): the focus and intent channel, and
-  the status-ok color. Appears as: the focused tile's border (mixed 40% teal into
-  the line color), the switch's on-state, the primary action button, the global
-  `:focus-visible` ring, and "working" status chips (14% teal behind the text) —
-  the same pairing the incumbent rail's status dots use. The hover/deep stop
-  **Accent Deep** (#16a085, shell `--accent-2`) darkens those same elements on hover.
-
-### Operate state (semantic channel)
-- **Bad Red** (#e74c3c, shell `--danger`): the error channel — "broken / off /
-  server down" chips (14% red behind the text) — e.g. "baza niedostępna", "serwer wył.".
-- **Bad Ink** (#f19488): the lightened, text-legible tint of Bad Red used wherever
-  red is small text on dark — bad chips' labels and inline validation errors — to
-  hold 4.5:1 contrast. It never appears as a surface.
-
-### Neutral
-- **Ground** (#171c21, shell `--titlebar`): the overlay background; the wall's darkness floor.
-- **Tile** (#262e36, shell `--rail`): the resting tile surface, one tonal step above ground.
-- **Tile Raised** (#313a44, shell `--rail-hover`): second-level surface — chips,
-  buttons, switch track, row separators between controls.
-- **Line** (#1d2a36, shell `--border`): all 1px borders — tile outlines, kbd/code
-  outlines, input borders.
-- **Well** (#171c21): recessed input and code-display backgrounds; the ground value
-  showing through a tile, outlining "type or read here".
-- **Lift** (#3a4753): hover state of small controls (buttons, switch track) and the
-  dim tile's hover border tint at 60% up (#43505c).
-- **Ink** (#ecf0f1, shell `--text`): primary text — titles, values, control names.
-- **Ink 2** (#95a5a6, shell `--text-muted`): secondary text — summaries, neutral chip text.
-- **Ink 3** (#8b97a1): muted text — section labels, control notes, fact labels, footnotes.
+- **Ground** (#171c21): overlay background, recessed fields, the code display.
+- **Tile** (#262e36): cards and the current nav item.
+- **Tile Raised** (#313a44): buttons, chips, switch track, row separators.
+- **Line** (#1d2a36): 1px outlines: bar and nav borders, cards, fields.
+- **Lift** (#3a4753): hover for buttons and the switch track.
+- **Ink / Ink 2 / Ink 3** (#ecf0f1 / #95a5a6 / #8b97a1): names and values / lead
+  text and idle nav items / notes and group labels.
+- **Accent Teal** (#1abc9c), **Accent Deep** (#16a085 hover).
+- **Bad Red** (#e74c3c) as a surface tint, **Bad Ink** (#f19488) whenever red is
+  small text on dark.
 
 ### Named Rules
-**The Two-Channel Rule.** Teal and red are different channels and never mix. Teal =
-focus, primary actions, and status-ok (intent and life — matching the incumbent
-app's teal status dots); red = error, surfaced as **Bad Ink** when it must be read
-as small text. This separation is a reviewed decision (2026-09-28 settings review,
-re-affirmed at the charcoal re-tint): state vocabulary stays legible even when
-every accent is spent on focus.
+**The Two-Channel Rule.** Teal and red never mix. Teal = intent and life: the
+current nav marker, switch-on, the page's primary button, focus rings, ok chips.
+Red = error: bad chips, error lines, the nav alert dot, danger buttons
+(Odłącz / Cofnij / Wyloguj).
 
-**The Rationed Accent Rule.** On any view of the wall, teal covers a sliver of the
-pixels: one border tint, at most one filled button, at most one switch. If a second
-element wants teal, the design is wrong, not the budget.
+**The Rationed Accent Rule.** At most one filled teal (primary) button per page,
+the main action (Wygeneruj kod, Połącz, Zaloguj). Confirming steps inside a row
+use the accent rank (teal text on a raised fill).
 
 ## Typography
 
-**Display/Data Font:** ui-monospace, "Cascadia Mono", Consolas, monospace
-**Body Font:** Roboto (via @fontsource, weights 400/500/700), fallback "Segoe UI", system-ui, sans-serif
+Roboto (400/500/700 via @fontsource) for all voice; `ui-monospace, "Cascadia Mono",
+Consolas` with tabular numerals for computer-authored values.
 
-**Character:** One humanist sans speaks, one terminal mono proves. Roboto carries
-all voice and labels at small sizes; the mono stack appears only where the computer
-is the author — addresses, ports, shortcuts, codes — always with tabular numerals
-(global `.tnum`, `font-variant-numeric: tabular-nums`) so live-updating readouts
-never shift.
+- **Bar title** 600 17px: "Ustawienia".
+- **Page title** 600 20px, beside its chip.
+- **Lead** 400 13px/1.6, Ink 2, max 64ch: one sentence on what the page controls.
+- **Group label** 600 11.5px, +1.4px, uppercase, Ink 3. The nav's "Integracje"
+  label uses the same voice at 11px.
+- **Row name** 500 13.5px; **row note** 400 12px/1.5 Ink 3.
+- **Chip** 11px. **Data** mono 13px. **Data display** mono 700 30px +6px: the
+  pairing code only.
 
-### Hierarchy
-- **Bar title** (600, 18px, +0.2px): the single "Ustawienia" heading in the top bar.
-- **Section label** (600, 12.5px, +1.6px tracking, uppercase, Ink 3): row headers
-  "OGÓLNE / SERWER / TABLETY" — the wall's only uppercase.
-- **Tile title** (600, 15px): tile names.
-- **Control label** (500, 13.5px): names inside expanded controls; fact values share the size.
-- **Body** (400, 12.5px, 1.55, Ink 2): tile summaries — the always-visible voice.
-- **Note** (400, 12px, 1.6, Ink 3): explanatory footnotes inside details.
-- **Chip** (400, 11px): status chips.
-- **Data** (mono, 13px): hotkey combos, IP:port addresses, fact values.
-- **Data display** (mono, 700, 30px, line-height 1.1): the listening port and the
-  pairing code; the code adds +6px letter-spacing to read as digits, not words.
-
-### Named Rules
-**The Mono-Values Rule.** Every technical value — port, IP, hotkey combo, pairing
-code, log path — is monospace with tabular numerals. Prose never imitates it, mono
-never carries prose.
+**The Mono-Values Rule.** Ports, IPs, hotkeys, codes, client IDs, redirect URIs and
+paths are monospace with tabular numerals. Prose never imitates mono.
 
 ## Layout
 
-A fixed, opaque full-screen overlay (`inset: 0`, z-index 45 — above the incumbent
-light modal system at 40), entered and left on the editor's modal transition
-(180ms rise in, 120ms out). A 64px top bar holds the title and the close button
-(ESC does the same); below it, the wall is a centered column **max-width 1120px**
-with 34px side gutters that scrolls vertically when content exceeds the window.
-
-The wall is three labeled rows (Ogólne, Serwer, Tablety), each 30px below the last.
-Tiles flex-wrap inside a row: `flex: 1 1 300px`, `min-width: 240px`, 14px gaps —
-two per row on desktop, single column when narrow, no hard breakpoints. Row height
-is driven by the focused tile: expansion is horizontal (flex-grow), so rows grow
-organically instead of opening a fixed accordion. Inside a focused tile, control
-rows stack with 1px separators; the QR panel and address list sit side by side
-(14px gap); the facts list is a two-column grid (12px × 24px gaps).
+Fixed opaque overlay (`inset: 0`, z-index 45, above the light modals at 40; the
+shared confirm dialog sits above at 120). Bar 56px. Nav 220px with its right
+border; it collapses to a 64px icon rail under 760px window width. The page column
+is max 760px wide with 28px/40px padding; groups sit 28px apart. Rows are min 58px
+tall with 13px vertical padding and 1px Tile Raised separators. Text blocks inside
+a card (QR + address list, the pairing code) use a `card-body` with 16px padding.
 
 ## Elevation & Depth
 
-Depth is tonal first, shadow last. Ascending surface stops (ground → tile →
-tile-raised) plus 1px lines do all the structural work, and wells dip back to the
-ground value; the only true elevation on the wall is reserved for the moment of
-focus.
-
-### Shadow Vocabulary
-- **Focus ambient** (`box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5)`): declared once,
-  on the focused tile only — the wall's single elevation. It lifts the expanded tile
-  off the dimming field.
-- **Knob micro-shadow** (`0 1px 3px rgba(0, 0, 0, 0.4)`): part of the switch knob
-  itself, not a wall token; it keeps the 20px knob readable on both track colors.
-
-### Named Rules
-**The One-Shadow Rule.** Elevation is declared exactly once in the world, on the
-focused tile. No hover shadows, no stacked modal shadows, no shadow escalation —
-if something new needs depth, it takes a tonal step, not a shadow.
-
-**The Dim Wall Rule.** Depth of attention is expressed as opacity: siblings of the
-focused tile sit at 0.42 and rise only to 0.62 on hover. Dead tiles (server off)
-are pinned at 0.42 and cannot be hovered back.
+Tonal only: ground → tile → raised, with fields dipping back to ground, all
+outlined by 1px lines. The switch knob's micro-shadow is the only shadow in the
+world. Something that needs more emphasis takes a tonal step or the accent, not a
+shadow.
 
 ## Shapes
 
-Rounded but disciplined. Tiles carry the largest radius (12px); interactive controls
-sit two steps down (6px buttons, inputs, kbd, address rows); content plates — QR
-frame, pairing-code box — take the middle 8px; chips are full pills (999px). The
-close button rounds at 10px and the switch at its own half-height (13px) with a
-perfectly circular 20px knob. Every tile and technical plate is outlined with a 1px
-line; controls are borderless fills except where a recessed well needs an outline
-(kbd, combo input, code box). One deliberate shape exception: the QR code renders
-on a flat white 108px plate (6px inner padding) — the only white surface in the
-world, because scanners demand it.
+Cards 10px; nav items, segmented controls, the QR plate and the code display 8px;
+buttons, fields, kbd plates and address rows 6px; chips are pills; the switch is
+46×26 with a 20px knob. The QR renders on a white 116px plate, the only white
+surface, because scanners need it.
 
 ## Components
 
-Motion grammar for the whole wall: state changes run 140–250ms ease-out; focus
-expansion and the switch knob use `cubic-bezier(0.2, 0, 0, 1)`; a detail reveals
-with a single 200ms rise (opacity 0→1, translateY 4px→0). Nothing animates on page
-load — the wall is simply there. Icons are inline Font Awesome (`fa-times`,
-`fa-lock`, `fa-sync-alt`, `fa-key`) at 12–15px, never decorative color.
+Motion: state changes 140–180ms ease-out; the switch knob uses
+`cubic-bezier(0.2, 0, 0, 1)`; a page enters with one 180ms rise (opacity,
+translateY 4px). Icons are Font Awesome solid only (no brand set is bundled).
 
-### Tile (signature component)
-- **Anatomy:** invisible hit-zone button covering the whole tile → header (title +
-  optional chip) → summary line → detail region (revealed only while focused).
-- **Shape:** 12px radius, 1px line border, 18px × 20px padding, tonal `tile` fill.
-- **States:** exactly one tile is `.focused` — flex-grow 2.4 over 240ms
-  `cubic-bezier(0.2, 0, 0, 1)`, border becomes 40% teal mixed into line, focus
-  ambient shadow, detail rises in. All others `.dim` at 0.42, hover lifting to 0.62
-  with a neutral border hint (#43505c). Tiles whose backend is down are `.dead`:
-  pinned at 0.42, hit-zone removed (no hit target, no fake interactivity), detail
-  suppressed; their chip says so ("serwer wył.").
-- **Interaction contract:** the hit-zone is a real `<button>` (aria-label
-  "Rozwiń: …") so any click anywhere on a dim tile moves focus; once focused it
-  steps aside (`display: none`) for the actual controls. Keyboard: dim tiles are
-  tabbable, the focused tile's controls take over; the overlay traps Tab (opaque —
-  focus must never wander into the editor behind it), ESC closes, `role="dialog"`
-  + `aria-modal`.
+### Shell (`SettingsOverlay.vue`)
+- `role="dialog"` + `aria-modal`; Escape closes; Tab wraps inside the overlay.
+- Nav items are buttons with `aria-current="page"` on the current one: Tile fill,
+  Ink text, a 3px teal bar on the left edge, teal icon. A red dot on Tablety
+  flags a dead server.
+- `initialPage` opens a specific page; otherwise the last page shown.
+
+### Row
+Name + note on the left (`row-text`), control group on the right (`row-ctl`,
+8px gaps). `.row.top` top-aligns rows whose note runs several lines. Validation
+and backend errors render as `.err` (Bad Ink 12px) under the card; transient
+confirmations as `.note.ok` (teal), cleared after a few seconds.
 
 ### Switch
-- **Shape:** 46 × 26px track, 13px radius; 20px circular knob (#f2f4f6) with micro-shadow, 3px inset.
-- **States:** off = tile-raised track (hover: lift); on = teal track (hover:
-  accent-deep), knob travels +20px over 160ms `cubic-bezier(0.2, 0, 0, 1)`.
-  Native `role="switch"` + `aria-checked`; disabled while the backend call is in
-  flight, rolling back on failure.
+`role="switch"` + `aria-checked`; applies immediately, disabled while the call is
+in flight, rolls back and shows the reason on failure.
 
-### Act buttons (three ranks)
-- **Shape:** 6px radius, 12.5px text, 7px × 12px padding.
-- **Default:** tile-raised fill, ink text; hover: lift. The workhorse ("Zmień",
-  "Anuluj", "Nowy kod", "Odśwież").
-- **Accent:** same body, teal text, weight 500 — the confirming step inside a
-  flow ("Ustaw"). Still one per context.
-- **Primary:** teal fill, near-black-teal text (#0c2a24), weight 600, slightly
-  larger (9px × 14px) — the one main action of a tile ("Generuj kod parowania").
-  Hover: accent-deep. Disabled: 0.45 opacity.
+### Buttons (`.act`)
+Default (raised fill), **accent** (teal text), **primary** (teal fill,
+#0c2a24 text, one per page), **danger** (Bad Ink text, red-tinted hover),
+**ghost** (transparent, Ink 2; refresh buttons, disclosure toggles, the
+eye toggle for secrets).
+
+### Shortcut capture
+The current combo shows as a mono kbd plate. "Zmień" turns the plate into a
+focused capture target ("Naciśnij klawisze…", teal outline); the next key press
+with Ctrl/Alt/Win (or a bare F-key) saves at once. Esc cancels; a bare letter is
+refused with a reason.
+
+### Fields
+Recessed (ground fill, line border), 6px; focus = teal border + 1px teal ring.
+Widths: 220px default, 280px `.wide`, 90px `.narrow`. Secrets are never echoed
+back: a saved secret shows as a placeholder and the note says "type a new one to
+replace it".
 
 ### Chips
-- **Style:** pill (999px), 11px text, 3px × 9px padding; neutral = tile-raised fill
-  + Ink 2 text; **ok** = Accent Teal text on 14% teal (the status-ok voice, matching
-  the incumbent status dots); **bad** = Bad Ink text on 14% red.
-- **State:** chips are read-only live status, never filters or actions. They render
-  state honestly: "autostart wł./wył.", "działa / baza niedostępna", "gotowy do
-  parowania / brak sieci", and the live countdown "kod żyje m:ss".
+Read-only live state in page heads and lists; ok = teal on 14% teal, bad = Bad Ink
+on 14% red, neutral = raised fill.
 
-### Hotkey combo (kbd + input)
-- **Display:** `<kbd>`-style plate — mono 13px, tile-raised fill, 1px line border,
-  6px radius, 7px × 12px padding.
-- **Edit:** recessed well input (well fill, 6px radius); focus = teal border + 1px
-  teal ring (`box-shadow: 0 0 0 1px`), no glow. Validation error renders below in
-  Bad Ink 12px, wrapping anywhere.
-
-### Code display (pairing code)
-- **Style:** the data-display role made physical — mono 700 30px, +6px letter-spacing,
-  well fill, 1px line border, 8px radius, 14px × 18px padding. The tile's chip runs
-  the green countdown; expiry burns the code back to the minting state.
-
-### QR panel + address list
-- **Pair:** flex row, 14px gap — white 108px QR plate (8px radius, 6px padding) on
-  the left; vertical address list on the right.
-- **Address rows:** 6px radius buttons, 13px mono tabular `ip:port` over an 11.5px
-  Ink 3 interface name (ellipsis on overflow); selected and hover share the
-  tile-raised fill, the selected address's mono turns 700. A default-rank
-  "Odśwież" button closes the list.
-
-### Facts list (dl)
-- **Style:** two-column grid (12px × 24px gaps) of dt/dd pairs — 11.5px Ink 3
-  labels ("Adres", "Klienci", "Wersja", "Logi") over 13.5px values; technical
-  values in mono + tabular numerals. The read-only twin of the form row: same
-  rhythm, zero controls.
-
-### Supporting roles
-Section labels (uppercase Ink 3, 12.5px/600/+1.6px), control rows (13.5px/500 name
-over 12px Ink 3 note, 11px vertical padding, 1px tile-raised separators), locked
-rows (lock icon + "stałe" in Ink 3 — a fact, not a disabled control), the 40px
-close button (10px radius, Ink 2 → ink on hover, tile-raised hover fill, 0.96
-scale on press), and 12px inline `code` chips (4px radius, tile-raised fill).
+### Help steps
+Integrations that need a developer app (Spotify, Discord) carry a ghost
+disclosure "How to create …" with a numbered list of whole sentences. It opens
+by itself while the integration is not set up yet.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** keep exactly one tile expanded per wall; focus is exclusive (`flex-grow: 2.4`, 240ms).
-- **Do** dim siblings to 0.42 (hover 0.62) and mute dead tiles at 0.42 with no hit zone.
-- **Do** put every port, IP, hotkey, code and path in mono with tabular numerals (`.tnum`).
-- **Do** reserve teal (#1abc9c) for the focus border tint, switch-on, one primary button, focus rings, and status-ok chips.
-- **Do** use teal ok-chips and Bad Ink red as live operate-state ("działa", "serwer wył.", countdowns).
-- **Do** step depth with the tonal scale (ground/well #171c21 → tile #262e36 → raised #313a44) before reaching for a shadow.
-- **Do** keep transitions in the 140–250ms ease-out family and reveal a detail with one 200ms rise.
-- **Do** render QR codes on the white plate — the single sanctioned white surface.
+- **Do** give every page a state chip or a status row that reads the backend honestly.
+- **Do** apply changes immediately; show Save only for edited text, and save it implicitly before an action that needs it (Connect, Log in).
+- **Do** keep one setting per row, control on the right.
+- **Do** put technical values in mono with tabular numerals.
+- **Do** confirm destructive actions through the shared `ask()` dialog (kind "warning").
+- **Do** poll only while the page that needs it is mounted.
 
 ### Don't:
-- **Don't** introduce a second `box-shadow` elevation; the focus ambient (0 14px 40px rgba(0,0,0,.5)) is the only one.
-- **Don't** spend red as decoration, hover tints, or accent-adjacent color — red is the error channel only (as Bad Ink when small text), separate from teal by reviewed decision.
-- **Don't** animate the wall on load; motion begins only as a response to interaction.
-- **Don't** place real controls under the invisible hit zone, or keep a hit zone on a dead tile.
-- **Don't** widen ŚCIANA into the sidebar, canvas, or the light modal system without an explicit world decision — those remain the incumbent world (light modals, teal #1abc9c, Roboto). Color is now shared with the shell; the unrepaired drift is structural: modal language, radii (4px vs 6/8/12px), and shadow vocabulary.
-- **Don't** import incumbent modal idioms into the wall (uppercase flat text buttons, 4px radius, white dialogs) or wall idioms into them.
-- **Don't** fake state: a chip that can't read the backend stays honest ("brak sieci"), and a dead tile never pretends to be clickable.
+- **Don't** add a global Save/Apply button or a second primary button on a page.
+- **Don't** show settings that cannot change (fixed behavior) as controls; if it must be said, say it in a note.
+- **Don't** use shadows for depth or red as decoration.
+- **Don't** hard-code Polish (or any language) in backend status strings; send a state code and word it in the frontend through `t()`.
+- **Don't** import incumbent modal idioms (white dialogs, uppercase text buttons, 4px radius) into settings, or settings idioms into them.

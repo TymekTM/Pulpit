@@ -230,6 +230,7 @@ pub fn run() {
             list_audio_devices,
             exec_slider,
             get_settings,
+            open_data_dir,
             set_lang,
             set_touch_mode_hotkey,
             set_server_port,
@@ -2200,6 +2201,25 @@ mod tests {
     }
 
     #[test]
+    fn settings_report_the_next_launch_values() {
+        // a saved port and start-minimized choice survive a Settings
+        // reopen before the restart that applies them
+        let stored = serde_json::json!({"port": 9100, "start_minimized": true});
+        let v = next_launch_settings("Ctrl+Alt+D", 8500, None, Some(&stored), "auto");
+        assert_eq!(v["port"], 9100);
+        assert_eq!(v["start_minimized"], true);
+        assert_eq!(v["port_locked"], false);
+        // the environment variable wins and locks the field
+        let v = next_launch_settings("X", 9000, Some("9000"), Some(&stored), "pl");
+        assert_eq!(v["port"], 9000);
+        assert_eq!(v["port_locked"], true);
+        // no settings path: the running values stand
+        let v = next_launch_settings("X", 8600, None, None, "en");
+        assert_eq!(v["port"], 8600);
+        assert_eq!(v["start_minimized"], false);
+    }
+
+    #[test]
     fn persist_editor_setting_preserves_other_keys() {
         let path =
             std::env::temp_dir().join(format!("pulpit-editor-rmw-{}.json", std::process::id()));
@@ -2849,17 +2869,62 @@ async fn list_audio_devices(
 
 /// Editor-local settings: the touch-mode hotkey, the server port
 /// (`port_locked` when the `PULPIT_PORT` environment variable wins over
-/// the stored value) and the start-minimized choice.
+/// the stored value) and the start-minimized choice. Port and
+/// start-minimized apply on the next launch, so both are read back from
+/// editor.json - the launch-time copies in `DesktopState` would make a
+/// saved change look reverted every time Settings reopens.
 #[tauri::command]
 async fn get_settings(state: State<'_, DesktopState>) -> Result<serde_json::Value, String> {
     let hotkey = state.hotkey.lock().unwrap().clone();
-    Ok(serde_json::json!({
+    let stored: serde_json::Value = state
+        .settings_path
+        .as_deref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::Value::Null);
+    Ok(next_launch_settings(
+        &hotkey,
+        state.port,
+        std::env::var("PULPIT_PORT").ok().as_deref(),
+        state.settings_path.is_some().then_some(&stored),
+        stored_lang(state.settings_path.as_deref()),
+    ))
+}
+
+/// The `get_settings` payload. `stored` is editor.json (`None` on a
+/// fallback launch without a settings path - the running values stand).
+fn next_launch_settings(
+    hotkey: &str,
+    running_port: u16,
+    env_port: Option<&str>,
+    stored: Option<&serde_json::Value>,
+    lang: &str,
+) -> serde_json::Value {
+    let port = match stored {
+        Some(stored) => effective_port(env_port, stored.get("port")),
+        None => running_port,
+    };
+    let start_minimized = stored.is_some_and(|s| stored_flag(s, "start_minimized"));
+    serde_json::json!({
         "hotkey": hotkey,
-        "port": state.port,
-        "port_locked": std::env::var_os("PULPIT_PORT").is_some(),
-        "start_minimized": state.start_minimized,
-        "lang": stored_lang(state.settings_path.as_deref()),
-    }))
+        "port": port,
+        "port_locked": env_port.is_some(),
+        "start_minimized": start_minimized,
+        "lang": lang,
+    })
+}
+
+/// Open the data directory (`~/pulpitApp`) or its `logs` folder in the
+/// system file manager (Settings -> About). Only these two targets: the
+/// path never comes from the frontend.
+#[tauri::command]
+fn open_data_dir(logs: bool) -> Result<(), String> {
+    let mut dir = pulpit_db::data_dir();
+    if logs {
+        dir.push("logs");
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    open::that(&dir).map_err(|e| e.to_string())
 }
 
 /// The UI language choice persisted in editor.json: `auto` (follow the
@@ -3587,34 +3652,24 @@ async fn discord_status(state: State<'_, DesktopState>) -> Result<serde_json::Va
         tauri::async_runtime::spawn_blocking(move || pulpit_discord::probe_status(&config))
             .await
             .map_err(|e| e.to_string())?;
-    let (status_type, status_line, username): (&str, String, Option<String>) = match status {
-        pulpit_discord::DiscordStatus::NotConfigured => {
-            ("not_configured", "nie skonfigurowano".into(), None)
+    // the panel words the state itself (in the UI language); only the
+    // raw error message travels as text
+    let (status_type, username, error): (&str, Option<String>, Option<String>) = match status {
+        pulpit_discord::DiscordStatus::NotConfigured => ("not_configured", None, None),
+        pulpit_discord::DiscordStatus::NotRunning => ("not_running", None, None),
+        pulpit_discord::DiscordStatus::NeedsAuth => ("needs_auth", None, None),
+        pulpit_discord::DiscordStatus::Connected { username } => {
+            ("connected", Some(username), None)
         }
-        pulpit_discord::DiscordStatus::NotRunning => {
-            ("not_running", "Discord nie działa".into(), None)
-        }
-        pulpit_discord::DiscordStatus::NeedsAuth => (
-            "needs_auth",
-            "nie połączono (wymaga autoryzacji)".into(),
-            None,
-        ),
-        pulpit_discord::DiscordStatus::Connected { username } => (
-            "connected",
-            format!("połączono jako {username}"),
-            Some(username),
-        ),
-        pulpit_discord::DiscordStatus::Error { message } => {
-            ("error", format!("błąd: {message}"), None)
-        }
+        pulpit_discord::DiscordStatus::Error { message } => ("error", None, Some(message)),
     };
     Ok(serde_json::json!({
         "configured": !client_id.is_empty(),
         "clientId": client_id,
         "hasSecret": has_secret,
         "statusType": status_type,
-        "statusLine": status_line,
         "username": username,
+        "error": error,
     }))
 }
 

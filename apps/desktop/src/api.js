@@ -25,6 +25,7 @@ export const api = {
     invoke("exec_button_gesture", { id, gesture }),
   execSlider: (id, value) => invoke("exec_slider", { id, value }),
   getSettings: () => invoke("get_settings"),
+  openDataDir: (logs) => invoke("open_data_dir", { logs }),
   setHotkey: (combo) => invoke("set_touch_mode_hotkey", { combo }),
   setServerPort: (port) => invoke("set_server_port", { port }),
   getAutostart: () => invoke("get_autostart"),
