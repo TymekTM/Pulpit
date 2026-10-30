@@ -55,11 +55,10 @@ tokeny per urządzenie) i jeden katalog danych `~/pulpitApp`.
   `deckboard` jest kontraktowa).
 - Obecny UI: dark charcoal rail + jasny sidebar + canvas w kolorze tablicy, akcent
   teal #1abc9c, Roboto, jasny system modali — dziedzictwo wyglądu Deckboarda.
-- Ustawienia istnieją dziś tylko jako popover w railu (hotkey touch mode, autostart,
-  wersja); reszta konfiguracji żyje w plikach JSON bez UI.
-- Zdecydowane (2026-09-28, rozmowa o ustawieniach): ustawienia jako pełnoekranowy
-  overlay w oknie edytora z własną nawigacją; zakres v1 = rdzeń (Ogólne, Serwer,
-  Tablety/parowanie); świat wizualny ustawień może odejść od dziedzictwa Deckboarda.
+- Ustawienia: pełnoekranowy overlay w oknie edytora z boczną nawigacją stron
+  (Ogólne, Tablety, integracje: OBS, Spotify, Discord, Voicemeeter, Limity AI;
+  O Pulpicie). Przebudowa 2026-10-30 zastąpiła ścianę kafelków (ŚCIANA) — zmiany
+  działają od razu, bez globalnego „Zapisz”; świat wizualny opisuje DESIGN.md.
 
 ## Brand Commitments
 
