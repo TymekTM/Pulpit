@@ -13,12 +13,24 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.UnfoldMore
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -91,8 +103,12 @@ fun BoardScreen(vm: PulpitViewModel) {
             .background(DeckColors.background)
             .then(if (status != null) Modifier.blur(16.dp) else Modifier),
     ) {
-        BoardSwitcher(board, boards, vm, Modifier.fillMaxSize())
-        Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp)) {
+        // tile faces keep the platform font (Roboto) - the chrome theme's
+        // Inter stops at the board edge, so tiles render as before
+        ProvideTextStyle(TextStyle(fontFamily = FontFamily.Default)) {
+            BoardSwitcher(board, boards, vm, Modifier.fillMaxSize())
+        }
+        Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)) {
             BoardChip(vm)
         }
     }
@@ -107,16 +123,25 @@ fun BoardScreen(vm: PulpitViewModel) {
                     .background(Color.Black.copy(alpha = if (Build.VERSION.SDK_INT >= 31) 0.45f else 0.72f))
                     .pointerInput(Unit) { detectTapGestures { } },
             )
+            // status card: the spinner and the line read as one object
+            // over the blurred deck instead of floating text
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier.align(Alignment.Center).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .widthIn(min = 260.dp, max = 420.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(PulpitColors.ground.copy(alpha = 0.92f))
+                    .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 32.dp, vertical = 28.dp),
             ) {
                 RingSpinner()
                 Text(
                     text = status,
-                    color = Color.White,
+                    color = PulpitColors.ink,
                     style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
                 )
             }
         }
@@ -261,34 +286,91 @@ private fun statusFor(conn: ConnState, hasBoards: Boolean, attempt: Int): String
         else stringResource(R.string.board_disconnected)
 }
 
-/** Small translucent board switcher in the corner - replaces the top bar. */
+/** Floating board switcher at the bottom edge - replaces a top bar. A
+ *  glass pill with the board's name and its place in the list; the menu
+ *  lists every board with the current one marked. */
 @Composable
 private fun BoardChip(vm: PulpitViewModel) {
     val boards by vm.boards.collectAsState()
     val board by vm.currentBoard.collectAsState()
     var menuOpen by remember { mutableStateOf(false) }
+    val index = boards.indexOfFirst { it.id == board?.id }
+    val pill = RoundedCornerShape(50)
 
-    Box(Modifier.padding(10.dp)) {
-        // board.name is payload (the host's own board title); the app
-        // name only stands in when no board is open yet
-        Text(
-            text = board?.name ?: stringResource(R.string.app_name),
-            fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.75f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+    Box(Modifier.padding(horizontal = 10.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color.Black.copy(alpha = 0.35f))
+                .clip(pill)
+                .background(PulpitColors.ground.copy(alpha = 0.62f))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), pill)
                 .clickable { menuOpen = true }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        )
+                .padding(start = 10.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.GridView,
+                contentDescription = null,
+                tint = PulpitColors.accent,
+                modifier = Modifier.size(15.dp),
+            )
+            // board.name is payload (the host's own board title); the app
+            // name only stands in when no board is open yet
+            Text(
+                text = board?.name ?: stringResource(R.string.app_name),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = PulpitColors.ink.copy(alpha = 0.92f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 260.dp),
+            )
+            if (boards.size > 1 && index >= 0) {
+                // position only - digits and a slash, nothing to translate
+                Text(
+                    text = "${index + 1}/${boards.size}",
+                    fontSize = 11.sp,
+                    color = PulpitColors.ink3,
+                )
+            }
+            Icon(
+                imageVector = Icons.Rounded.UnfoldMore,
+                contentDescription = null,
+                tint = PulpitColors.ink3,
+                modifier = Modifier.size(15.dp),
+            )
+        }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             boards.forEach { b ->
+                val current = b.id == board?.id
                 DropdownMenuItem(
                     // name is payload; the id line only fills in for a
                     // board the host never titled
-                    text = { Text(b.name.ifEmpty { stringResource(R.string.board_name_fallback, b.id) }) },
+                    text = {
+                        Text(
+                            text = b.name.ifEmpty { stringResource(R.string.board_name_fallback, b.id) },
+                            color = if (current) PulpitColors.ink else PulpitColors.ink2,
+                            fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    },
+                    leadingIcon = {
+                        Box(
+                            Modifier
+                                .size(14.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(hex(b.background?.color, DeckColors.tileFallback)),
+                        )
+                    },
+                    trailingIcon = {
+                        if (current) {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                tint = PulpitColors.accent,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    },
                     onClick = {
                         menuOpen = false
                         vm.selectBoard(b)

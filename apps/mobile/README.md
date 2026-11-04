@@ -61,3 +61,6 @@ long as the app is updated with `adb install -r`.
   builds, installed with `adb install -r`: profileinstaller writes it on
   the first launch and the next background dexopt (idle + charging)
   AOT-compiles the listed methods. Debug builds ignore it.
+- Chrome text uses Inter (`res/font/inter_*.ttf`, Latin subset of Inter 4.1,
+  SIL Open Font License 1.1, https://github.com/rsms/inter); tile labels keep
+  the platform Roboto.
