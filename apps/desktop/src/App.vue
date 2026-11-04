@@ -1390,9 +1390,11 @@ function onKeydown(event) {
     <!-- sidebar: brand, boards, server status -->
     <aside v-if="!touchMode && sidebarVisible" class="sidebar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true">
-          <i></i><i></i><i></i><i></i>
-        </span>
+        <svg class="brand-mark" aria-hidden="true" viewBox="52 48 152 160">
+          <path fill="#1abc9c" d="M66 48H96A14 14 0 0 1 110 62V194A14 14 0 0 1 96 208H66A14 14 0 0 1 52 194V62A14 14 0 0 1 66 48Z"/>
+          <path fill="#1abc9c" fill-rule="evenodd" d="M138 48H156A48 48 0 0 1 156 144H138A14 14 0 0 1 124 130V62A14 14 0 0 1 138 48ZM124 79H156A17 17 0 0 1 156 113H124Z"/>
+          <path fill="#2c353e" d="M138 158H190A14 14 0 0 1 204 172V194A14 14 0 0 1 190 208H138A14 14 0 0 1 124 194V172A14 14 0 0 1 138 158Z"/>
+        </svg>
         <span class="brand-name">Pulpit</span>
         <span class="brand-ver tnum">{{ status.version || "" }}</span>
       </div>
@@ -1782,20 +1784,10 @@ function onKeydown(event) {
   padding: 0 18px;
 }
 .brand-mark {
-  width: 26px;
+  width: 25px;
   height: 26px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3px;
   flex: none;
 }
-.brand-mark i {
-  border-radius: 3px;
-  background: var(--accent);
-}
-.brand-mark i:nth-child(2) { opacity: 0.55; }
-.brand-mark i:nth-child(3) { opacity: 0.3; }
-.brand-mark i:nth-child(4) { opacity: 0.8; }
 .brand-name {
   font-size: 16px;
   font-weight: 650;

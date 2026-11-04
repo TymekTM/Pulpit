@@ -5,6 +5,7 @@
 
 package app.pulpit.mobile.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -55,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -469,25 +471,14 @@ private fun BrandColumn(paired: Boolean, modifier: Modifier = Modifier) {
     }
 }
 
-/** The desktop's logo: a 2x2 tile grid in accent tints. */
+/** The Pulpit mark: a "P" built from deck keys (docs/brand). */
 @Composable
 fun BrandMark(modifier: Modifier = Modifier) {
-    val alphas = listOf(1f, 0.55f, 0.3f, 0.8f)
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (row in 0..1) {
-            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (col in 0..1) {
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(PulpitColors.accent.copy(alpha = alphas[row * 2 + col])),
-                    )
-                }
-            }
-        }
-    }
+    Image(
+        painter = painterResource(R.drawable.pulpit_glyph),
+        contentDescription = null,
+        modifier = modifier,
+    )
 }
 
 @Composable

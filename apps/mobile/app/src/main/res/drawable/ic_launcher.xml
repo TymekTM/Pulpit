@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from docs/brand (see docs/brand/README.md). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="48dp" android:height="48dp"
-    android:viewportWidth="48" android:viewportHeight="48">
-    <path android:fillColor="#22313C" android:pathData="M4,14 a10,10 0 0 1 10,-10 h20 a10,10 0 0 1 10,10 v20 a10,10 0 0 1 -10,10 h-20 a10,10 0 0 1 -10,-10 z"/>
-    <path android:fillColor="#3E82F7" android:pathData="M12,9 h7 a3,3 0 0 1 3,3 v7 a3,3 0 0 1 -3,3 h-7 a3,3 0 0 1 -3,-3 v-7 a3,3 0 0 1 3,-3 z"/>
-    <path android:fillColor="#E67E22" android:pathData="M29,9 h7 a3,3 0 0 1 3,3 v7 a3,3 0 0 1 -3,3 h-7 a3,3 0 0 1 -3,-3 v-7 a3,3 0 0 1 3,-3 z"/>
-    <path android:fillColor="#27AE60" android:pathData="M12,26 h7 a3,3 0 0 1 3,3 v7 a3,3 0 0 1 -3,3 h-7 a3,3 0 0 1 -3,-3 v-7 a3,3 0 0 1 3,-3 z"/>
-    <path android:fillColor="#9B59B6" android:pathData="M29,26 h7 a3,3 0 0 1 3,3 v7 a3,3 0 0 1 -3,3 h-7 a3,3 0 0 1 -3,-3 v-7 a3,3 0 0 1 3,-3 z"/>
+    android:viewportWidth="256" android:viewportHeight="256">
+        <path android:fillColor="#171c21"
+            android:pathData="M64 8H192A56 56 0 0 1 248 64V192A56 56 0 0 1 192 248H64A56 56 0 0 1 8 192V64A56 56 0 0 1 64 8Z"/>
+        <path android:fillColor="#1abc9c"
+            android:pathData="M66 48H96A14 14 0 0 1 110 62V194A14 14 0 0 1 96 208H66A14 14 0 0 1 52 194V62A14 14 0 0 1 66 48Z"/>
+        <path android:fillColor="#1abc9c" android:fillType="evenOdd"
+            android:pathData="M138 48H156A48 48 0 0 1 156 144H138A14 14 0 0 1 124 130V62A14 14 0 0 1 138 48ZM124 79H156A17 17 0 0 1 156 113H124Z"/>
+        <path android:fillColor="#2c353e"
+            android:pathData="M138 158H190A14 14 0 0 1 204 172V194A14 14 0 0 1 190 208H138A14 14 0 0 1 124 194V172A14 14 0 0 1 138 158Z"/>
 </vector>

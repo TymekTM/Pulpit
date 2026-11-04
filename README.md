@@ -1,4 +1,9 @@
-# Pulpit
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/pulpit-lockup-dark.svg">
+    <img alt="Pulpit" src="docs/brand/pulpit-lockup-light.svg" height="64">
+  </picture>
+</h1>
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/TymekTM/deckboard)](https://github.com/TymekTM/deckboard/releases/latest)

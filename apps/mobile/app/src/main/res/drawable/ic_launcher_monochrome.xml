@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from docs/brand (see docs/brand/README.md). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.3" android:scaleY="0.3"
+        android:translateX="15.6" android:translateY="15.6">
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M66 48H96A14 14 0 0 1 110 62V194A14 14 0 0 1 96 208H66A14 14 0 0 1 52 194V62A14 14 0 0 1 66 48Z"/>
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+            android:pathData="M138 48H156A48 48 0 0 1 156 144H138A14 14 0 0 1 124 130V62A14 14 0 0 1 138 48ZM124 79H156A17 17 0 0 1 156 113H124Z"/>
+        <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.4"
+            android:pathData="M138 158H190A14 14 0 0 1 204 172V194A14 14 0 0 1 190 208H138A14 14 0 0 1 124 194V172A14 14 0 0 1 138 158Z"/>
+    </group>
+</vector>
