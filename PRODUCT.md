@@ -53,8 +53,11 @@ tokeny per urządzenie) i jeden katalog danych `~/pulpitApp`.
 - Dwa protokoły na jednym porcie 8500; `settings.json` zachowuje nazwy kluczy
   oryginału dla kompatybilności (w widocznych na przewie stringach stara nazwa
   `deckboard` jest kontraktowa).
-- Obecny UI: dark charcoal rail + jasny sidebar + canvas w kolorze tablicy, akcent
-  teal #1abc9c, Roboto, jasny system modali — dziedzictwo wyglądu Deckboarda.
+- Obecny UI (redesign 2026-11): jeden ciemny świat z Ustawieniami — ciemny sidebar
+  z tablicami i kartą serwera, górny pasek narzędzi, tablica jako „płyta” w kolorze
+  tablicy na ciemnym tle, ciemne modale; akcent teal #1abc9c, Inter w interfejsie,
+  Roboto na kaflach (tak samo jak na tablecie), ikony interfejsu Lucide, ikony kafli
+  Font Awesome (wspólne z Androidem).
 - Ustawienia: pełnoekranowy overlay w oknie edytora z boczną nawigacją stron
   (Ogólne, Tablety, integracje: OBS, Spotify, Discord, Voicemeeter, Limity AI;
   O Pulpicie). Przebudowa 2026-10-30 zastąpiła ścianę kafelków (ŚCIANA) — zmiany

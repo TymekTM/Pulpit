@@ -15,6 +15,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -48,6 +51,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,6 +81,15 @@ private fun shapeOf(shape: Int): Shape = when (shape) {
 
 /** Title pinning inside the tile, mirroring the desktop's pos-* classes:
  * 0 = bottom (default), 1 = center, 2 = top. */
+/** Top-edge key bevel, white at 10% like the desktop's inset rim. */
+private val KeyRim = Color.White.copy(alpha = 0.1f)
+
+/** Glyph scale on a button face: a 1x1 tile keeps the base size, each
+ *  extra cell of width or height adds a quarter, capped at 1.6x. Mirrors
+ *  tileIconScale in apps/desktop/src/catalog.js - keep them identical. */
+internal fun tileIconScale(w: Int, h: Int): Float =
+    minOf(1.6f, 1f + 0.25f * (maxOf(1, w) - 1) + 0.25f * (maxOf(1, h) - 1))
+
 private fun titleAlignment(pos: Int): Alignment = when (pos) {
     2 -> Alignment.TopCenter
     1 -> Alignment.Center
@@ -272,6 +285,9 @@ fun Tile(
                 // of everything after it), inside the clip - exactly where
                 // the old conditional white Box sat - and nothing at rest
                 .drawBehind {
+                    // 1dp light rim on the top edge: the same key bevel
+                    // the desktop draws with an inset box-shadow
+                    drawRect(KeyRim, size = Size(size.width, 1.dp.toPx()))
                     val a = scrim.value
                     if (a > 0f) drawRect(Color.White.copy(alpha = a))
                 },
@@ -378,6 +394,14 @@ private fun ButtonTile(
         liveText,
         tile.style?.title,
     ).filter { it.isNotEmpty() }.joinToString("  ")
+    // the desktop's text-shadows: glyph 0 1px 3px @30%, label 0 1px 2px @45%
+    val density = LocalDensity.current
+    val glyphShadow = remember(density) {
+        with(density) { Shadow(Color.Black.copy(alpha = 0.3f), Offset(0f, 1.dp.toPx()), 3.dp.toPx()) }
+    }
+    val labelShadow = remember(density) {
+        with(density) { Shadow(Color.Black.copy(alpha = 0.45f), Offset(0f, 1.dp.toPx()), 2.dp.toPx()) }
+    }
 
     Box(
         Modifier
@@ -499,13 +523,15 @@ private fun ButtonTile(
                 Text(
                     text = unicode,
                     fontFamily = iconFamily,
-                    fontSize = 26.sp,
+                    fontSize = (26f * tileIconScale(tile.w, tile.h)).sp,
                     color = iconColor,
+                    style = LocalTextStyle.current.copy(shadow = glyphShadow),
                 )
             }
             if (title.isNotEmpty()) {
                 Text(
                     text = title,
+                    style = LocalTextStyle.current.copy(shadow = labelShadow),
                     fontSize = if (liveText != null) 18.sp else 12.sp,
                     color = titleColor,
                     fontWeight = if (liveText != null) {

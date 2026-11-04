@@ -5,9 +5,9 @@ import ActionPicker from "../src/components/ActionPicker.vue";
 import SelectField from "../src/components/SelectField.vue";
 import { calls, dialog, handle } from "./tauri.js";
 
-// the gestures section reuses the .dual-head class, so match by text
+// a tile with a second state shows the state switch under the preview
 const hasSecondState = (w) =>
-  w.findAll(".dual-head").some((h) => h.text().startsWith("Second state"));
+  w.findAll(".lbl").some((h) => h.text() === "State you are editing");
 
 // opening the editor refreshes the Voicemeeter device list in the background
 const userCalls = () => calls.filter((c) => c.cmd !== "vm_devices");
@@ -57,7 +57,10 @@ function mountCreate(props = {}) {
 }
 
 const fieldInput = (w, label) => {
-  const field = w.findAll("label.field").find((f) => f.text().startsWith(label));
+  if (label === "Label") return w.find("#tile-label");
+  const field = w
+    .findAll(".field")
+    .find((f) => f.text().startsWith(label) && f.find("input, textarea, select").exists());
   if (!field) throw new Error(`no field "${label}"`);
   return field.find("input, textarea, select");
 };
@@ -80,7 +83,7 @@ afterEach(() => {
 describe("EditTileModal basics", () => {
   it("creates a key tile at the requested cell", async () => {
     const w = mountCreate();
-    expect(w.find(".modal-head").text()).toBe("New Button");
+    expect(w.find(".head-title").text()).toBe("New Button");
     expect(button(w, "Delete")).toBeUndefined();
     await fieldInput(w, "Keystroke").setValue("CTRL + SHIFT + P");
     await fieldInput(w, "Label").setValue("Palette");
@@ -100,7 +103,7 @@ describe("EditTileModal basics", () => {
 
   it("edits an existing tile and keeps its other columns", async () => {
     const w = mountEdit(existing({ extra_col: "kept" }));
-    expect(w.find(".modal-head").text()).toBe("Edit Button");
+    expect(w.find(".head-title").text()).toBe("Edit Button");
     expect(fieldInput(w, "Keystroke").element.value).toBe("CTRL + K");
     const out = await save(w);
     expect(out).toMatchObject({ id: 10, command: "CTRL + K", extra_col: "kept", color: "#123456" });
@@ -310,15 +313,14 @@ describe("EditTileModal action switching", () => {
   it("locks the Tile Mode row for fixed-mode actions", async () => {
     const w = mountCreate();
     await pickAction(w, "ai-plan-limits");
-    await w.findAll(".prop-row").find((r) => r.text().startsWith("Tile Mode")).trigger("click");
-    expect(w.find(".prop-pop").exists()).toBe(false);
+    expect(w.find(".mode-locked").exists()).toBe(true);
+    expect(w.find(".mode-seg").exists()).toBe(false);
   });
 
-  it("lets free actions pick a mode from the property row", async () => {
+  it("lets free actions pick a mode from the segmented control", async () => {
     const w = mountCreate();
-    await w.findAll(".prop-row").find((r) => r.text().startsWith("Tile Mode")).trigger("click");
     await button(w, "Toggle").trigger("click");
-    expect(w.find(".prop-pop").exists()).toBe(false);
+    expect(w.find(".mode-seg .on").text()).toBe("Toggle");
     const out = await save(w);
     expect(out.mode).toBe("toggle");
   });
@@ -336,7 +338,7 @@ describe("EditTileModal action switching", () => {
 
   describe("icon picker", () => {
     const openIcons = async (w) => {
-      await w.findAll(".prop-row").find((r) => r.text().startsWith("Icon") && !r.text().startsWith("Icon Color")).trigger("click");
+      await w.find(".icon-btn").trigger("click");
     };
 
     it("lists curated groups and sets the icon from a cell", async () => {
@@ -481,14 +483,11 @@ describe("EditTileModal extension inputs", () => {
 describe("EditTileModal properties and images", () => {
   it("edits shape, text position and colors from the property table", async () => {
     const w = mountCreate();
-    const row = (label) => w.findAll(".prop-row").find((r) => r.text().startsWith(label));
-    await row("Shape").trigger("click");
     await button(w, "Round").trigger("click");
-    await row("Text Position").trigger("click");
-    await w.findAll(".opt").find((o) => o.text() === "Top").trigger("click");
-    await row("Border Color").trigger("click");
+    await button(w, "Top").trigger("click");
+    await w.find('.swatch-btn[title="Border Color"]').trigger("click");
     await w.find(".hex").setValue("#00ff00");
-    await row("Icon").trigger("click");
+    await w.find(".icon-btn").trigger("click");
     await w.find('.icon-cell[title="rocket"]').trigger("click");
     const out = await save(w);
     expect(out).toMatchObject({ shape: 1, title_position: 2, border_color: "#00ff00", icon: "rocket" });
@@ -496,7 +495,7 @@ describe("EditTileModal properties and images", () => {
 
   it("clears a color with None", async () => {
     const w = mountEdit(existing({ border_color: "#ff0000" }));
-    await w.findAll(".prop-row").find((r) => r.text().startsWith("Border Color")).trigger("click");
+    await w.find('.swatch-btn[title="Border Color"]').trigger("click");
     await button(w, "None").trigger("click");
     const out = await save(w);
     expect(out.border_color).toBe("");
@@ -513,7 +512,7 @@ describe("EditTileModal properties and images", () => {
     dialog.open.mockResolvedValueOnce("C:/pic.png");
     handle("read_image_data", () => "data:image/png;base64,QQ==");
     const w = mountEdit(existing());
-    await w.findAll(".prop-row").find((r) => r.text().startsWith("Image")).trigger("click");
+    await w.find(".img-btn").trigger("click");
     await flushPromises();
     expect(userCalls()).toEqual([{ cmd: "read_image_data", args: { path: "C:/pic.png" } }]);
     expect(w.find(".prev-img").attributes("src")).toBe("data:image/png;base64,QQ==");
@@ -526,19 +525,73 @@ describe("EditTileModal properties and images", () => {
 
   it("does nothing when the file dialog is cancelled", async () => {
     const w = mountEdit(existing());
-    await w.findAll(".prop-row").find((r) => r.text().startsWith("Image")).trigger("click");
+    await w.find(".img-btn").trigger("click");
     await flushPromises();
     expect(userCalls()).toHaveLength(0);
   });
 
-  it("shows an image read error under the second-state section", async () => {
+  it("shows an image read error under the image row", async () => {
     dialog.open.mockResolvedValueOnce("C:/huge.png");
     handle("read_image_data", () => {
       throw "image too large";
     });
     const w = mountEdit(existing({ mode: "toggle" }));
-    await button(w, "Pick image 2").trigger("click");
+    await button(w, "State on").trigger("click");
+    await w.find(".img-btn").trigger("click");
     await flushPromises();
     expect(w.find(".dual-error").text()).toBe("image too large");
+  });
+});
+
+describe("EditTileModal states, keystroke recorder and gestures", () => {
+  it("edits the second state's own background and icon, keeping shared fields", async () => {
+    const w = mountEdit(existing({ mode: "toggle", color: "#111111" }));
+    expect(w.findAll(".prev-tile")).toHaveLength(2);
+    await button(w, "State on").trigger("click");
+    // only the per-state color is offered; the label is shared and hidden
+    expect(w.findAll(".swatch-btn").map((b) => b.attributes("title"))).toEqual(["Background 2"]);
+    expect(w.find("#tile-label").exists()).toBe(false);
+    await w.find('.swatch-btn[title="Background 2"]').trigger("click");
+    await w.find(".hex").setValue("#00aa00");
+    await w.find(".icon-btn").trigger("click");
+    await w.find('.icon-cell[title="rocket"]').trigger("click");
+    const out = await save(w);
+    expect(out).toMatchObject({ color: "#111111", color2: "#00aa00", icon2: "rocket" });
+  });
+
+  it("records a shortcut from a real key press", async () => {
+    const w = mountEdit(existing());
+    expect(w.findAll(".caps kbd").map((k) => k.text())).toEqual(["CTRL", "K"]);
+    await button(w, "Record").trigger("click");
+    const input = w.find(".hotkey input");
+    await input.trigger("keydown", { key: "Shift", code: "ShiftLeft", shiftKey: true });
+    expect(w.find(".hotkey").classes()).toContain("rec");
+    await input.trigger("keydown", { key: "M", code: "KeyM", ctrlKey: true, shiftKey: true });
+    expect(w.find(".hotkey").classes()).not.toContain("rec");
+    expect(w.findAll(".caps kbd").map((k) => k.text())).toEqual(["CTRL", "SHIFT", "M"]);
+    const out = await save(w);
+    expect(out.command).toBe("CTRL + SHIFT + M");
+  });
+
+  it("shows gestures only where the tile can take them", async () => {
+    expect(mountEdit(existing()).find(".gestures").exists()).toBe(true);
+    expect(mountEdit(existing({ mode: "toggle" })).find(".gestures").exists()).toBe(true);
+    expect(mountEdit(existing({ mode: "slider" })).find(".gestures").exists()).toBe(false);
+    expect(mountEdit(existing({ type: "tool-timer" })).find(".gestures").exists()).toBe(false);
+    // a fixed-mode action decides before save forces the mode
+    const w = mountCreate();
+    await pickAction(w, "speaker-volume");
+    expect(w.find(".gestures").exists()).toBe(false);
+  });
+
+  it("turns a gesture on from its card", async () => {
+    const w = mountEdit(existing());
+    const card = () => w.findAll(".gcard").find((c) => c.text().startsWith("Hold"));
+    expect(card().text()).toContain("Off");
+    await card().find("input.switch").setValue(true);
+    expect(card().classes()).toContain("on");
+    expect(card().text()).toContain("Tile action (default)");
+    const out = await save(w);
+    expect(JSON.parse(out.options).gestures).toEqual(["long-press"]);
   });
 });

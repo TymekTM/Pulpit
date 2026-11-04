@@ -11,6 +11,9 @@ const props = defineProps({
   board: { type: Object, required: true },
   touch: { type: Boolean, default: false },
   zoom: { type: Number, default: 1 },
+  // visual scale (fit-to-canvas / zoom): the whole board, tile faces
+  // included, is scaled as one picture, so a tile keeps its proportions
+  scale: { type: Number, default: 1 },
   // type -> {icon, color, mode, dual} fallbacks from the action catalog
   typeMeta: { type: Object, default: () => ({}) },
   // live state pushes (APP_CUSTOM_VALUE), see applyStatusUpdate
@@ -67,7 +70,17 @@ const rubberBandStyle = computed(() => {
 const cell = computed(() => CELL_W * props.zoom);
 const row = computed(() => ROW_H * props.zoom);
 
+// pointer math works in screen px: a grid cell on screen is cell * scale
+const screenCell = computed(() => cell.value * props.scale);
+const screenRow = computed(() => row.value * props.scale);
+
+const sizerStyle = computed(() => ({
+  width: `${props.board.width * cell.value * props.scale}px`,
+  height: `${props.board.height * row.value * props.scale}px`,
+}));
+
 const gridStyle = computed(() => ({
+  transform: props.scale === 1 ? undefined : `scale(${props.scale})`,
   width: `${props.board.width * cell.value}px`,
   height: `${props.board.height * row.value}px`,
   backgroundImage: props.board.image
@@ -172,8 +185,8 @@ function startDrag(tile, mode, event) {
     isGroupDrag,
     startX,
     startY,
-    cellW: cell.value,
-    cellH: row.value,
+    cellW: screenCell.value,
+    cellH: screenRow.value,
     cx: 0,
     cy: 0,
     cw: 0,
@@ -325,8 +338,8 @@ function onGridContext(event) {
   if (props.touch) return;
   if (event.target !== event.currentTarget) return;
   const rect = event.currentTarget.getBoundingClientRect();
-  const x = clamp(Math.floor((event.clientX - rect.left) / cell.value), 0, props.board.width - 1);
-  const y = clamp(Math.floor((event.clientY - rect.top) / row.value), 0, props.board.height - 1);
+  const x = clamp(Math.floor((event.clientX - rect.left) / screenCell.value), 0, props.board.width - 1);
+  const y = clamp(Math.floor((event.clientY - rect.top) / screenRow.value), 0, props.board.height - 1);
   const occupied = props.board.buttons.some(
     (t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h
   );
@@ -339,8 +352,9 @@ function onGridPointerDown(event) {
 
   const rect = gridEl.value?.getBoundingClientRect();
   if (!rect) return;
-  const startX = event.clientX - rect.left;
-  const startY = event.clientY - rect.top;
+  // rubber band lives inside the scaled grid: keep it in grid px
+  const startX = (event.clientX - rect.left) / props.scale;
+  const startY = (event.clientY - rect.top) / props.scale;
 
   rubberBand.startX = startX;
   rubberBand.startY = startY;
@@ -349,8 +363,8 @@ function onGridPointerDown(event) {
   rubberBand.active = false;
 
   const onMove = (e) => {
-    const curX = e.clientX - rect.left;
-    const curY = e.clientY - rect.top;
+    const curX = (e.clientX - rect.left) / props.scale;
+    const curY = (e.clientY - rect.top) / props.scale;
     rubberBand.curX = curX;
     rubberBand.curY = curY;
     if (Math.hypot(curX - rubberBand.startX, curY - rubberBand.startY) > 6) {
@@ -400,8 +414,8 @@ function onGridClick(event) {
   if (props.touch) return;
   if (event.target !== event.currentTarget) return;
   const rect = event.currentTarget.getBoundingClientRect();
-  const x = clamp(Math.floor((event.clientX - rect.left) / cell.value), 0, props.board.width - 1);
-  const y = clamp(Math.floor((event.clientY - rect.top) / row.value), 0, props.board.height - 1);
+  const x = clamp(Math.floor((event.clientX - rect.left) / screenCell.value), 0, props.board.width - 1);
+  const y = clamp(Math.floor((event.clientY - rect.top) / screenRow.value), 0, props.board.height - 1);
   const occupied = props.board.buttons.some(
     (t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h
   );
@@ -411,6 +425,7 @@ function onGridClick(event) {
 
 <template>
   <div class="board-scroll">
+    <div class="board-sizer" :style="sizerStyle">
     <div
       ref="gridEl"
       class="board-grid"
@@ -466,6 +481,7 @@ function onGridClick(event) {
         @resize="startDrag(tile, 'resize', $event)"
       />
     </div>
+    </div>
   </div>
 </template>
 
@@ -477,11 +493,16 @@ function onGridClick(event) {
   display: flex;
   padding: 20px;
 }
+.board-sizer {
+  position: relative;
+  flex: none;
+  margin: auto;
+}
 .board-grid {
   position: relative;
   display: block;
-  margin: auto;
   background-size: cover;
+  transform-origin: 0 0;
 }
 .rubber-band {
   position: absolute;
@@ -496,11 +517,35 @@ function onGridClick(event) {
 .tile-slot:has(> .empty-cell) { cursor: pointer; }
 .touch .tile-slot { cursor: default; }
 .empty-cell {
+  position: relative;
   width: 100%;
   height: 100%;
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.09);
-  transition: background 120ms ease-out;
+  /* an open slot, not a dimmed key: dashed rim, barely-there fill */
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px dashed rgba(255, 255, 255, 0.11);
+  transition: background 120ms ease-out, border-color 120ms ease-out;
 }
-.tile-slot:hover > .empty-cell { background: rgba(0, 0, 0, 0.16); }
+/* hover reveals the add affordance: a plus drawn in CSS, no icon font */
+.empty-cell::before,
+.empty-cell::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.85);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+.empty-cell::after { transform: translate(-50%, -50%) rotate(90deg); }
+.tile-slot:hover > .empty-cell {
+  background: rgba(0, 0, 0, 0.16);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+.tile-slot:hover > .empty-cell::before,
+.tile-slot:hover > .empty-cell::after { opacity: 1; }
 </style>

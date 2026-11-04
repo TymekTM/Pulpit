@@ -98,4 +98,11 @@
     <string name="tile_ready">Ready</string>
     <string name="tile_counter_default">Counter</string>
 
+    <!-- Connect screen: sections and first-contact steps -->
+    <string name="connect_section_desktop">Desktop</string>
+    <string name="connect_section_pairing">Pairing</string>
+    <string name="connect_step_open">Open Pulpit on your PC - it serves this tablet on your Wi-Fi.</string>
+    <string name="connect_step_pick">Pick the PC below, or type the code from Settings - Tablets.</string>
+    <string name="connect_step_confirm">Confirm on the PC that both screens show the same code.</string>
+
 </resources>

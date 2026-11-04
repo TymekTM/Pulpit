@@ -49,6 +49,27 @@ describe("GridEditor layout", () => {
     expect(style).toContain("height: 450px");
   });
 
+  it("scales the whole board as one picture and maps pointers through it", async () => {
+    const w = mountGrid([tile(1, 0, 0, { w: 2 })], { scale: 1.5 });
+    // layout stays at 100%: the transform scales faces with the cells
+    const grid = w.find(".board-grid").attributes("style");
+    expect(grid).toContain("width: 384px");
+    expect(grid).toContain("transform: scale(1.5)");
+    const sizer = w.find(".board-sizer").attributes("style");
+    expect(sizer).toContain("width: 576px");
+    expect(sizer).toContain("height: 450px");
+    // a click 2.x cells right on screen (144 px per cell) lands in cell 2
+    w.find(".board-grid").element.getBoundingClientRect = () => ({ left: 0, top: 0, width: 576, height: 450 });
+    await w.find(".board-grid").trigger("click", { clientX: 144 * 2 + 5, clientY: 150 + 5 });
+    expect(w.emitted("tile-add")).toEqual([[{ x: 2, y: 1 }]]);
+    // a drag of 3 screen cells moves the tile by 3 cells, not 4.5
+    await tileOf(w, 1).trigger("pointerdown", { button: 0, clientX: 0, clientY: 0 });
+    pointer("pointermove", { clientX: 144 * 1, clientY: 150 * 1 });
+    pointer("pointerup", {});
+    await w.vm.$nextTick();
+    expect(w.emitted("tile-moved")[0].slice(1)).toEqual([1, 1, 2, 1]);
+  });
+
   it("uses the board image as background", () => {
     const style = mountGrid([], {}, { image: "bg.png" }).find(".board-grid").attributes("style");
     expect(style).toContain("bg.png");

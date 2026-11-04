@@ -315,14 +315,14 @@ function onSearchKeydown(e) {
   align-items: center;
   gap: 9px;
   padding: 6px 12px;
-  background: #ffffff;
-  border: 1px solid #d6d6d6;
-  border-radius: 3px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
   font-size: 14px;
   text-align: left;
   transition: border-color 120ms ease-out;
 }
-.trigger:hover { border-color: #bdbdbd; }
+.trigger:hover { border-color: var(--lift); }
 .tval {
   flex: 1;
   min-width: 0;
@@ -356,9 +356,10 @@ function onSearchKeydown(e) {
   right: 0;
   top: calc(100% + 5px);
   z-index: 31;
-  background: #ffffff;
-  border-radius: 6px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24), 0 2px 8px rgba(0, 0, 0, 0.12);
+  background: var(--tile-2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  box-shadow: var(--shadow-pop);
   padding: 5px;
 }
 .search-row {
@@ -405,7 +406,7 @@ function onSearchKeydown(e) {
   align-items: center;
   gap: 9px;
   padding: 6px 8px;
-  border-radius: 4px;
+  border-radius: 7px;
   font-size: 13.5px;
   cursor: pointer;
   user-select: none;
@@ -425,11 +426,11 @@ function onSearchKeydown(e) {
   color: var(--modal-muted);
   flex: none;
 }
-.item.hl { background: var(--modal-field); }
-.item.sel { background: #e6f7f2; font-weight: 500; }
-.item.hl.sel { background: #dcf3ec; }
+.item.hl { background: var(--lift); }
+.item.sel { background: var(--accent-soft); font-weight: 500; }
+.item.hl.sel { background: rgba(26, 188, 156, 0.22); }
 .ilabel { flex: 1; min-width: 0; }
-.selcheck { flex: none; font-size: 12px; color: #0f7e69; }
+.selcheck { flex: none; font-size: 12px; color: var(--accent); }
 /* unavailable integrations: listed for honesty, not pickable */
 .item.dead { cursor: default; opacity: 0.45; }
 .item.dead .chip { filter: grayscale(0.7); }

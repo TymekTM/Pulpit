@@ -52,8 +52,8 @@ describe("App startup", () => {
     const w = await mountApp();
     expect(w.vm.currentId).toBe(1);
     expect(w.find(".board-title").text()).toBe("Main");
-    expect(w.findAll(".board-entry").map((b) => b.text())).toEqual(["Main", "Stream"]);
-    expect(w.find(".canvas-overlay.version").text()).toContain("Version 1.4.0");
+    expect(w.findAll(".board-entry .board-name").map((b) => b.text())).toEqual(["Main", "Stream"]);
+    expect(w.find(".brand-ver").text()).toBe("1.4.0");
     expect(listenerCount("toggle-touch-mode")).toBe(1);
     expect(listenerCount("change-board")).toBe(1);
     expect(listenerCount("app-status-update")).toBe(1);
@@ -230,8 +230,9 @@ describe("App boards and tiles", () => {
   it("runs tiles on tap in touch mode and leaves via the exit button", async () => {
     seed();
     const w = await mountApp();
-    await w.find(".rail-btn[title='Touch mode']").trigger("click");
-    expect(w.find(".rail").exists()).toBe(false);
+    await w.find(".touch-btn[title='Touch mode']").trigger("click");
+    expect(w.find(".sidebar").exists()).toBe(false);
+    expect(w.find(".topbar").exists()).toBe(false);
     await w.find('[data-tile-id="11"] .tile').trigger("click");
     await flushPromises();
     expect(cmds("exec_button")).toEqual([{ cmd: "exec_button", args: { id: 11 } }]);
@@ -465,6 +466,27 @@ describe("App shell", () => {
     expect(w.find(".zoom-value").text()).toBe("60%");
   });
 
+  it("fits the board to the canvas until the user zooms by hand", async () => {
+    seed();
+    const w = await mountApp();
+    // Main is 4x3 cells of 96x100 px; the fit leaves 88x120 px of margin
+    w.vm.canvasSize.w = 1400;
+    w.vm.canvasSize.h = 800;
+    await flushPromises();
+    expect(w.vm.zoomMode).toBe("fit");
+    expect(w.vm.zoom).toBe(1.5); // capped
+    w.vm.canvasSize.w = 400;
+    await flushPromises();
+    expect(w.vm.zoom).toBe(0.81); // (400 - 88) / 384, floored
+    w.vm.bumpZoom(1);
+    expect(w.vm.zoomMode).toBe("manual");
+    expect(w.vm.zoom).toBe(0.9);
+    await w.find(".fit-btn").trigger("click");
+    expect(w.vm.zoom).toBe(0.81);
+    await w.find(".zoom-value").trigger("click");
+    expect(w.vm.zoom).toBe(1);
+  });
+
   it("exports every board to the picked path", async () => {
     seed();
     dialog.save.mockResolvedValueOnce("C:/out.boardjson");
@@ -506,21 +528,22 @@ describe("App shell", () => {
     expect(cmds("import_boards")).toHaveLength(0);
   });
 
-  it("opens the status popover with server details", async () => {
+  it("shows server details in the sidebar card and opens pairing from it", async () => {
     seed();
     const w = await mountApp();
-    await w.find(".rail-btn[title='Server status']").trigger("click");
-    expect(w.find(".rail-pop").text()).toContain("Server running");
-    expect(w.find(".rail-pop").text()).toContain("0.0.0.0:8500");
-    expect(w.find(".rail-pop").text()).toContain("2 client(s) connected");
-    await w.find(".click-away").trigger("click");
-    expect(w.find(".rail-pop").exists()).toBe(false);
+    const card = w.find(".server-card");
+    expect(card.text()).toContain("Server running");
+    expect(card.text()).toContain("Port 8500");
+    expect(card.text()).toContain("Clients: 2");
+    await card.trigger("click");
+    expect(w.vm.settingsOpen).toBe(true);
+    expect(w.vm.settingsPage).toBe("tablets");
   });
 
-  it("hides the sidebar from the rail logo", async () => {
+  it("hides the sidebar from the top bar toggle", async () => {
     seed();
     const w = await mountApp();
-    await w.find(".rail-logo").trigger("click");
+    await w.find(".topbar .icon-btn[title='Toggle board list']").trigger("click");
     expect(w.find(".sidebar").exists()).toBe(false);
   });
 });

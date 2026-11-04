@@ -185,10 +185,9 @@ function onChipKeydown(e, idx) {
   line-height: 1.25;
   transition: background 110ms ease-out, color 110ms ease-out;
 }
-.chip:hover { background: #e6e6e6; }
+.chip:hover { background: var(--tile-2); }
 .chip:focus-visible { outline-offset: 2px; }
-/* darker teal than --accent so white labels keep AA contrast */
-.chip.on { background: #0f7e69; color: #fff; font-weight: 500; }
+.chip.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 
 /* popover: one-line trigger + modal-styled listbox */
 .sel { position: relative; }
@@ -199,14 +198,14 @@ function onChipKeydown(e, idx) {
   align-items: center;
   gap: 9px;
   padding: 8px 12px;
-  background: #ffffff;
-  border: 1px solid #d6d6d6;
-  border-radius: 3px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
   font-size: 14px;
   text-align: left;
   transition: border-color 120ms ease-out;
 }
-.trigger:hover:not(:disabled) { border-color: #bdbdbd; }
+.trigger:hover:not(:disabled) { border-color: var(--lift); }
 .trigger:disabled { opacity: 0.45; cursor: default; }
 .tval {
   flex: 1;
@@ -230,9 +229,10 @@ function onChipKeydown(e, idx) {
   right: 0;
   top: calc(100% + 5px);
   z-index: 30;
-  background: #ffffff;
-  border-radius: 4px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  background: var(--tile-2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  box-shadow: var(--shadow-pop);
   padding: 5px;
   max-height: 262px;
   overflow-y: auto;
@@ -243,16 +243,16 @@ function onChipKeydown(e, idx) {
   align-items: center;
   gap: 10px;
   padding: 9px 10px;
-  border-radius: 4px;
+  border-radius: 7px;
   font-size: 13.5px;
   line-height: 1.35;
   text-align: left;
   transition: background 100ms ease-out;
 }
-.opt:hover { background: var(--modal-field); }
+.opt:hover { background: var(--lift); }
 .olabel { flex: 1; min-width: 0; }
-.ocheck { flex: none; font-size: 12px; color: #0f7e69; }
-.opt.sel { background: #e6f7f2; font-weight: 500; }
+.ocheck { flex: none; font-size: 12px; color: var(--accent); }
+.opt.sel { background: var(--accent-soft); font-weight: 500; }
 
 .pop-enter-active { transition: opacity 130ms ease-out, transform 130ms cubic-bezier(0.2, 0, 0, 1); }
 .pop-leave-active { transition: opacity 90ms ease-out; }

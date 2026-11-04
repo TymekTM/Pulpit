@@ -98,4 +98,11 @@
     <string name="tile_ready">Gotowy</string>
     <string name="tile_counter_default">Licznik</string>
 
+    <!-- Ekran łączenia: sekcje i kroki pierwszego połączenia -->
+    <string name="connect_section_desktop">Komputer</string>
+    <string name="connect_section_pairing">Parowanie</string>
+    <string name="connect_step_open">Uruchom Pulpit na komputerze - udostępni tablicę w sieci Wi-Fi.</string>
+    <string name="connect_step_pick">Wybierz komputer poniżej albo wpisz kod z Ustawienia - Tablety.</string>
+    <string name="connect_step_confirm">Potwierdź na komputerze, że oba ekrany pokazują ten sam kod.</string>
+
 </resources>

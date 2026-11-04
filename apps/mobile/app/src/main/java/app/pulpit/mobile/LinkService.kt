@@ -111,7 +111,7 @@ class LinkService : Service() {
             NotificationCompat.Builder(this)
         }
         return builder
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setOngoing(true)
