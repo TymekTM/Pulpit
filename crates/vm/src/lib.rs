@@ -164,11 +164,36 @@ struct Symbols {
 // are immutable once resolved.
 unsafe impl Send for Symbols {}
 
-unsafe fn load_symbols(path: &std::ffi::CStr) -> Result<Symbols> {
+/// kernel32 loader entry points. Voicemeeter is Windows-only; elsewhere
+/// the loader reports "no such library" so the integration stays
+/// `Unavailable` instead of failing the link.
+#[allow(non_snake_case)]
+mod sys {
+    use std::ffi::c_void;
+
+    #[cfg(windows)]
     extern "system" {
-        fn LoadLibraryA(name: *const u8) -> *mut c_void;
-        fn GetProcAddress(module: *mut c_void, name: *const u8) -> *mut c_void;
+        pub fn LoadLibraryA(name: *const u8) -> *mut c_void;
+        pub fn GetProcAddress(module: *mut c_void, name: *const u8) -> *mut c_void;
+        pub fn FreeLibrary(module: *mut c_void) -> i32;
     }
+
+    #[cfg(not(windows))]
+    pub unsafe fn LoadLibraryA(_name: *const u8) -> *mut c_void {
+        std::ptr::null_mut()
+    }
+    #[cfg(not(windows))]
+    pub unsafe fn GetProcAddress(_module: *mut c_void, _name: *const u8) -> *mut c_void {
+        std::ptr::null_mut()
+    }
+    #[cfg(not(windows))]
+    pub unsafe fn FreeLibrary(_module: *mut c_void) -> i32 {
+        0
+    }
+}
+
+unsafe fn load_symbols(path: &std::ffi::CStr) -> Result<Symbols> {
+    use sys::{GetProcAddress, LoadLibraryA};
     // SAFETY: path is a NUL-terminated C string
     let module = unsafe { LoadLibraryA(path.as_ptr() as *const u8) };
     if module.is_null() {
@@ -398,9 +423,7 @@ impl Remote {
 
 impl Drop for Remote {
     fn drop(&mut self) {
-        extern "system" {
-            fn FreeLibrary(module: *mut c_void) -> i32;
-        }
+        use sys::FreeLibrary;
         if !self.symbols.module.is_null() {
             // SAFETY: module is a live handle we own
             unsafe { FreeLibrary(self.symbols.module) };

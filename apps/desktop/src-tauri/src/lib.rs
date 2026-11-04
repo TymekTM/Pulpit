@@ -1809,6 +1809,7 @@ fn apply_update(exe: &std::path::Path, downloaded: &std::path::Path) -> Result<(
 /// starts, so a crash mid-swap cannot leave the machine with no exe.
 /// Every path rides in quotes: spaces, `&` and parentheses in an
 /// install path must stay literal.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn relaunch_script(
     exe: &std::path::Path,
     staged: &std::path::Path,
@@ -1832,6 +1833,17 @@ fn relaunch_script(
 /// [`std::process::Child`] so a failed swap can kill it before its
 /// timeout fires; on success the caller must [`std::mem::forget`] the
 /// child - the guard has to outlive this process to relaunch it.
+#[cfg(not(windows))]
+fn spawn_update_guard(
+    _exe: &std::path::Path,
+    _staged: &std::path::Path,
+) -> Result<std::process::Child, String> {
+    // the self-update swap is a cmd.exe script; other platforms update
+    // through their package manager
+    Err("Automatyczna aktualizacja działa tylko w systemie Windows".into())
+}
+
+#[cfg(windows)]
 fn spawn_update_guard(
     exe: &std::path::Path,
     staged: &std::path::Path,

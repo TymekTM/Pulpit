@@ -82,6 +82,8 @@ pub fn get_text() -> Result<String> {
 
 /// Replace the clipboard with `text` (UTF-16, NUL-terminated).
 pub fn set_text(text: &str) -> Result<()> {
+    #[cfg(not(windows))]
+    let _ = text;
     #[cfg(windows)]
     {
         use windows::Win32::Foundation::{GlobalFree, HANDLE, HWND};
