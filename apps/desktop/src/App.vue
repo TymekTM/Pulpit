@@ -13,6 +13,26 @@ import SettingsOverlay from "./components/SettingsOverlay.vue";
 import OperatorAskModal from "./components/OperatorAskModal.vue";
 import ConfirmDialog from "./components/ConfirmDialog.vue";
 import {
+  Ellipsis,
+  Eraser,
+  FileDown,
+  FileUp,
+  Minus,
+  PanelLeft,
+  PanelLeftClose,
+  Pencil,
+  Play,
+  Plus,
+  Redo2,
+  Settings,
+  Trash2,
+  Undo2,
+  Wifi,
+  WifiOff,
+  X,
+} from "lucide-vue-next";
+import { uiIcon } from "./uiIcons";
+import {
   createEditorHistory,
   tileCreateCommand,
   tileEditCommand,
@@ -845,11 +865,12 @@ function boardContextMenu(board, event) {
   ]);
 }
 
-// shell state: zoom, sidebar collapse, rail popovers, board kebab menu
+// shell state: zoom, sidebar collapse, board kebab menu
 const zoom = ref(1);
 const sidebarVisible = ref(true);
-const railPopover = ref(null); // 'status' | 'settings' | null
 const kebabOpen = ref(false);
+// page the settings overlay opens on (null = the last one visited)
+const settingsPage = ref(null);
 
 const editingTile = ref(null); // button being edited
 const createFlow = ref(null); // {x, y, boardId} for the New Button dialog
@@ -909,14 +930,14 @@ async function load() {
   await loadBoards();
 }
 
-// Open (or close) the server-status popover; pairing itself lives in the
-// settings overlay, the popover only hands off to it.
-function toggleStatusPopover() {
-  railPopover.value = railPopover.value === "status" ? null : "status";
+// Settings opens on a given page (the server card goes straight to
+// tablet pairing) or, with null, on the page visited last.
+function openSettings(page) {
+  settingsPage.value = page;
+  settingsOpen.value = true;
 }
 
 async function newBoard() {
-  railPopover.value = null;
   boardModal.value = { mode: "create" };
 }
 
@@ -1365,77 +1386,25 @@ function onKeydown(event) {
 </script>
 
 <template>
-  <div class="app" @contextmenu.prevent>
-    <!-- icon rail -->
-    <nav v-if="!touchMode" class="rail">
-      <button
-        class="rail-logo"
-        :class="{ dim: !sidebarVisible }"
-        :title="t('Toggle board list')"
-        @click="sidebarVisible = !sidebarVisible"
-      >
-        <i class="fas fa-th-large"></i>
-      </button>
-
-      <button
-        class="rail-btn"
-        :class="{ on: touchMode }"
-        :title="t('Touch mode')"
-        @click="toggleTouch"
-        :disabled="!currentBoard"
-      >
-        <i class="fas fa-play"></i>
-      </button>
-
-      <div class="rail-anchor">
-        <button
-          class="rail-btn"
-          :class="{ on: railPopover === 'status' }"
-          :title="t('Server status')"
-          @click="toggleStatusPopover"
-        >
-          <i class="fas fa-wifi"></i>
-          <span v-if="!status.dbOk" class="rail-alert"></span>
-        </button>
-        <Transition name="pop">
-          <div v-if="railPopover === 'status'" class="rail-pop">
-            <div class="pop-row strong">
-              <span :class="['dot', status.dbOk ? 'ok' : 'bad']"></span>
-              {{ status.dbOk ? t("Server running") : t("Database unavailable") }}
-            </div>
-            <div class="pop-row tnum">0.0.0.0:{{ status.port }}</div>
-            <div class="pop-row tnum">{{ t("{count} client(s) connected", { count: status.clients }) }}</div>
-            <template v-if="status.dbOk">
-              <div class="pop-sep"></div>
-              <button
-                class="mini accent"
-                @click="railPopover = null; settingsOpen = true"
-              >
-                <i class="fas fa-cog"></i> {{ t("Settings and tablet pairing") }}
-              </button>
-            </template>
-          </div>
-        </Transition>
+  <div class="app" :class="{ 'is-touch': touchMode }" @contextmenu.prevent>
+    <!-- sidebar: brand, boards, server status -->
+    <aside v-if="!touchMode && sidebarVisible" class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <i></i><i></i><i></i><i></i>
+        </span>
+        <span class="brand-name">Pulpit</span>
+        <span class="brand-ver tnum">{{ status.version || "" }}</span>
       </div>
 
-      <button
-        class="rail-btn"
-        :title="t('Settings')"
-        @click="settingsOpen = true"
-      >
-        <i class="fas fa-cog"></i>
-      </button>
+      <div class="side-head">
+        <span class="side-caption">{{ t("Boards") }}</span>
+        <span class="side-count tnum">{{ boards.length }}</span>
+        <button class="side-add" :title="t('New board')" @click="newBoard" :disabled="!status.dbOk">
+          <Plus :size="16" :stroke-width="2.2" />
+        </button>
+      </div>
 
-      <div class="rail-spacer"></div>
-
-      <button class="rail-add" :title="t('New board')" @click="newBoard" :disabled="!status.dbOk">
-        <i class="fas fa-plus"></i>
-      </button>
-    </nav>
-
-    <!-- board list -->
-    <aside v-if="!touchMode && sidebarVisible" class="sidebar">
-      <div class="side-caption">{{ t("Boards") }}</div>
       <div class="boards" @dragover.prevent="boardDragOver" @drop.prevent="boardDrop">
         <button
           v-for="(b, i) in boards"
@@ -1449,19 +1418,51 @@ function onKeydown(event) {
           @dragstart="boardDragStart(b, $event)"
           @dragend="boardDragEnd"
         >
-          {{ b.name || t("Untitled") }}
+          <span
+            class="board-swatch"
+            :style="{
+              background: b.background || 'var(--canvas)',
+              backgroundImage: b.image ? `url(${b.image})` : undefined,
+            }"
+          ></span>
+          <span class="board-name">{{ b.name || t("Untitled") }}</span>
+          <span class="board-meta tnum">{{ b.width }}×{{ b.height }}</span>
         </button>
         <div v-if="!boards.length && status.dbOk" class="side-empty">
-          {{ t("No boards yet. Use") }} <i class="fas fa-plus"></i> {{ t("to create the first one.") }}
+          {{ t("No boards yet. Use") }} <Plus :size="12" /> {{ t("to create the first one.") }}
         </div>
+      </div>
+
+      <div class="side-foot">
+        <button
+          class="server-card"
+          :class="{ bad: !status.dbOk }"
+          :title="t('Settings and tablet pairing')"
+          @click="openSettings('tablets')"
+        >
+          <span class="server-icon">
+            <component :is="status.dbOk ? Wifi : WifiOff" :size="16" />
+            <span v-if="!status.dbOk" class="rail-alert"></span>
+          </span>
+          <span class="server-text">
+            <span class="server-line">
+              <span :class="['dot', status.dbOk ? 'ok' : 'bad']"></span>
+              {{ status.dbOk ? t("Server running") : t("Database unavailable") }}
+            </span>
+            <span class="server-sub tnum">
+              {{ t("Port {port}", { port: status.port }) }} · {{ t("Clients: {count}", { count: status.clients }) }}
+            </span>
+          </span>
+        </button>
+        <button class="side-settings" :title="t('Settings')" @click="openSettings(null)">
+          <Settings :size="17" />
+          <span>{{ t("Settings") }}</span>
+        </button>
       </div>
     </aside>
 
-    <!-- board canvas -->
-    <main
-      class="main"
-      :style="{ '--board-bg': boardBg }"
-    >
+    <!-- workspace: top bar + board canvas -->
+    <main class="main" :style="{ '--board-bg': boardBg }">
       <div v-if="!status.dbOk" class="banner">
         {{ t("Database is locked or missing. Close the original Deckboard app and restart the editor.") }}
       </div>
@@ -1471,130 +1472,150 @@ function onKeydown(event) {
         <div v-if="flash" class="flash" role="status">{{ flash }}</div>
       </Transition>
 
-      <template v-if="status.dbOk">
-        <header v-if="!touchMode" class="board-head" @contextmenu.prevent="currentBoard && boardContextMenu(currentBoard, $event)">
+      <header
+        v-if="!touchMode"
+        class="topbar"
+        @contextmenu.prevent="currentBoard && boardContextMenu(currentBoard, $event)"
+      >
+        <button
+          class="icon-btn"
+          :class="{ on: sidebarVisible }"
+          :title="t('Toggle board list')"
+          @click="sidebarVisible = !sidebarVisible"
+        >
+          <component :is="sidebarVisible ? PanelLeftClose : PanelLeft" :size="18" />
+        </button>
+
+        <div class="title-block">
           <span class="board-title">{{ currentBoard?.name || "" }}</span>
-          <div class="head-controls">
-            <button
-              class="tool-btn"
-              :class="{ disabled: !canUndo }"
-              :disabled="!canUndo"
-              :title="t('Undo (Ctrl+Z)')"
-              @click="doUndo"
-            >
-              <i class="fas fa-undo"></i>
+          <span v-if="currentBoard" class="board-chip tnum">
+            {{ currentBoard.width }}×{{ currentBoard.height }}
+            <span class="chip-sep"></span>
+            {{ t("{count} tile | {count} tiles", { count: currentBoard.buttons.length }, currentBoard.buttons.length) }}
+          </span>
+        </div>
+
+        <template v-if="status.dbOk">
+          <div class="seg">
+            <button class="icon-btn" :disabled="!canUndo" :title="t('Undo (Ctrl+Z)')" @click="doUndo">
+              <Undo2 :size="17" />
             </button>
-            <button
-              class="tool-btn"
-              :class="{ disabled: !canRedo }"
-              :disabled="!canRedo"
-              :title="t('Redo (Ctrl+Y / Ctrl+Shift+Z)')"
-              @click="doRedo"
-            >
-              <i class="fas fa-redo"></i>
+            <button class="icon-btn" :disabled="!canRedo" :title="t('Redo (Ctrl+Y / Ctrl+Shift+Z)')" @click="doRedo">
+              <Redo2 :size="17" />
             </button>
           </div>
+
+          <div class="seg zoom">
+            <button class="icon-btn" :title="t('Zoom out')" @click="bumpZoom(-0.1)">
+              <Minus :size="16" />
+            </button>
+            <button class="zoom-value tnum" :title="t('Reset zoom')" @click="zoom = 1">
+              {{ Math.round(zoom * 100) }}%
+            </button>
+            <button class="icon-btn" :title="t('Zoom in')" @click="bumpZoom(0.1)">
+              <Plus :size="16" />
+            </button>
+          </div>
+
+          <button
+            class="touch-btn rail-btn"
+            :title="t('Touch mode')"
+            :disabled="!currentBoard"
+            @click="toggleTouch"
+          >
+            <Play :size="15" fill="currentColor" />
+            <span>{{ t("Touch mode") }}</span>
+          </button>
+
           <div class="kebab-anchor">
-            <button class="kebab" :title="t('Board menu')" @click="kebabOpen = !kebabOpen">
-              <i class="fas fa-ellipsis-v"></i>
+            <button class="icon-btn kebab" :class="{ on: kebabOpen }" :title="t('Board menu')" @click="kebabOpen = !kebabOpen">
+              <Ellipsis :size="18" />
             </button>
             <Transition name="pop">
               <div v-if="kebabOpen" class="kebab-menu">
                 <button class="menu-item" @click="editBoard" :disabled="!currentBoard">
-                  <i class="fas fa-pen"></i> {{ t("Edit board") }}
+                  <Pencil :size="15" /> {{ t("Edit board") }}
                 </button>
                 <button class="menu-item" @click="doExport" :disabled="!boards.length">
-                  <i class="fas fa-file-export"></i> {{ t("Export boards") }}
+                  <FileUp :size="15" /> {{ t("Export boards") }}
                 </button>
                 <button class="menu-item" @click="doImport" :disabled="!status.dbOk">
-                  <i class="fas fa-file-import"></i> {{ t("Import boards") }}
+                  <FileDown :size="15" /> {{ t("Import boards") }}
                 </button>
+                <div class="menu-sep"></div>
                 <button class="menu-item" @click="clearCurrentBoard" :disabled="!currentBoard">
-                  <i class="fas fa-eraser"></i> {{ t("Clear tiles") }}
+                  <Eraser :size="15" /> {{ t("Clear tiles") }}
                 </button>
                 <button class="menu-item danger" @click="deleteCurrentBoard" :disabled="!currentBoard">
-                  <i class="fas fa-trash"></i> {{ t("Delete board") }}
+                  <Trash2 :size="15" /> {{ t("Delete board") }}
                 </button>
-                <div class="menu-note">
-                  {{ t("double-click a tile to edit - drag to move - click an empty cell to add") }}
-                </div>
               </div>
             </Transition>
           </div>
-        </header>
+        </template>
+      </header>
 
-        <div class="canvas">
-          <GridEditor
-            v-if="currentBoard && !touchMode"
-            :board="currentBoard"
-            :zoom="zoom"
-            :type-meta="typeMeta"
-            :custom-values="customValues"
-            :board-names="boardNames"
-            :selected-ids="selectedTileIds"
-            @tile-open="editingTile = $event"
-            @tile-moved="tileMoved"
-            @tile-add="createFlow = { ...$event, boardId: currentId }"
-            @ctx-tile="tileContextMenu"
-            @ctx-empty="emptyContextMenu"
-            @select-tile="onSelectTile"
-            @select-tiles="onSelectTiles"
-            @clear-selection="onClearSelection"
-            @tiles-bulk-moved="onTilesBulkMoved"
-            @move-refused="onMoveRefused"
-          />
-          <GridEditor
-            v-if="touchBoardId && touchMode"
-            :board="boards.find((b) => b.id === touchBoardId) || currentBoard"
-            touch
-            :type-meta="typeMeta"
-            :custom-values="customValues"
-            :board-names="boardNames"
-            @tile-exec="runTileNow($event.id)"
-            @tile-gesture="onTileGesture"
-            @tile-slider="tileSlider"
-            @tile-open="editingTile = $event"
-          />
-          <div
-            v-if="currentBoard && !touchMode && !currentBoard.buttons.length"
-            class="canvas-hint"
-          >
-            <div class="hint-title">{{ t("Empty board") }}</div>
-            <div class="hint-line">{{ t("Click an empty cell to add the first tile") }}</div>
-            <div class="hint-sub">
-              {{ t("double-click — edit · drag — move · Ctrl+Z — undo") }}
-            </div>
-          </div>
-
-          <template v-if="!touchMode">
-            <div class="canvas-overlay zoom">
-              <button class="zoom-btn" :title="t('Zoom out')" @click="bumpZoom(-0.1)">
-                <i class="fas fa-search-minus"></i>
-              </button>
-              <span class="zoom-value tnum">{{ Math.round(zoom * 100) }}%</span>
-              <button class="zoom-btn" :title="t('Zoom in')" @click="bumpZoom(0.1)">
-                <i class="fas fa-search-plus"></i>
-              </button>
-            </div>
-            <div class="canvas-overlay version tnum">
-              <i class="fas fa-puzzle-piece"></i>
-              {{ t("Version {version}", { version: status.version || "0.1.1" }) }}
-            </div>
-          </template>
-
-          <button v-else class="touch-exit" :title="t('Exit touch mode')" @click="toggleTouch">
-            <i class="fas fa-times"></i>
-          </button>
+      <div v-if="status.dbOk" class="canvas">
+        <GridEditor
+          v-if="currentBoard && !touchMode"
+          :board="currentBoard"
+          :zoom="zoom"
+          :type-meta="typeMeta"
+          :custom-values="customValues"
+          :board-names="boardNames"
+          :selected-ids="selectedTileIds"
+          @tile-open="editingTile = $event"
+          @tile-moved="tileMoved"
+          @tile-add="createFlow = { ...$event, boardId: currentId }"
+          @ctx-tile="tileContextMenu"
+          @ctx-empty="emptyContextMenu"
+          @select-tile="onSelectTile"
+          @select-tiles="onSelectTiles"
+          @clear-selection="onClearSelection"
+          @tiles-bulk-moved="onTilesBulkMoved"
+          @move-refused="onMoveRefused"
+        />
+        <GridEditor
+          v-if="touchBoardId && touchMode"
+          :board="boards.find((b) => b.id === touchBoardId) || currentBoard"
+          touch
+          :type-meta="typeMeta"
+          :custom-values="customValues"
+          :board-names="boardNames"
+          @tile-exec="runTileNow($event.id)"
+          @tile-gesture="onTileGesture"
+          @tile-slider="tileSlider"
+          @tile-open="editingTile = $event"
+        />
+        <div
+          v-if="currentBoard && !touchMode && !currentBoard.buttons.length"
+          class="canvas-hint"
+        >
+          <div class="hint-title">{{ t("Empty board") }}</div>
+          <div class="hint-line">{{ t("Click an empty cell to add the first tile") }}</div>
         </div>
-      </template>
+
+        <template v-if="!touchMode">
+          <div class="canvas-overlay hints">
+            <span>{{ t("Double-click to edit") }}</span>
+            <span class="hint-dot"></span>
+            <span>{{ t("Drag to move") }}</span>
+            <span class="hint-dot"></span>
+            <span><kbd>Ctrl</kbd><kbd>Z</kbd> {{ t("Undo") }}</span>
+          </div>
+          <div class="canvas-overlay version tnum">
+            {{ t("Version {version}", { version: status.version || "0.1.1" }) }}
+          </div>
+        </template>
+
+        <button v-else class="touch-exit" :title="t('Exit touch mode')" @click="toggleTouch">
+          <X :size="18" />
+        </button>
+      </div>
     </main>
 
-    <!-- backdrop that closes rail popovers and the kebab menu -->
-    <div
-      v-if="railPopover || kebabOpen"
-      class="click-away"
-      @click="railPopover = null; kebabOpen = false"
-    ></div>
+    <!-- backdrop that closes the board menu -->
+    <div v-if="kebabOpen" class="click-away" @click="kebabOpen = false"></div>
 
     <Transition name="modal">
       <EditTileModal
@@ -1639,6 +1660,7 @@ function onKeydown(event) {
     <Transition name="modal">
       <SettingsOverlay
         v-if="settingsOpen"
+        :initial-page="settingsPage"
         :status="status"
         :custom-values="customValues"
         @close="settingsOpen = false"
@@ -1665,7 +1687,7 @@ function onKeydown(event) {
           :class="{ danger: item.danger }"
           @click="runContextItem(item)"
         >
-          <i v-if="item.icon" class="fas" :class="'fa-' + item.icon"></i>{{ item.label }}
+          <component :is="uiIcon(item.icon)" v-if="item.icon" :size="15" />{{ item.label }}
         </button>
       </div>
     </Transition>
@@ -1737,149 +1759,148 @@ function onKeydown(event) {
 .app {
   display: flex;
   height: 100%;
-  background: var(--canvas);
+  background: var(--bg);
+  color: var(--ink);
 }
-
-/* ---- rail ---- */
-.rail {
-  width: 60px;
-  background: var(--rail);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 11px 0;
-  gap: 6px;
-}
-.rail-logo {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  background: #fff;
-  color: var(--accent-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  margin-bottom: 8px;
-  flex: none;
-  transition: opacity 120ms ease-out, transform 120ms ease-out;
-}
-.rail-logo:hover { opacity: 0.85; }
-.rail-logo:active { transform: scale(0.96); }
-.rail-logo.dim { opacity: 0.55; }
-.rail-btn {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  color: var(--rail-icon);
-  font-size: 17px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 120ms ease-out, color 120ms ease-out;
-}
-.rail-btn:hover { background: var(--rail-hover); color: #e8edf0; }
-.rail-btn:active { transform: scale(0.96); }
-.rail-btn.on { color: var(--accent); }
-.rail-alert {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--danger);
-}
-.rail-anchor { position: relative; }
-.rail-spacer { flex: 1; }
-.rail-add {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  background: #fff;
-  color: #262e36;
-  font-size: 15px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-  transition: background 120ms ease-out, transform 120ms ease-out;
-}
-.rail-add:hover { background: #e9edef; }
-.rail-add:active { transform: scale(0.96); }
-
-.rail-pop {
-  position: absolute;
-  left: 52px;
-  top: 0;
-  width: 264px;
-  background: var(--modal);
-  color: var(--modal-text);
-  border-radius: 6px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
-  padding: 12px 14px;
-  z-index: 50;
-  cursor: default;
-}
-.pop-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13.5px; }
-.pop-row.strong { font-weight: 500; }
-.pop-sep { border-top: 1px solid var(--modal-line); margin: 8px 0; }
-.mini {
-  font-size: 12.5px;
-  padding: 5px 10px;
-  border-radius: 4px;
-  background: var(--modal-field);
-  transition: background 120ms ease-out;
-}
-.mini:hover { background: #e4e4e4; }
-.mini.accent { color: var(--accent-2); font-weight: 500; }
-.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-.dot.ok { background: var(--accent); }
-.dot.bad { background: var(--danger); }
 
 /* ---- sidebar ---- */
 .sidebar {
-  width: 200px;
-  background: var(--sidebar);
-  color: var(--sidebar-text);
+  width: 248px;
+  flex: none;
+  background: var(--ground);
+  border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   z-index: 20;
 }
-.side-caption {
-  font-size: 14px;
-  color: var(--sidebar-muted);
-  padding: 18px 20px 6px;
+.brand {
+  height: 60px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
 }
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  flex: none;
+}
+.brand-mark i {
+  border-radius: 3px;
+  background: var(--accent);
+}
+.brand-mark i:nth-child(2) { opacity: 0.55; }
+.brand-mark i:nth-child(3) { opacity: 0.3; }
+.brand-mark i:nth-child(4) { opacity: 0.8; }
+.brand-name {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+.brand-ver {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-3);
+  background: var(--tile);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.brand-ver:empty { display: none; }
+
+.side-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 12px 6px 18px;
+}
+.side-caption {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.side-count {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.side-add {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+.side-add:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); }
+
 .boards {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  padding: 2px 8px 12px;
+  gap: 2px;
+  padding: 2px 10px 12px;
 }
 .board-entry {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   text-align: left;
-  font-size: 14px;
-  color: inherit;
-  padding: 9px 12px;
-  border-radius: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  padding: 8px 10px;
+  border-radius: 9px;
   cursor: grab;
   transition: background 120ms ease-out, color 120ms ease-out,
     transform 180ms cubic-bezier(0.2, 0.7, 0.3, 1), opacity 180ms ease;
 }
-.board-entry:hover { background: rgba(0, 0, 0, 0.07); }
+.board-entry:hover { background: var(--tile); color: var(--ink); }
 .board-entry:active { cursor: grabbing; }
 .board-entry.active {
+  background: var(--tile-2);
+  color: var(--ink);
+  font-weight: 550;
+}
+.board-entry.active::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
   background: var(--accent);
-  color: #fff;
-  font-weight: 500;
+}
+.board-swatch {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 6px;
+  background-size: cover;
+  background-position: center;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.board-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board-meta {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-3);
 }
 /* the dragged entry lifts out of the list; the gap the others open marks
    the drop position */
@@ -1889,29 +1910,103 @@ function onKeydown(event) {
 }
 .side-empty {
   font-size: 12.5px;
-  color: var(--sidebar-muted);
+  color: var(--ink-3);
   padding: 10px 12px;
   line-height: 1.5;
 }
-.side-empty i { font-size: 11px; }
+.side-empty svg { vertical-align: -2px; }
 
-/* ---- main / canvas ---- */
+.side-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+}
+.server-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  text-align: left;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--tile);
+  transition: background 120ms ease-out;
+}
+.server-card:hover { background: var(--tile-2); }
+.server-icon {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.server-card.bad .server-icon { background: var(--danger-soft); color: var(--danger-ink); }
+.rail-alert {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 2px solid var(--tile);
+}
+.server-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.server-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--ink);
+}
+.server-sub {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.dot.ok { background: var(--accent); box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.18); }
+.dot.bad { background: var(--danger); }
+.side-settings {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+.side-settings:hover { background: var(--tile); color: var(--ink); }
+
+/* ---- main / top bar ---- */
 .main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--board-bg);
+  background: var(--bg);
   position: relative;
 }
+.is-touch .main { background: var(--board-bg); }
 .banner {
   position: absolute;
-  top: 14px;
+  top: 72px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--danger);
   color: #fff;
-  border-radius: 6px;
+  border-radius: 10px;
   padding: 10px 16px;
   font-size: 13px;
   line-height: 1.4;
@@ -1920,13 +2015,13 @@ function onKeydown(event) {
 }
 .flash {
   position: absolute;
-  bottom: 16px;
+  bottom: 56px;
   left: 50%;
   transform: translateX(-50%);
   max-width: min(640px, 90%);
   background: var(--danger);
   color: #fff;
-  border-radius: 6px;
+  border-radius: 10px;
   padding: 10px 16px;
   font-size: 13px;
   line-height: 1.4;
@@ -1935,177 +2030,214 @@ function onKeydown(event) {
   pointer-events: none;
   overflow-wrap: anywhere;
 }
-.board-head {
+.topbar {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 10px 0 22px;
-  height: 56px;
+  gap: 10px;
+  padding: 0 14px 0 12px;
+  height: 60px;
   flex: none;
-  background: color-mix(in srgb, var(--board-bg) 90%, white);
+  background: var(--ground);
+  border-bottom: 1px solid var(--line);
+}
+.title-block {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-left: 4px;
 }
 .board-title {
-  font-size: 20px;
-  font-weight: 500;
-  color: rgba(0, 0, 0, 0.62);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+  color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
 }
-.head-controls {
-  display: flex;
+.board-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+  flex: none;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--tile);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
 }
-.tool-btn {
+.chip-sep { width: 3px; height: 3px; border-radius: 50%; background: var(--ink-3); }
+
+.icon-btn {
   width: 34px;
   height: 34px;
-  border-radius: 6px;
-  background: transparent;
-  color: rgba(0, 0, 0, 0.65);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background 120ms ease-out, color 120ms ease-out, opacity 120ms ease-out;
-}
-.tool-btn:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.08);
-  color: rgba(0, 0, 0, 0.9);
-}
-.tool-btn:disabled,
-.tool-btn.disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-.mini-modal { width: min(340px, 90vw); }
-.color-picker-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-.color-picker-input { width: 44px; height: 38px; padding: 2px; border-radius: 4px; border: 1px solid var(--modal-line); cursor: pointer; }
-.board-target-select { width: 100%; margin-top: 6px; padding: 8px 12px; border-radius: 4px; border: 1px solid var(--modal-line); font-size: 14px; background: #fff; }
-.kebab-anchor { position: relative; }
-.kebab {
-  width: 44px;
-  height: 44px;
   border-radius: 8px;
-  font-size: 16px;
-  color: rgba(0, 0, 0, 0.55);
+  color: var(--ink-2);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 120ms ease-out;
+  flex: none;
+  transition: background 120ms ease-out, color 120ms ease-out;
 }
-.kebab:hover { background: rgba(0, 0, 0, 0.1); }
+.icon-btn:hover:not(:disabled) { background: var(--tile-2); color: var(--ink); }
+.icon-btn:active:not(:disabled) { transform: scale(0.96); }
+.icon-btn.on { color: var(--ink); }
+.icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.seg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--tile);
+}
+.seg .icon-btn { width: 32px; height: 32px; }
+.zoom-value {
+  min-width: 48px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  text-align: center;
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+.zoom-value:hover { background: var(--tile-2); color: var(--ink); }
+.touch-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px 0 14px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 120ms ease-out, transform 120ms ease-out;
+}
+.touch-btn:hover:not(:disabled) { background: #22cfac; }
+.touch-btn:active:not(:disabled) { transform: scale(0.97); }
+
+.mini-modal { width: min(360px, 90vw); }
+.color-picker-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.color-picker-input { width: 44px; height: 38px; padding: 3px; cursor: pointer; flex: none; }
+.board-target-select { width: 100%; margin-top: 6px; font-size: 14px; }
+
+.kebab-anchor { position: relative; }
+.kebab-menu,
+.ctx-menu {
+  background: var(--tile);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
 .kebab-menu {
   position: absolute;
   right: 0;
-  top: 48px;
-  width: 200px;
-  background: var(--modal);
-  border-radius: 6px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
-  padding: 6px;
+  top: 44px;
+  width: 220px;
   z-index: 50;
-  display: flex;
-  flex-direction: column;
 }
 .menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
   text-align: left;
   font-size: 13.5px;
-  color: var(--modal-text);
-  padding: 9px 12px;
-  border-radius: 4px;
+  color: var(--ink);
+  padding: 8px 10px;
+  border-radius: 8px;
   transition: background 120ms ease-out;
 }
-.menu-item i { width: 16px; text-align: center; color: var(--modal-muted); }
-.menu-item:hover { background: rgba(0, 0, 0, 0.06); }
-.menu-item.danger { color: var(--danger); }
-.menu-item.danger i { color: var(--danger); }
-.menu-note {
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: var(--modal-muted);
-  padding: 8px 12px 6px;
-  border-top: 1px solid var(--modal-line);
-  margin-top: 4px;
-}
+.menu-item svg { flex: none; color: var(--ink-2); }
+.menu-item:hover:not(:disabled) { background: var(--tile-2); }
+.menu-item.danger { color: var(--danger-ink); }
+.menu-item.danger svg { color: var(--danger-ink); }
+.menu-item.danger:hover:not(:disabled) { background: var(--danger-soft); }
+.menu-sep { height: 1px; background: var(--line); margin: 5px 4px; }
 
+/* ---- canvas: the board sits as a slab on the dark ground ---- */
 .canvas {
   flex: 1;
   position: relative;
   min-height: 0;
 }
+.canvas :deep(.board-scroll) { padding: 32px 32px 64px; }
+.app:not(.is-touch) .canvas :deep(.board-grid) {
+  background-color: var(--board-bg);
+  border-radius: 16px;
+  padding: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 24px 60px rgba(0, 0, 0, 0.45);
+  outline: 10px solid var(--board-bg);
+}
+.is-touch .canvas :deep(.board-scroll) { padding: 20px; }
 .canvas-hint {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(255, 255, 255, 0.95);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   pointer-events: none;
   white-space: nowrap;
 }
 .hint-title {
-  font-size: 22px;
-  font-weight: 500;
-  margin-bottom: 8px;
+  font-size: 20px;
+  font-weight: 650;
+  margin-bottom: 6px;
 }
-.hint-line { font-size: 15px; }
-.hint-sub {
-  margin-top: 10px;
-  font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.72);
-}
+.hint-line { font-size: 14px; color: rgba(255, 255, 255, 0.8); }
 .canvas-overlay {
   position: absolute;
-  bottom: 14px;
+  bottom: 16px;
   display: flex;
   align-items: center;
-  gap: 4px;
-  background: rgba(0, 0, 0, 0.42);
-  color: rgba(255, 255, 255, 0.92);
-  border-radius: 8px;
-  padding: 4px 10px;
-  font-size: 13px;
+  gap: 10px;
+  color: var(--ink-3);
+  font-size: 12px;
   z-index: 10;
+  pointer-events: none;
 }
-.canvas-overlay.zoom { left: 14px; }
-.canvas-overlay.version { right: 14px; gap: 8px; }
-.zoom-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
-  color: inherit;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 120ms ease-out;
+.canvas-overlay.hints { left: 24px; }
+.canvas-overlay.version { right: 24px; }
+.hint-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--ink-3); opacity: 0.6; }
+kbd {
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--tile);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 0 5px;
+  margin-right: 2px;
 }
-.zoom-btn:hover { background: rgba(255, 255, 255, 0.15); }
-.zoom-value { min-width: 42px; text-align: center; }
 .touch-exit {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 14px;
+  right: 14px;
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(10, 14, 17, 0.55);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   color: #fff;
-  font-size: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 15;
   transition: background 120ms ease-out, transform 120ms ease-out;
 }
-.touch-exit:hover { background: rgba(0, 0, 0, 0.6); }
+.touch-exit:hover { background: rgba(10, 14, 17, 0.75); }
 .touch-exit:active { transform: scale(0.96); }
 
 .click-away {
@@ -2122,14 +2254,8 @@ function onKeydown(event) {
 }
 .ctx-menu {
   position: fixed;
-  min-width: 200px;
-  background: var(--modal);
-  border-radius: 6px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
-  padding: 6px;
+  min-width: 210px;
   z-index: 61;
-  display: flex;
-  flex-direction: column;
 }
 
 /* popover transitions */

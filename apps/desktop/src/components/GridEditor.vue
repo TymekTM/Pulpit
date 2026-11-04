@@ -496,11 +496,34 @@ function onGridClick(event) {
 .tile-slot:has(> .empty-cell) { cursor: pointer; }
 .touch .tile-slot { cursor: default; }
 .empty-cell {
+  position: relative;
   width: 100%;
   height: 100%;
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.09);
-  transition: background 120ms ease-out;
+  background: rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  transition: background 120ms ease-out, box-shadow 120ms ease-out;
 }
-.tile-slot:hover > .empty-cell { background: rgba(0, 0, 0, 0.16); }
+/* hover reveals the add affordance: a plus drawn in CSS, no icon font */
+.empty-cell::before,
+.empty-cell::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.85);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+.empty-cell::after { transform: translate(-50%, -50%) rotate(90deg); }
+.tile-slot:hover > .empty-cell {
+  background: rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.35);
+}
+.tile-slot:hover > .empty-cell::before,
+.tile-slot:hover > .empty-cell::after { opacity: 1; }
 </style>

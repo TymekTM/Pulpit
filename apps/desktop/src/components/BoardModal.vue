@@ -18,6 +18,10 @@ const form = reactive({
   background: props.board?.background ?? "#437072",
 });
 
+// preview stays readable for huge boards: the miniature caps at 16x10
+const previewW = computed(() => Math.min(16, Math.max(1, boardDim(form.width, 6))));
+const previewH = computed(() => Math.min(10, Math.max(1, boardDim(form.height, 4))));
+
 // Overlay click only closes when nothing was edited (012 A9); the same
 // ask()-confirmation the board context menu uses guards Clear/Delete.
 const initialSnapshot = JSON.stringify({ ...form });
@@ -109,10 +113,23 @@ async function deleteBoard() {
 <template>
   <div class="overlay" @click.self="overlayClose">
     <div class="modal">
-      <div class="modal-head" :style="{ '--canvas-head': form.background }">
+      <div class="modal-head">
         {{ mode === "create" ? t("New board") : t("Edit board") }}
       </div>
       <div class="modal-body">
+        <!-- live miniature of the grid the form describes -->
+        <div class="mini-board" :style="{ background: form.background }">
+          <div
+            class="mini-grid"
+            :style="{
+              gridTemplateColumns: `repeat(${previewW}, 1fr)`,
+              aspectRatio: `${previewW * 1.15} / ${previewH}`,
+              width: `min(100%, ${Math.round((130 * previewW * 1.15) / previewH)}px)`,
+            }"
+          >
+            <span v-for="n in previewW * previewH" :key="n"></span>
+          </div>
+        </div>
         <label class="field">
           {{ t("Name") }}
           <input v-model="form.name" :placeholder="t('Board name')" @keyup.enter="save" />
@@ -146,7 +163,23 @@ async function deleteBoard() {
 </template>
 
 <style scoped>
-.modal-head { background: color-mix(in srgb, var(--canvas-head) 82%, black); color: #f4fbfa; }
+.mini-board {
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: center;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition: background 160ms ease-out;
+}
+.mini-grid {
+  display: grid;
+  gap: 4px;
+}
+.mini-grid span {
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.16);
+}
 .row { display: flex; gap: 10px; }
 .row > * { flex: 1; }
 .color-input { height: 38px; padding: 3px; cursor: pointer; }

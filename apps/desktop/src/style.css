@@ -1,33 +1,54 @@
-/* Pulpit editor theme, matched to the original app: dark charcoal rail,
-   light sidebar, board-colored canvas, teal accent. */
+/* Pulpit editor theme: one dark world shared with Settings (DESIGN.md).
+   Chrome is Inter; tile faces keep Roboto so a tile reads the same on the
+   desktop and on the Android client, which renders with system Roboto. */
+@import "@fontsource-variable/inter";
 @import "@fontsource/roboto/400.css";
 @import "@fontsource/roboto/500.css";
 @import "@fontsource/roboto/700.css";
 
 :root {
-  /* shell */
-  --rail: #262e36;
-  --rail-hover: #313a44;
-  --rail-icon: #aab3ba;
-  --sidebar: #ececec;
-  --sidebar-text: #3e454d;
-  --sidebar-muted: #8a8f94;
+  /* surfaces, darkest to lightest */
+  --bg: #12171b;          /* canvas behind the board slab */
+  --ground: #171c21;      /* sidebar, top bar, settings ground */
+  --tile: #222a31;        /* cards, menus, modals */
+  --tile-2: #2c353e;      /* raised: hover, chips, secondary buttons */
+  --lift: #3a4753;        /* pressed / strong hover */
+  --line: #252f38;        /* hairlines */
+  --well: #13181c;        /* inputs */
 
-  /* board canvas fallback + accent */
-  --canvas: #437072;
+  /* ink */
+  --ink: #ecf0f1;
+  --ink-2: #a3b0b8;
+  --ink-3: #7d8a94;
+
+  /* accent + status */
   --accent: #1abc9c;
   --accent-2: #16a085;
+  --accent-ink: #0b2a23;
+  --accent-soft: rgba(26, 188, 156, 0.14);
   --danger: #e74c3c;
+  --danger-ink: #f19488;
+  --danger-soft: rgba(231, 76, 60, 0.14);
 
-  /* light modal system */
-  --modal: #ffffff;
-  --modal-text: #212121;
-  --modal-muted: #757575;
-  --modal-line: #e6e6e6;
-  --modal-field: #f4f4f4;
+  /* legacy names kept for components that predate the dark world */
+  --rail: var(--ground);
+  --canvas: #437072;      /* board color fallback */
+  --modal: var(--tile);
+  --modal-text: var(--ink);
+  --modal-muted: var(--ink-2);
+  --modal-line: var(--line);
+  --modal-field: var(--well);
+  --text: var(--ink);
 
-  /* dark-surface controls (canvas overlays, touch UI) */
-  --text: #ecf0f1;
+  --ui-font: "Inter Variable", "Inter", "Segoe UI", system-ui, sans-serif;
+  --tile-font: "Roboto", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+
+  --r-control: 8px;
+  --r-card: 12px;
+  --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.35);
+
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -38,9 +59,11 @@ html, body, #app {
 }
 
 body {
-  font-family: "Roboto", "Segoe UI", system-ui, sans-serif;
-  background: var(--rail);
-  color: var(--modal-text);
+  font-family: var(--ui-font);
+  font-size: 14px;
+  font-feature-settings: "cv11", "ss01";
+  background: var(--bg);
+  color: var(--ink);
   overflow: hidden;
   user-select: none;
   -webkit-font-smoothing: antialiased;
@@ -52,12 +75,13 @@ body {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(128, 136, 144, 0.45);
+  background: rgba(128, 136, 144, 0.35);
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
-::-webkit-scrollbar-thumb:hover { background-color: rgba(128, 136, 144, 0.7); }
+::-webkit-scrollbar-thumb:hover { background-color: rgba(128, 136, 144, 0.6); }
+::-webkit-scrollbar-corner { background: transparent; }
 
 :focus-visible {
   outline: 2px solid var(--accent);
@@ -72,39 +96,45 @@ button {
   padding: 0;
   cursor: pointer;
 }
-button:disabled { opacity: 0.45; cursor: default; }
+button:disabled { opacity: 0.4; cursor: default; }
 
 input, select, textarea {
   font: inherit;
-  color: var(--modal-text);
-  background: #ffffff;
-  border: 1px solid #d6d6d6;
-  border-radius: 3px;
+  color: var(--ink);
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
   padding: 8px 10px;
   width: 100%;
-  transition: border-color 120ms ease-out, background 120ms ease-out;
+  transition: border-color 120ms ease-out, background 120ms ease-out, box-shadow 120ms ease-out;
 }
-input:hover, select:hover, textarea:hover { border-color: #bdbdbd; }
+input:hover, select:hover, textarea:hover { border-color: var(--lift); }
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.18);
 }
-input::placeholder, textarea::placeholder { color: #9e9e9e; }
+input::placeholder, textarea::placeholder { color: var(--ink-3); }
+option { background: var(--tile); color: var(--ink); }
 
 /* text fields accept selection even though the shell is selection-free */
 input, textarea { user-select: text; }
-input[type="checkbox"], input[type="color"], select {
+input[type="checkbox"], input[type="radio"], input[type="color"], select {
   accent-color: var(--accent);
   cursor: pointer;
 }
+input[type="checkbox"], input[type="radio"] { width: auto; }
+input[type="color"] { padding: 3px; background: var(--well); }
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 5px; }
 
-/* ---- light modal system (original "New Button" dialog look) ---- */
+/* ---- modal system: dark sheet, quiet header, pill actions ---- */
 
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(6, 9, 11, 0.62);
+  backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -112,69 +142,73 @@ input[type="checkbox"], input[type="color"], select {
 }
 
 .modal {
-  background: var(--modal);
-  color: var(--modal-text);
-  border-radius: 4px;
+  background: var(--tile);
+  color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
   width: min(460px, 92vw);
   max-height: 88vh;
   overflow: auto;
-  box-shadow: 0 10px 44px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-pop);
   display: flex;
   flex-direction: column;
 }
 
-/* teal header strip like the original dialog */
 .modal-head {
-  background: color-mix(in srgb, var(--canvas) 92%, black);
-  color: #f4fbfa;
-  font-size: 21px;
-  font-weight: 400;
-  padding: 15px 24px;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  padding: 18px 22px 6px;
 }
 
-.modal-body { padding: 18px 24px 6px; }
+.modal-body { padding: 14px 22px 4px; }
 
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 4px;
-  padding: 14px 16px 16px;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px 18px;
 }
 
-/* flat uppercase text buttons, like the original CANCEL / ADD */
+/* actions: secondary = raised neutral, accent = filled teal */
 .btn-text {
   font-size: 13.5px;
   font-weight: 500;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: var(--modal-muted);
-  padding: 10px 14px;
-  border-radius: 4px;
-  transition: background 120ms ease-out, color 120ms ease-out;
+  color: var(--ink);
+  background: var(--tile-2);
+  padding: 8px 16px;
+  border-radius: var(--r-control);
+  transition: background 120ms ease-out, color 120ms ease-out, transform 120ms ease-out;
 }
-.btn-text:hover { background: rgba(0, 0, 0, 0.06); }
-.btn-text.accent { color: var(--accent-2); }
-.btn-text.accent:hover { background: rgba(26, 188, 156, 0.12); }
-.btn-text.danger { color: var(--danger); }
-.btn-text.danger:hover { background: rgba(231, 76, 60, 0.1); }
+.btn-text:hover { background: var(--lift); }
+.btn-text:active { transform: scale(0.98); }
+.btn-text.accent { color: var(--accent-ink); background: var(--accent); font-weight: 600; }
+.btn-text.accent:hover { background: #22cfac; }
+.btn-text.danger { color: var(--danger-ink); background: var(--danger-soft); }
+.btn-text.danger:hover { background: rgba(231, 76, 60, 0.24); }
 .btn-text.left { margin-right: auto; }
 
 label.field {
   display: block;
   margin-bottom: 14px;
-  font-size: 13.5px;
-  color: var(--modal-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-2);
 }
 
 /* select fields render via SelectField (chips/popover) outside a <label> */
 .sel-field {
-  font-size: 13.5px;
-  color: var(--modal-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-2);
 }
 .sel-label { display: block; }
 label.field > input, label.field > select, label.field > textarea {
-  margin-top: 5px;
+  margin-top: 6px;
   font-size: 14px;
+  font-weight: 400;
 }
 
 /* modal enter/exit: soft rise, ease-out both ways */
@@ -185,3 +219,29 @@ label.field > input, label.field > select, label.field > textarea {
 
 /* numeric readouts never shift layout while updating */
 .tnum { font-variant-numeric: tabular-nums; }
+
+/* checkboxes and radios match the dark sheet instead of the OS widget */
+input[type="checkbox"],
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid var(--lift);
+  border-radius: 4px;
+  background: var(--well) center / 12px 12px no-repeat;
+  vertical-align: -3px;
+}
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background-color: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2 5 8.6l4.5-5' fill='none' stroke='%230b2a23' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+input[type="radio"]:checked {
+  border-color: var(--accent);
+  background-image: radial-gradient(var(--accent) 0 3.5px, transparent 4px);
+}

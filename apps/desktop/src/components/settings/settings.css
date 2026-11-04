@@ -350,7 +350,7 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
 }
-.settings .select { padding-right: 6px; }
+.settings .select { padding-right: 6px; width: auto; flex: none; }
 
 .settings .kbd {
   font-family: var(--mono);

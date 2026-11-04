@@ -983,6 +983,7 @@ function onTileKeydown(event) {
 .touch .tile:active { transform: scale(0.96); }
 .tile {
   position: relative;
+  font-family: var(--tile-font);
   width: 100%;
   height: 100%;
   border: 2px solid transparent;

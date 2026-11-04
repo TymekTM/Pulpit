@@ -862,8 +862,11 @@ function colorOr(val, fallback) {
 <template>
   <div class="overlay" @click.self="overlayClose">
     <div class="modal btn-modal">
-      <div class="modal-head" :style="{ '--tint': boardBackground }">
-        {{ isCreate ? t("New Button") : t("Edit Button") }}
+      <div class="modal-head">
+        <span>{{ isCreate ? t("New Button") : t("Edit Button") }}</span>
+        <button class="head-close" :title="t('Cancel')" @click="requestClose">
+          <i class="fas fa-times"></i>
+        </button>
       </div>
 
       <div class="btn-body">
@@ -1284,15 +1287,24 @@ function colorOr(val, fallback) {
 </template>
 
 <style scoped>
-.btn-modal { width: min(680px, 94vw); padding: 0; overflow: hidden; }
+.btn-modal { width: min(760px, 94vw); padding: 0; overflow: hidden; }
 .modal-head {
-  background: color-mix(in srgb, var(--tint) 82%, black);
-  color: #f4fbfa;
-  font-size: 21px;
-  font-weight: 400;
-  padding: 15px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 14px 14px 22px;
+  border-bottom: 1px solid var(--line);
   flex: none;
 }
+.head-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-size: 14px;
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+.head-close:hover { background: var(--tile-2); color: var(--ink); }
 
 .btn-body {
   display: flex;
@@ -1302,13 +1314,18 @@ function colorOr(val, fallback) {
 }
 
 .left-col {
-  width: 272px;
+  width: 284px;
   flex: none;
-  border-right: 1px solid var(--modal-line);
+  background: var(--ground);
+  border-right: 1px solid var(--line);
+  padding: 14px 12px;
 }
 .preview {
   background: var(--tint);
-  height: 168px;
+  height: 172px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  margin-bottom: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1323,6 +1340,7 @@ function colorOr(val, fallback) {
   justify-content: center;
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+  font-family: var(--tile-font);
 }
 .prev-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .prev-tile > i { font-size: 38px; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
@@ -1348,21 +1366,21 @@ function colorOr(val, fallback) {
   align-items: center;
   width: 100%;
   text-align: left;
-  min-height: 37px;
-  padding: 4px 14px;
-  border-bottom: 1px solid var(--modal-line);
-  font-size: 13.5px;
+  min-height: 36px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 13px;
   transition: background 120ms ease-out;
 }
-.prop-row:hover { background: #f6f6f6; }
-.plabel { color: var(--modal-muted); }
+.prop-row:hover { background: var(--tile); }
+.plabel { color: var(--ink-2); }
 .pvalue {
-  justify-self: center;
+  justify-self: end;
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-weight: 700;
-  color: var(--modal-text);
+  font-weight: 600;
+  color: var(--ink);
   max-width: 120px;
   white-space: nowrap;
   overflow: hidden;
@@ -1372,7 +1390,7 @@ function colorOr(val, fallback) {
   width: 13px;
   height: 13px;
   border-radius: 3px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   flex: none;
 }
 
@@ -1381,9 +1399,10 @@ function colorOr(val, fallback) {
   left: 10px;
   right: 10px;
   top: calc(100% - 6px);
-  background: #fff;
-  border-radius: 4px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  background: var(--tile-2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  box-shadow: var(--shadow-pop);
   padding: 10px;
   z-index: 6;
 }
@@ -1391,13 +1410,13 @@ function colorOr(val, fallback) {
 .opt {
   flex: 1;
   padding: 8px 6px;
-  border-radius: 4px;
-  background: var(--modal-field);
+  border-radius: 7px;
+  background: var(--well);
   font-size: 13px;
   transition: background 120ms ease-out, color 120ms ease-out;
 }
-.opt:hover { background: #e6e6e6; }
-.opt.on { background: var(--accent); color: #fff; }
+.opt:hover { background: var(--lift); }
+.opt.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 
 .icon-edit { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .icon-edit input { flex: 1; padding: 6px 8px; font-size: 13px; }
@@ -1423,16 +1442,16 @@ function colorOr(val, fallback) {
 .icon-empty { grid-column: 1 / -1; margin: 10px 0; font-size: 12.5px; color: var(--modal-muted); text-align: center; }
 .icon-cell {
   height: 30px;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 14px;
-  color: #4a4a4a;
+  color: var(--ink-2);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 120ms ease-out, color 120ms ease-out;
 }
-.icon-cell:hover { background: var(--modal-field); }
-.icon-cell.on { background: var(--accent); color: #fff; }
+.icon-cell:hover { background: var(--lift); color: var(--ink); }
+.icon-cell.on { background: var(--accent); color: var(--accent-ink); }
 
 .color-edit { display: flex; align-items: center; gap: 8px; }
 .color-edit .swatch {
@@ -1447,7 +1466,7 @@ function colorOr(val, fallback) {
 .right-col {
   flex: 1;
   min-width: 0;
-  padding: 16px 20px 8px;
+  padding: 18px 22px 8px;
 }
 .right-col .field { margin-bottom: 13px; }
 .win-row {
@@ -1460,14 +1479,14 @@ function colorOr(val, fallback) {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #2c3e50;
+  color: var(--ink);
   cursor: pointer;
 }
 .no-opts {
   font-size: 13px;
   color: var(--modal-muted);
   background: var(--modal-field);
-  border-radius: 4px;
+  border-radius: 8px;
   padding: 10px 12px;
   margin-bottom: 13px;
 }
@@ -1477,17 +1496,18 @@ function colorOr(val, fallback) {
 .step-del {
   width: 32px;
   flex: none;
-  border-radius: 4px;
+  border-radius: 7px;
   color: var(--modal-muted);
   transition: background 120ms ease-out, color 120ms ease-out;
 }
 .step-del:hover { background: rgba(231, 76, 60, 0.12); color: var(--danger); }
 .add-step { align-self: flex-start; }
 .dual-head {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.7px;
-  color: var(--accent-2);
+  letter-spacing: 1.2px;
+  color: var(--accent);
   border-top: 1px solid var(--modal-line);
   padding-top: 12px;
   margin-top: 2px;
@@ -1515,18 +1535,18 @@ function colorOr(val, fallback) {
 .gesture-action { margin-top: 8px; }
 
 .modal-actions {
-  border-top: 1px solid var(--modal-line);
-  padding: 10px 16px 12px;
+  border-top: 1px solid var(--line);
+  padding: 12px 16px;
   flex: none;
 }
 .mini {
   font-size: 12.5px;
-  padding: 6px 10px;
-  border-radius: 4px;
-  background: var(--modal-field);
+  padding: 7px 11px;
+  border-radius: 7px;
+  background: var(--tile-2);
   transition: background 120ms ease-out;
 }
-.mini:hover { background: #e6e6e6; }
+.mini:hover { background: var(--lift); }
 
 .pop-enter-active { transition: opacity 130ms ease-out, transform 130ms cubic-bezier(0.2, 0, 0, 1); }
 .pop-leave-active { transition: opacity 90ms ease-out; }

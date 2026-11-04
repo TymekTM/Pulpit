@@ -91,5 +91,12 @@
   "Ready": "Gotowy",
   "FINISHED!": "KONIEC!",
   "Counter": "Licznik",
-  "Reset": "Resetuj"
+  "Reset": "Resetuj",
+  "{count} tile | {count} tiles": "{count} kafel | {count} kafle | {count} kafli",
+  "Clients: {count}": "Klienci: {count}",
+  "Reset zoom": "Przywróć 100%",
+  "Double-click to edit": "Dwuklik — edycja",
+  "Drag to move": "Przeciągnij — przenieś",
+  "Undo": "Cofnij",
+  "Port {port}": "Port {port}"
 }
