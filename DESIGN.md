@@ -170,6 +170,15 @@ edge, label and glyph text-shadows, and a glyph that grows with multi-cell
 keys (`tileIconScale` in `catalog.js`, mirrored in the Android `Tile.kt`).
 Webfonts ship as WOFF2 only (`src/fonts.css`) to keep the exe small.
 
+The tile editor splits **Appearance** (left: live preview on the board color,
+label, icon/image, shape and text position as segmented controls, a row of
+color swatches) from **Behavior** (right: tile mode, action, its options,
+gestures). A toggle tile previews both states; the state switch under the
+preview picks which one the look controls edit, and since only background,
+icon and image have a second-state twin, the second state shows just those.
+Keystrokes show as key caps with a recorder; gestures are switch cards and
+appear only for button/toggle tiles that are not tools.
+
 **Key Characteristics:**
 - Side nav + one page at a time; pages mount only while shown, so integration
   probes (Voicemeeter DLL, Discord RPC) run only on their own page
