@@ -148,13 +148,19 @@ save on flip, the hotkey saves on capture, and the integration toggles connect a
 once. An explicit Save button appears only for typed text, and only while it differs
 from what is stored.
 
-**Scope.** This world owns one surface: the settings overlay (`apps/desktop`,
+**Scope.** This world owns the settings overlay (`apps/desktop`,
 `SettingsOverlay.vue` as the shell, one component per page in
-`components/settings/`, shared sheet `components/settings/settings.css`). The
-light sidebar, the board canvas and the light modal system are the **incumbent
-world** inherited from Deckboard. Colors come from the shell tokens
-(`style.css :root`), so both worlds share one palette; their modal language,
-radii and shadows still differ, by decision.
+`components/settings/`, shared sheet `components/settings/settings.css`).
+Since the 2026-11 redesign the editor shell speaks the same language: a dark
+sidebar (brand, boards with a color swatch and size, the server card, Settings),
+a top bar (board title + size/tile chip, undo/redo, zoom, the teal Touch mode
+button, the board menu), the board drawn as a rounded slab in its own color on
+the dark `--bg`, and dark modals with filled-teal primary actions. Tokens live
+in `style.css :root` (`--bg`, `--ground`, `--tile`, `--tile-2`, `--lift`,
+`--line`, `--well`, `--ink*`, `--accent*`, `--danger*`). Chrome text is Inter,
+chrome icons are Lucide; tile faces keep Roboto and Font Awesome so a tile
+renders the same in the editor and on the Android client, whose connect screen
+and board chip use the same palette and Inter.
 
 **Key Characteristics:**
 - Side nav + one page at a time; pages mount only while shown, so integration
