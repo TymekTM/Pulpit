@@ -8,6 +8,10 @@ import { t } from "../i18n";
 import SelectField from "./SelectField.vue";
 import ActionPicker from "./ActionPicker.vue";
 import { ICON_GROUPS, searchIcons } from "../icons";
+import { ChevronRight } from "lucide-vue-next";
+
+// left-column groups: the heading shown above the row that opens a group
+const PROP_GROUPS = { shape: "Appearance", icon: "Icon & text", mode: "Behavior" };
 
 const props = defineProps({
   button: { type: Object, default: null }, // null = create mode
@@ -905,14 +909,15 @@ function colorOr(val, fallback) {
                  ['shape', 'Shape'],
                  ['color', 'Background Color'],
                  ['border_color', 'Border Color'],
+                 ['image', 'Image'],
                  ['icon', 'Icon'],
                  ['icon_color', 'Icon Color'],
                  ['title_color', 'Text Color'],
                  ['title_box_color', 'Text Box Color'],
                  ['title_position', 'Text Position'],
                  ['mode', 'Tile Mode'],
-                 ['image', 'Image'],
                ]" :key="row[0]" class="prop-wrap">
+              <div v-if="PROP_GROUPS[row[0]]" class="prop-group">{{ t(PROP_GROUPS[row[0]]) }}</div>
               <button class="prop-row" @click="toggleProp(row[0])">
                 <span class="plabel">{{ t(row[1]) }}</span>
                 <span class="pvalue">
@@ -937,6 +942,7 @@ function colorOr(val, fallback) {
                     {{ form[row[0]] || t("N/A") }}
                   </template>
                 </span>
+                <ChevronRight class="pchev" :size="14" aria-hidden="true" />
               </button>
 
               <Transition name="pop">
@@ -1322,7 +1328,7 @@ function colorOr(val, fallback) {
 }
 .preview {
   background: var(--tint);
-  height: 172px;
+  height: 146px;
   border-radius: 12px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   margin-bottom: 10px;
@@ -1332,13 +1338,14 @@ function colorOr(val, fallback) {
 }
 .prev-tile {
   position: relative;
-  width: 116px;
-  height: 116px;
+  width: 108px;
+  height: 108px;
   border: 2px solid transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 0 rgba(0, 0, 0, 0.2),
+    0 3px 10px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   font-family: var(--tile-font);
 }
@@ -1360,19 +1367,32 @@ function colorOr(val, fallback) {
 
 .props { position: relative; }
 .prop-wrap { position: relative; }
+.prop-group {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+  color: var(--ink-3);
+  padding: 10px 10px 3px;
+}
+.prop-wrap:first-child .prop-group { padding-top: 2px; }
 .prop-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr auto 14px;
+  gap: 6px;
   align-items: center;
   width: 100%;
   text-align: left;
-  min-height: 36px;
-  padding: 4px 10px;
+  min-height: 30px;
+  padding: 3px 10px;
   border-radius: 8px;
   font-size: 13px;
   transition: background 120ms ease-out;
 }
 .prop-row:hover { background: var(--tile); }
+/* the chevron says "opens a picker"; it brightens with the row */
+.pchev { color: var(--ink-3); opacity: 0.6; transition: opacity 120ms ease-out, transform 120ms ease-out; }
+.prop-row:hover .pchev { opacity: 1; transform: translateX(1px); }
 .plabel { color: var(--ink-2); }
 .pvalue {
   justify-self: end;

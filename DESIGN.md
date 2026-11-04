@@ -162,6 +162,14 @@ chrome icons are Lucide; tile faces keep Roboto and Font Awesome so a tile
 renders the same in the editor and on the Android client, whose connect screen
 and board chip use the same palette and Inter.
 
+The board fits the canvas by default (50-150%, `-`/`+` switch to a manual
+zoom, the fit button returns to it) and scales as one picture, so tile faces
+keep their proportions at any size; empty cells read as dashed open slots.
+Tiles on every surface share one key treatment: a 1px light rim on the top
+edge, label and glyph text-shadows, and a glyph that grows with multi-cell
+keys (`tileIconScale` in `catalog.js`, mirrored in the Android `Tile.kt`).
+Webfonts ship as WOFF2 only (`src/fonts.css`) to keep the exe small.
+
 **Key Characteristics:**
 - Side nav + one page at a time; pages mount only while shown, so integration
   probes (Voicemeeter DLL, Discord RPC) run only on their own page

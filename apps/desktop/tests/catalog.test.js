@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  tileIconScale,
   CATALOG,
   STATE_BINDINGS,
   VM_SLIDER_RESET,
@@ -405,5 +406,22 @@ describe("plan windows token", () => {
         expect(parsePlanWindows(written)).toEqual({ five, week });
       }
     }
+  });
+});
+
+describe("tileIconScale", () => {
+  // same table as apps/mobile TileIconScaleTest: both surfaces size the glyph alike
+  it("grows a quarter per extra cell up to 1.6x", () => {
+    expect(tileIconScale(1, 1)).toBe(1);
+    expect(tileIconScale(2, 1)).toBe(1.25);
+    expect(tileIconScale(1, 2)).toBe(1.25);
+    expect(tileIconScale(2, 2)).toBe(1.5);
+    expect(tileIconScale(3, 2)).toBe(1.6);
+    expect(tileIconScale(8, 8)).toBe(1.6);
+  });
+  it("treats degenerate sizes as one cell", () => {
+    expect(tileIconScale(0, 0)).toBe(1);
+    expect(tileIconScale(-3, 1)).toBe(1);
+    expect(tileIconScale(undefined, undefined)).toBe(1);
   });
 });

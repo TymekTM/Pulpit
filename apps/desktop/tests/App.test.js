@@ -53,7 +53,7 @@ describe("App startup", () => {
     expect(w.vm.currentId).toBe(1);
     expect(w.find(".board-title").text()).toBe("Main");
     expect(w.findAll(".board-entry .board-name").map((b) => b.text())).toEqual(["Main", "Stream"]);
-    expect(w.find(".canvas-overlay.version").text()).toContain("Version 1.4.0");
+    expect(w.find(".brand-ver").text()).toBe("1.4.0");
     expect(listenerCount("toggle-touch-mode")).toBe(1);
     expect(listenerCount("change-board")).toBe(1);
     expect(listenerCount("app-status-update")).toBe(1);
@@ -464,6 +464,27 @@ describe("App shell", () => {
     w.vm.bumpZoom(1);
     await flushPromises();
     expect(w.find(".zoom-value").text()).toBe("60%");
+  });
+
+  it("fits the board to the canvas until the user zooms by hand", async () => {
+    seed();
+    const w = await mountApp();
+    // Main is 4x3 cells of 96x100 px; the fit leaves 88x120 px of margin
+    w.vm.canvasSize.w = 1400;
+    w.vm.canvasSize.h = 800;
+    await flushPromises();
+    expect(w.vm.zoomMode).toBe("fit");
+    expect(w.vm.zoom).toBe(1.5); // capped
+    w.vm.canvasSize.w = 400;
+    await flushPromises();
+    expect(w.vm.zoom).toBe(0.81); // (400 - 88) / 384, floored
+    w.vm.bumpZoom(1);
+    expect(w.vm.zoomMode).toBe("manual");
+    expect(w.vm.zoom).toBe(0.9);
+    await w.find(".fit-btn").trigger("click");
+    expect(w.vm.zoom).toBe(0.81);
+    await w.find(".zoom-value").trigger("click");
+    expect(w.vm.zoom).toBe(1);
   });
 
   it("exports every board to the picked path", async () => {

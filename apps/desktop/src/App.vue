@@ -5,7 +5,7 @@ import { save, open } from "@tauri-apps/plugin-dialog";
 import { ask, confirmState } from "./confirm";
 import { api } from "./api";
 import { t } from "./i18n";
-import { CATALOG, clamp } from "./catalog";
+import { CATALOG, CELL_W, ROW_H, clamp } from "./catalog";
 import GridEditor from "./components/GridEditor.vue";
 import EditTileModal from "./components/EditTileModal.vue";
 import BoardModal from "./components/BoardModal.vue";
@@ -24,6 +24,7 @@ import {
   Play,
   Plus,
   Redo2,
+  Scan,
   Settings,
   Trash2,
   Undo2,
@@ -866,7 +867,32 @@ function boardContextMenu(board, event) {
 }
 
 // shell state: zoom, sidebar collapse, board kebab menu
-const zoom = ref(1);
+// "fit" scales the board to fill the canvas; -/+ switch to a manual zoom
+const zoomMode = ref("fit");
+const manualZoom = ref(1);
+const canvasEl = ref(null);
+const canvasSize = reactive({ w: 0, h: 0 });
+const canvasObserver =
+  typeof ResizeObserver === "undefined"
+    ? null
+    : new ResizeObserver(([entry]) => {
+        canvasSize.w = entry.contentRect.width;
+        canvasSize.h = entry.contentRect.height;
+      });
+watch(canvasEl, (el, old) => {
+  if (old) canvasObserver?.unobserve(old);
+  if (el) canvasObserver?.observe(el);
+});
+// largest scale (50-150%) at which the board slab fits the canvas,
+// leaving `padX` / `padY` for the scroll padding and the slab's rim
+function fitScale(board, padX, padY) {
+  if (!board || !canvasSize.w || !canvasSize.h) return 1;
+  const s = Math.min(
+    (canvasSize.w - padX) / (board.width * CELL_W),
+    (canvasSize.h - padY) / (board.height * ROW_H)
+  );
+  return clamp(Math.floor(s * 100) / 100, 0.5, 1.5);
+}
 const sidebarVisible = ref(true);
 const kebabOpen = ref(false);
 // page the settings overlay opens on (null = the last one visited)
@@ -897,6 +923,13 @@ const currentBoard = computed(
   () => boards.value.find((b) => b.id === currentId.value) || null
 );
 const boardBg = computed(() => currentBoard.value?.background || "#437072");
+const zoom = computed(() =>
+  zoomMode.value === "fit" ? fitScale(currentBoard.value, 88, 120) : manualZoom.value
+);
+const touchBoard = computed(
+  () => boards.value.find((b) => b.id === touchBoardId.value) || currentBoard.value
+);
+const touchScale = computed(() => fitScale(touchBoard.value, 48, 48));
 const boardNames = computed(() =>
   Object.fromEntries(boards.value.map((b) => [b.id, b.name || t("Untitled")]))
 );
@@ -1217,7 +1250,12 @@ function toggleTouch() {
 }
 
 function bumpZoom(dir) {
-  zoom.value = Math.min(1.5, Math.max(0.5, Math.round((zoom.value + dir * 0.1) * 10) / 10));
+  manualZoom.value = clamp(Math.round((zoom.value + dir * 0.1) * 10) / 10, 0.5, 1.5);
+  zoomMode.value = "manual";
+}
+function resetZoom() {
+  manualZoom.value = 1;
+  zoomMode.value = "manual";
 }
 
 let unlisteners = [];
@@ -1258,6 +1296,7 @@ onUnmounted(() => {
   window.removeEventListener("keydown", onKeydown, true);
   document.removeEventListener("visibilitychange", onVisibilityChange);
   unlisteners.forEach((f) => f());
+  canvasObserver?.disconnect();
 });
 
 
@@ -1401,10 +1440,6 @@ function onKeydown(event) {
 
       <div class="side-head">
         <span class="side-caption">{{ t("Boards") }}</span>
-        <span class="side-count tnum">{{ boards.length }}</span>
-        <button class="side-add" :title="t('New board')" @click="newBoard" :disabled="!status.dbOk">
-          <Plus :size="16" :stroke-width="2.2" />
-        </button>
       </div>
 
       <div class="boards" @dragover.prevent="boardDragOver" @drop.prevent="boardDrop">
@@ -1430,9 +1465,10 @@ function onKeydown(event) {
           <span class="board-name">{{ b.name || t("Untitled") }}</span>
           <span class="board-meta tnum">{{ b.width }}×{{ b.height }}</span>
         </button>
-        <div v-if="!boards.length && status.dbOk" class="side-empty">
-          {{ t("No boards yet. Use") }} <Plus :size="12" /> {{ t("to create the first one.") }}
-        </div>
+        <button class="side-add" :disabled="!status.dbOk" @click="newBoard">
+          <Plus :size="15" :stroke-width="2.2" />
+          {{ t("New board") }}
+        </button>
       </div>
 
       <div class="side-foot">
@@ -1508,17 +1544,26 @@ function onKeydown(event) {
           </div>
 
           <div class="seg zoom">
-            <button class="icon-btn" :title="t('Zoom out')" @click="bumpZoom(-0.1)">
+            <button class="icon-btn" :title="t('Zoom out')" @click="bumpZoom(-1)">
               <Minus :size="16" />
             </button>
-            <button class="zoom-value tnum" :title="t('Reset zoom')" @click="zoom = 1">
+            <button class="zoom-value tnum" :title="t('Reset zoom')" @click="resetZoom">
               {{ Math.round(zoom * 100) }}%
             </button>
-            <button class="icon-btn" :title="t('Zoom in')" @click="bumpZoom(0.1)">
+            <button class="icon-btn" :title="t('Zoom in')" @click="bumpZoom(1)">
               <Plus :size="16" />
+            </button>
+            <button
+              class="icon-btn fit-btn"
+              :class="{ on: zoomMode === 'fit' }"
+              :title="t('Fit to window')"
+              @click="zoomMode = 'fit'"
+            >
+              <Scan :size="16" />
             </button>
           </div>
 
+          <span class="bar-sep" aria-hidden="true"></span>
           <button
             class="touch-btn rail-btn"
             :title="t('Touch mode')"
@@ -1557,11 +1602,11 @@ function onKeydown(event) {
         </template>
       </header>
 
-      <div v-if="status.dbOk" class="canvas">
+      <div v-if="status.dbOk" ref="canvasEl" class="canvas">
         <GridEditor
           v-if="currentBoard && !touchMode"
           :board="currentBoard"
-          :zoom="zoom"
+          :scale="zoom"
           :type-meta="typeMeta"
           :custom-values="customValues"
           :board-names="boardNames"
@@ -1579,7 +1624,8 @@ function onKeydown(event) {
         />
         <GridEditor
           v-if="touchBoardId && touchMode"
-          :board="boards.find((b) => b.id === touchBoardId) || currentBoard"
+          :board="touchBoard"
+          :scale="touchScale"
           touch
           :type-meta="typeMeta"
           :custom-values="customValues"
@@ -1604,9 +1650,6 @@ function onKeydown(event) {
             <span>{{ t("Drag to move") }}</span>
             <span class="hint-dot"></span>
             <span><kbd>Ctrl</kbd><kbd>Z</kbd> {{ t("Undo") }}</span>
-          </div>
-          <div class="canvas-overlay version tnum">
-            {{ t("Version {version}", { version: status.version || "0.1.1" }) }}
           </div>
         </template>
 
@@ -1816,22 +1859,24 @@ function onKeydown(event) {
   text-transform: uppercase;
   color: var(--ink-3);
 }
-.side-count {
-  font-size: 11px;
-  color: var(--ink-3);
-}
 .side-add {
-  margin-left: auto;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: var(--ink-2);
-  transition: background 120ms ease-out, color 120ms ease-out;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px dashed var(--lift);
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--ink-3);
+  transition: background 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
 }
-.side-add:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); }
+.side-add svg { width: 22px; flex: none; }
+.side-add:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: rgba(26, 188, 156, 0.5);
+  color: var(--accent);
+}
 
 .boards {
   flex: 1;
@@ -1900,13 +1945,6 @@ function onKeydown(event) {
   opacity: 0.2;
   transform: scale(0.96);
 }
-.side-empty {
-  font-size: 12.5px;
-  color: var(--ink-3);
-  padding: 10px 12px;
-  line-height: 1.5;
-}
-.side-empty svg { vertical-align: -2px; }
 
 .side-foot {
   flex: none;
@@ -2097,6 +2135,8 @@ function onKeydown(event) {
   transition: background 120ms ease-out, color 120ms ease-out;
 }
 .zoom-value:hover { background: var(--tile-2); color: var(--ink); }
+.fit-btn.on { color: var(--accent); }
+.bar-sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; flex: none; }
 .touch-btn {
   display: flex;
   align-items: center;
@@ -2160,7 +2200,12 @@ function onKeydown(event) {
   flex: 1;
   position: relative;
   min-height: 0;
+  /* workspace dot grid: one static gradient, painted once */
+  background-image: radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1.5px);
+  background-size: 22px 22px;
+  background-position: 11px 11px;
 }
+.is-touch .canvas { background-image: none; }
 .canvas :deep(.board-scroll) { padding: 32px 32px 64px; }
 .app:not(.is-touch) .canvas :deep(.board-grid) {
   background-color: var(--board-bg);
@@ -2199,7 +2244,6 @@ function onKeydown(event) {
   pointer-events: none;
 }
 .canvas-overlay.hints { left: 24px; }
-.canvas-overlay.version { right: 24px; }
 .hint-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--ink-3); opacity: 0.6; }
 kbd {
   font: inherit;

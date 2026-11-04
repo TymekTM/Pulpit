@@ -1,10 +1,7 @@
 /* Pulpit editor theme: one dark world shared with Settings (DESIGN.md).
    Chrome is Inter; tile faces keep Roboto so a tile reads the same on the
    desktop and on the Android client, which renders with system Roboto. */
-@import "@fontsource-variable/inter";
-@import "@fontsource/roboto/400.css";
-@import "@fontsource/roboto/500.css";
-@import "@fontsource/roboto/700.css";
+@import "./fonts.css";
 
 :root {
   /* surfaces, darkest to lightest */
@@ -19,7 +16,7 @@
   /* ink */
   --ink: #ecf0f1;
   --ink-2: #a3b0b8;
-  --ink-3: #7d8a94;
+  --ink-3: #8b97a1;
 
   /* accent + status */
   --accent: #1abc9c;

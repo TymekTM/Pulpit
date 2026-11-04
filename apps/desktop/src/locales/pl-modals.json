@@ -6,7 +6,6 @@
   "Cancel": "Anuluj",
   "Delete": "Usuń",
   "Confirm": "Potwierdź",
-
   "Shape": "Kształt",
   "Round": "Okrągły",
   "Square": "Kwadratowy",
@@ -32,7 +31,6 @@
   "fontawesome 5 icon name": "nazwa ikony fontawesome 5",
   "Search icons (e.g. mic, arrow, chart)": "Szukaj ikon (np. mic, arrow, chart)",
   "No icons match \"{q}\"": "Brak ikon dla „{q}”",
-
   "Label": "Etykieta",
   "Button label": "Etykieta kafla",
   "Action": "Akcja",
@@ -46,15 +44,12 @@
   "value": "wartość",
   "Remove step": "Usuń krok",
   "Add step": "Dodaj krok",
-
   "App (optional)": "Aplikacja (opcjonalnie)",
   "App": "Aplikacja",
   "- current session -": "- bieżąca sesja -",
-
   "Usage windows": "Okna użycia",
   "5-hour": "5-godzinne",
   "Weekly": "Tygodniowe",
-
   "Options (program arguments)": "Opcje (argumenty programu)",
   "Second state (toggle)": "Drugi stan (przełącznik)",
   "Background 2": "Tło 2",
@@ -62,7 +57,6 @@
   "icon name": "nazwa ikony",
   "Replace image 2": "Zamień obraz 2",
   "Pick image 2": "Wybierz obraz 2",
-
   "Gestures": "Gesty",
   "Tick a gesture and optionally pick an action - with no action picked, the gesture runs the tile's own action. Works in touch mode and on tablets.": "Zaznacz gest i opcjonalnie wybierz akcję - bez wyboru gest uruchamia akcję kafla. Działa w trybie dotykowym i na tabletach.",
   "Hold": "Przytrzymanie",
@@ -72,30 +66,25 @@
   "Gesture": "Gest",
   "Tile action (default)": "Akcja kafla (domyślnie)",
   "The \"Options\" field already contains program arguments - gestures require JSON and cannot share this field.": "Pole „Opcje” zawiera już argumenty programu - gesty wymagają zapisu JSON i nie mogą współdzielić tego pola.",
-
   "Default value": "Wartość domyślna",
   "Double-tapping the slider restores this value - e.g. Voicemeeter 0 dB, Spotify 50%. Those two have built-in values; a typed number overrides them, and an empty field disables the reset for the remaining sliders. Works in touch mode and on tablets.": "Podwójne tapnięcie suwaka przywraca tę wartość - np. Voicemeeter 0 dB, Spotify 50%. Te dwa mają wartości wbudowane; wpisana liczba je nadpisze, a puste pole wyłącza reset dla pozostałych suwaków. Działa w trybie dotykowym i na tabletach.",
   "Default value (% 0-100)": "Domyślna wartość (% 0-100)",
   "e.g. 50": "np. 50",
   "Default value must be a number 0-100.": "Wartość domyślna musi być liczbą 0-100.",
   "The \"Options\" field already contains non-JSON content - the default value requires JSON.": "Pole „Opcje” zawiera już treść nie-JSON - wartość domyślna wymaga zapisu JSON.",
-
   "Close the window and discard unsaved changes?": "Zamknąć okno i porzucić niezapisane zmiany?",
   "Unsaved changes": "Niezapisane zmiany",
   "Discard changes": "Porzuć zmiany",
   "Go back": "Wróć",
-
   "e.g. CTRL + K": "np. CTRL + K",
   "file path": "ścieżka pliku",
   "folder path": "ścieżka folderu",
-
   "Custom": "Własne",
   "{value} (custom)": "{value} (własne)",
   "Recently used": "Ostatnio używane",
   "Search actions…": "Szukaj akcji…",
   "Actions": "Akcje",
   "No actions match “{q}”": "Brak akcji dla „{q}”",
-
   "Pairing request": "Żądanie parowania",
   "Trust this device?": "Zaufać urządzeniu?",
   "Verification code (must match the one on the tablet):": "Kod weryfikacyjny (ten sam musi być na tablecie):",
@@ -103,7 +92,6 @@
   "The device uses a one-time pairing code. Trusting issues a token; not answering before the code expires rejects the pairing.": "Urządzenie używa jednorazowego kodu parowania. Zaufanie wydaje token; brak odpowiedzi do wygaśnięcia kodu odrzuca parowanie.",
   "Deny": "Odrzuć",
   "Trust": "Zaufaj",
-
   "New board": "Nowa tablica",
   "Edit board": "Edytuj tablicę",
   "Name": "Nazwa",
@@ -119,13 +107,11 @@
   "Saving the board failed.": "Zapisywanie tablicy nie powiodło się.",
   "Clearing the board failed.": "Czyszczenie tablicy nie powiodło się.",
   "Deleting the board failed.": "Usuwanie tablicy nie powiodło się.",
-
   "Keyboard & Mouse": "Klawiatura i mysz",
   "Tools": "Narzędzia",
   "AI dev work": "Praca z AI",
   "Multimedia (system)": "Multimedia (systemowe)",
   "Variables & Logic": "Zmienne i logika",
-
   "Switch Board": "Przełącz tablicę",
   "Switch board": "Przełącz tablicę",
   "Multi Actions": "Multiakcja",
@@ -155,7 +141,6 @@
   "File path": "Ścieżka pliku",
   "Capture Screenshot": "Zrzut ekranu",
   "Save to folder": "Zapisz do folderu",
-
   "Play / Pause": "Odtwórz / Pauza",
   "Prev": "Poprzedni",
   "Previous": "Poprzedni",
@@ -169,7 +154,6 @@
   "Volume Control": "Kontrola głośności",
   "Play Audio": "Odtwórz dźwięk",
   "Audio file path": "Ścieżka pliku audio",
-
   "Set Strip Parameter": "Ustaw parametr stripa",
   "Parameter": "Parametr",
   "Index": "Indeks",
@@ -184,7 +168,6 @@
   "Volume Slider (Bus)": "Suwak głośności (bus)",
   "Volume Slider (Strip)": "Suwak głośności (strip)",
   "Restart Audio Engine": "Restart silnika audio",
-
   "Switch Scene": "Przełącz scenę",
   "Scene name": "Nazwa sceny",
   "Toggle Source": "Przełącz źródło",
@@ -202,17 +185,14 @@
   "SLOBS: Toggle Source": "SLOBS: Przełącz źródło",
   "SLOBS: Toggle Audio Source": "SLOBS: Przełącz źródło audio",
   "XSplit: Switch Scene": "XSplit: Przełącz scenę",
-
   "Slow Mode": "Tryb wolny",
   "Followers-Only Mode": "Tylko dla obserwujących",
   "Subs-Only Mode": "Tylko dla subskrybentów",
   "Emote-Only Mode": "Tylko emotki",
-
   "AI Plan Limits (display)": "Limity planu AI (wyświetlanie)",
   "Agent Progress (display)": "Postęp agenta (wyświetlanie)",
   "AI Tokens Today (graph)": "Tokeny AI dzisiaj (wykres)",
   "AI Tokens Per Hour (graph)": "Tokeny AI na godzinę (wykres)",
-
   "Playback (Play / Next / Vol)": "Odtwarzanie (Play / Następny / Głośność)",
   "Shuffle": "Losowo",
   "Repeat": "Powtarzanie",
@@ -223,7 +203,6 @@
   "Transfer Playback to Device": "Przenieś odtwarzanie na urządzenie",
   "Seek": "Przewijanie",
   "Now Playing (display)": "Teraz odtwarzane (wyświetlanie)",
-
   "Clock": "Zegar",
   "Format": "Format",
   "Seconds": "Sekundy",
@@ -242,15 +221,16 @@
   "Counter": "Licznik",
   "Step": "Krok",
   "Start value": "Wartość początkowa",
-
   "Variable Value (display)": "Wartość zmiennej (wyświetlanie)",
   "Variable key": "Klucz zmiennej",
-
   "Discord: Join Voice Channel": "Discord: Dołącz do kanału głosowego",
   "Channel id": "Id kanału",
   "Discord: Toggle Mute": "Discord: Wycisz",
   "Discord: Toggle Deaf": "Discord: Ogłusz",
   "Discord: User Volume": "Discord: Głośność użytkownika",
   "Discord: Mute User": "Discord: Wycisz użytkownika",
-  "Discord user id": "Id użytkownika Discord"
+  "Discord user id": "Id użytkownika Discord",
+  "Appearance": "Wygląd",
+  "Icon & text": "Ikona i tekst",
+  "Behavior": "Zachowanie"
 }

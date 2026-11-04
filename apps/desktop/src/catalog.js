@@ -838,6 +838,16 @@ export function stateActive(tile, cmd, customValues, typeMeta) {
 export const CELL_W = 96;
 export const ROW_H = 100;
 
+// Glyph scale on a button face: a 1x1 tile keeps the base size, each extra
+// cell of width or height adds a quarter, capped at 1.6x so 2x1 and 2x2
+// keys do not look empty around a 1x1 icon. Mirrored by tileIconScale in
+// apps/mobile ui/Tile.kt - keep the two formulas identical.
+export function tileIconScale(w, h) {
+  const cw = Math.max(1, Number(w) || 1);
+  const ch = Math.max(1, Number(h) || 1);
+  return Math.min(1.6, 1 + 0.25 * (cw - 1) + 0.25 * (ch - 1));
+}
+
 // Board width/height cap (012 C4). Matches the backend's
 // MAX_BOARD_DIM = 32 bound on board dimensions (the Rust import-side
 // bounds live in the backend crate); keep the two in sync so the editor

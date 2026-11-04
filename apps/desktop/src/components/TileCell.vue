@@ -6,6 +6,7 @@ import {
   parsePlanWindows,
   statusProgressAt,
   mmss,
+  tileIconScale,
 } from "../catalog";
 import { resolveStatusArt, payloadReceivedAt, windowVisible } from "../statusMedia";
 import { t } from "../i18n";
@@ -94,6 +95,11 @@ function tileIcon(tile) {
   if (tile.type === "vol" && VOL_ICONS[tile.command]) return VOL_ICONS[tile.command];
   return pick("icon", "icon2") || metaOf(tile).icon || "";
 }
+// 30 px base glyph, grown on multi-cell keys (see tileIconScale)
+const iconSize = computed(() => {
+  const k = tileIconScale(props.tile.w, props.tile.h);
+  return k === 1 ? undefined : `${Math.round(30 * k)}px`;
+});
 function tileIconColor() {
   return pick("icon_color", "icon_color2") || "#ffffff";
 }
@@ -726,7 +732,7 @@ function onTileKeydown(event) {
     <div
       v-if="tile.id !== null"
       class="tile"
-      :class="{ dragging, selected }"
+      :class="{ dragging, selected, editing: !touch }"
       :style="{
         background: tileBg(tile),
         borderColor: tileBorder(),
@@ -773,7 +779,7 @@ function onTileKeydown(event) {
         "
         class="tile-icon"
         :class="'fas fa-' + tileIcon(tile)"
-        :style="{ color: tileIconColor() }"
+        :style="{ color: tileIconColor(), fontSize: iconSize }"
       ></i>
       <span
         v-if="tile.mode === 'custom-value' && !tile.title && customValueLabel"
@@ -974,10 +980,11 @@ function onTileKeydown(event) {
 </template>
 
 <style scoped>
-.touch .tile.selected {
+/* selection ring: drawn outside the face so the tile's own colors and
+   border stay untouched */
+.tile.selected {
   outline: 2px solid var(--accent, #1abc9c);
   outline-offset: 2px;
-  box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.35);
 }
 .tile { cursor: pointer; }
 .touch .tile:active { transform: scale(0.96); }
@@ -993,10 +1000,18 @@ function onTileKeydown(event) {
   align-items: center;
   justify-content: center;
   cursor: grab;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-  transition: filter 120ms ease-out, box-shadow 120ms ease-out;
+  /* physical key: a 1px light rim on the top edge, a soft cast shadow */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 0 rgba(0, 0, 0, 0.2),
+    0 3px 8px rgba(0, 0, 0, 0.3);
+  transition: filter 120ms ease-out, box-shadow 120ms ease-out, transform 120ms ease-out;
 }
-.tile:hover { filter: brightness(1.08); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); }
+.tile:hover {
+  filter: brightness(1.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 0 rgba(0, 0, 0, 0.2),
+    0 6px 14px rgba(0, 0, 0, 0.35);
+}
+/* editor only: the key lifts under the pointer (touch mode presses instead) */
+.tile.editing:hover:not(.dragging) { transform: scale(1.02); }
 /* keyboard focus (012 lower-priority): shown for keyboard focus only, so
    mouse clicks and touch taps stay outline-free; inset because the tile
    clips its own overflow */

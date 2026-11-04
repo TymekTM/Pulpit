@@ -33,7 +33,7 @@ object PulpitColors {
     val well = Color(0xFF13181C)
     val ink = Color(0xFFECF0F1)
     val ink2 = Color(0xFFA3B0B8)
-    val ink3 = Color(0xFF7D8A94)
+    val ink3 = Color(0xFF8B97A1)
     val accent = Color(0xFF1ABC9C)
     val accentInk = Color(0xFF0B2A23)
     val accentSoft = Color(0x241ABC9C)

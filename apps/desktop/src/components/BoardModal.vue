@@ -18,6 +18,10 @@ const form = reactive({
   background: props.board?.background ?? "#437072",
 });
 
+// quick picks for the board ground: the default teal-slate plus muted
+// darks that keep any tile color readable on top
+const PRESETS = ["#437072", "#34495e", "#2c3e50", "#22313c", "#3b3355", "#4a2f3a", "#2f4a3a", "#3d3d3d"];
+
 // preview stays readable for huge boards: the miniature caps at 16x10
 const previewW = computed(() => Math.min(16, Math.max(1, boardDim(form.width, 6))));
 const previewH = computed(() => Math.min(10, Math.max(1, boardDim(form.height, 4))));
@@ -143,17 +147,34 @@ async function deleteBoard() {
             {{ t("Rows (height)") }}
             <input v-model.number="form.height" type="number" min="1" :max="MAX_BOARD_DIM" step="1" />
           </label>
-          <label class="field">
-            {{ t("Background") }}
-            <input v-model="form.background" type="color" class="color-input" />
-          </label>
+        </div>
+        <div class="field bg-field">
+          <span>{{ t("Background") }}</span>
+          <div class="bg-row">
+            <input
+              v-model="form.background"
+              type="color"
+              class="color-input"
+              :aria-label="t('Background')"
+            />
+            <button
+              v-for="c in PRESETS"
+              :key="c"
+              type="button"
+              class="preset"
+              :class="{ on: form.background.toLowerCase() === c }"
+              :style="{ background: c }"
+              :title="c"
+              @click="form.background = c"
+            ></button>
+          </div>
         </div>
         <p v-if="error" class="modal-error" role="alert">{{ error }}</p>
       </div>
       <div class="modal-actions">
         <template v-if="mode === 'edit'">
-          <button class="btn-text danger left" @click="clearBoard">{{ t("Clear tiles") }}</button>
-          <button class="btn-text danger" @click="deleteBoard">{{ t("Delete board") }}</button>
+          <button class="btn-text quiet-danger left" @click="clearBoard">{{ t("Clear tiles") }}</button>
+          <button class="btn-text quiet-danger" @click="deleteBoard">{{ t("Delete board") }}</button>
         </template>
         <button class="btn-text" @click="emit('close')">{{ t("Cancel") }}</button>
         <button class="btn-text accent" @click="save">{{ t("Save") }}</button>
@@ -182,7 +203,23 @@ async function deleteBoard() {
 }
 .row { display: flex; gap: 10px; }
 .row > * { flex: 1; }
-.color-input { height: 38px; padding: 3px; cursor: pointer; }
+.bg-field { display: block; margin-bottom: 14px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.bg-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.color-input { width: 44px; height: 36px; padding: 3px; cursor: pointer; flex: none; }
+.preset {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  transition: transform 120ms ease-out, box-shadow 120ms ease-out;
+}
+.preset:hover { transform: scale(1.08); }
+.preset.on { box-shadow: 0 0 0 2px var(--tile), 0 0 0 4px var(--accent); }
+/* destructive actions stay available but quieter than Save */
+.quiet-danger { background: transparent; color: var(--danger-ink); padding-left: 10px; padding-right: 10px; }
+.quiet-danger:hover { background: var(--danger-soft); }
+.quiet-danger.left { margin-right: 0; }
+.quiet-danger.left + .quiet-danger { margin-right: auto; }
 .modal-error {
   font-size: 12px;
   color: var(--danger);
