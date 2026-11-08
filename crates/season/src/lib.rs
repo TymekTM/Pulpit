@@ -217,7 +217,12 @@ pub fn snapshot(mode: Mode, date: NaiveDate) -> Value {
 /// the other native sources: the countdown is a custom-value display, so
 /// the editor, the stock client and the v2 Toggle all show the pushed
 /// `season-countdown` text with their existing renderers.
-pub fn input_declarations() -> Vec<(&'static str, &'static str, &'static str, Option<&'static str>)> {
+pub fn input_declarations() -> Vec<(
+    &'static str,
+    &'static str,
+    &'static str,
+    Option<&'static str>,
+)> {
     vec![(KEY_COUNTDOWN, "gifts", "#2f7d4a", Some("custom-value"))]
 }
 
@@ -282,8 +287,14 @@ mod tests {
         let december = d(2026, 12, 10);
         assert_eq!(resolve(Mode::Auto, summer), Season::Off);
         assert_eq!(resolve(Mode::Auto, december), Season::Christmas);
-        assert_eq!(resolve(Mode::Force(Season::Christmas), summer), Season::Christmas);
-        assert_eq!(resolve(Mode::Force(Season::Halloween), december), Season::Halloween);
+        assert_eq!(
+            resolve(Mode::Force(Season::Christmas), summer),
+            Season::Christmas
+        );
+        assert_eq!(
+            resolve(Mode::Force(Season::Halloween), december),
+            Season::Halloween
+        );
         assert_eq!(resolve(Mode::Off, december), Season::Off);
     }
 

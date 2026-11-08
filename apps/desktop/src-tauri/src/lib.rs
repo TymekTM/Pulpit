@@ -3137,7 +3137,11 @@ async fn set_season(
     let parsed = pulpit_season::Mode::from_name(&mode)
         .ok_or_else(|| format!("Unknown season mode: {mode}"))?;
     if let Some(path) = state.settings_path.as_ref() {
-        persist_editor_setting(path, pulpit_season::SETTING_KEY, serde_json::json!(parsed.as_str()))?;
+        persist_editor_setting(
+            path,
+            pulpit_season::SETTING_KEY,
+            serde_json::json!(parsed.as_str()),
+        )?;
     }
     state.season.send_replace(parsed);
     Ok(get_season(state))
