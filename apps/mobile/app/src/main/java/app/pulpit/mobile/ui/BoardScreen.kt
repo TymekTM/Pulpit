@@ -93,6 +93,10 @@ fun BoardScreen(vm: PulpitViewModel) {
     val attempt by vm.reconnectAttempt.collectAsState()
 
     val status = statusFor(conn, boards.isNotEmpty(), attempt)
+    // Seasonal theme (Season.kt). A derived flag, not the values
+    // snapshot: the map changes at patch rate, the season almost never
+    val values = vm.values.collectAsState()
+    val season by remember { derivedStateOf { seasonOf(values.value) } }
 
     // the deck content sits in its own layer so a link overlay can blur it
     // where the platform supports it (RenderEffect needs API 31; older
@@ -106,10 +110,12 @@ fun BoardScreen(vm: PulpitViewModel) {
         // tile faces keep the platform font (Roboto) - the chrome theme's
         // Inter stops at the board edge, so tiles render as before
         ProvideTextStyle(TextStyle(fontFamily = FontFamily.Default)) {
-            BoardSwitcher(board, boards, vm, Modifier.fillMaxSize())
+            SeasonLayer(season, Modifier.fillMaxSize()) {
+                BoardSwitcher(board, boards, vm, Modifier.fillMaxSize())
+            }
         }
         Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)) {
-            BoardChip(vm)
+            BoardChip(vm, season)
         }
     }
 
@@ -290,7 +296,8 @@ private fun statusFor(conn: ConnState, hasBoards: Boolean, attempt: Int): String
  *  glass pill with the board's name and its place in the list; the menu
  *  lists every board with the current one marked. */
 @Composable
-private fun BoardChip(vm: PulpitViewModel) {
+private fun BoardChip(vm: PulpitViewModel, season: Season?) {
+    val accent = season?.accent ?: PulpitColors.accent
     val boards by vm.boards.collectAsState()
     val board by vm.currentBoard.collectAsState()
     var menuOpen by remember { mutableStateOf(false) }
@@ -311,7 +318,7 @@ private fun BoardChip(vm: PulpitViewModel) {
             Icon(
                 imageVector = Icons.Rounded.GridView,
                 contentDescription = null,
-                tint = PulpitColors.accent,
+                tint = accent,
                 modifier = Modifier.size(15.dp),
             )
             // board.name is payload (the host's own board title); the app
@@ -366,7 +373,7 @@ private fun BoardChip(vm: PulpitViewModel) {
                             Icon(
                                 imageVector = Icons.Rounded.Check,
                                 contentDescription = null,
-                                tint = PulpitColors.accent,
+                                tint = accent,
                                 modifier = Modifier.size(18.dp),
                             )
                         }

@@ -12,6 +12,9 @@ import BoardModal from "./components/BoardModal.vue";
 import SettingsOverlay from "./components/SettingsOverlay.vue";
 import OperatorAskModal from "./components/OperatorAskModal.vue";
 import ConfirmDialog from "./components/ConfirmDialog.vue";
+import SeasonAmbient from "./components/season/SeasonAmbient.vue";
+import SeasonBurst from "./components/season/SeasonBurst.vue";
+import { applySeason, season, seasonOn } from "./season.js";
 import {
   Ellipsis,
   Eraser,
@@ -40,6 +43,7 @@ import {
   tileDeleteCommand,
   tileMoveCommand,
   boardCreateCommand,
+  boardCreateFromSnapshotCommand,
   boardEditCommand,
   boardDeleteCommand,
   boardClearCommand,
@@ -871,6 +875,22 @@ function boardContextMenu(board, event) {
 const zoomMode = ref("fit");
 const manualZoom = ref(1);
 const canvasEl = ref(null);
+
+// Seasonal themes: the season producer's `season` push keeps the skin live
+// (midnight rollover, a mode switch); get_season covered the first paint.
+watch(
+  () => customValues.season,
+  (value) => {
+    if (value !== undefined) applySeason(value);
+  }
+);
+// touch-mode press effect: a snow burst where the finger landed on a tile
+const seasonBurst = ref(null);
+function onCanvasPointer(e) {
+  if (!touchMode.value || !seasonOn.value) return;
+  if (!e.target?.closest?.(".tile")) return;
+  seasonBurst.value?.burst(e.clientX, e.clientY);
+}
 const canvasSize = reactive({ w: 0, h: 0 });
 const canvasObserver =
   typeof ResizeObserver === "undefined"
@@ -1329,10 +1349,16 @@ function onBoardModalSaved(info) {
       );
     } else if (info.mode === "delete") {
       history.push(boardDeleteCommand({ boardSnapshot: info.board }));
+    } else if (info.mode === "template") {
+      history.push(boardCreateFromSnapshotCommand({ boardSnapshot: info.board }));
     }
     updateHistoryFlags();
   }
-  load();
+  // a template lands ready to look at: open the new board
+  const opened = info?.mode === "template" ? info.board.id : null;
+  load().then(() => {
+    if (opened != null && boards.value.some((b) => b.id === opened)) currentId.value = opened;
+  });
 }
 
 function onGlobalMousedown(event) {
@@ -1602,7 +1628,14 @@ function onKeydown(event) {
         </template>
       </header>
 
-      <div v-if="status.dbOk" ref="canvasEl" class="canvas">
+      <div v-if="status.dbOk" ref="canvasEl" class="canvas" @pointerdown.capture="onCanvasPointer">
+        <SeasonAmbient
+          v-if="seasonOn"
+          class="canvas-snow"
+          :class="{ over: touchMode }"
+          :season="season"
+          :count="touchMode ? 26 : 36"
+        />
         <GridEditor
           v-if="currentBoard && !touchMode"
           :board="currentBoard"
@@ -1658,6 +1691,8 @@ function onKeydown(event) {
         </button>
       </div>
     </main>
+
+    <SeasonBurst v-if="seasonOn" ref="seasonBurst" :season="season" />
 
     <!-- backdrop that closes the board menu -->
     <div v-if="kebabOpen" class="click-away" @click="kebabOpen = false"></div>
@@ -2206,6 +2241,12 @@ function onKeydown(event) {
   background-position: 11px 11px;
 }
 .is-touch .canvas { background-image: none; }
+/* seasonal particles: behind the board slab in the editor (the canvas is its
+   own stacking context, so z-index -1 still paints over the dot grid),
+   over the board in touch mode where the slab fills the screen */
+.canvas { isolation: isolate; }
+.canvas-snow { z-index: -1; }
+.canvas-snow.over { z-index: 3; opacity: 0.7; }
 .canvas :deep(.board-scroll) { padding: 32px 32px 64px; }
 .app:not(.is-touch) .canvas :deep(.board-grid) {
   background-color: var(--board-bg);

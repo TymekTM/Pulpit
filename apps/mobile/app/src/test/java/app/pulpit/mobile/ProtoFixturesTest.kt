@@ -228,6 +228,9 @@ class ProtoFixturesTest {
         val sync = typed<StateSync>(frame, V2.TYPE_STATE_SYNC)
         assertEquals("OFF", sync.values["ext.speaker-muted"]!!.jsonPrimitive.content)
         assertEquals(true, sync.values["discord.microphone-muted"]!!.jsonPrimitive.boolean)
+        // seasonal theme: the skin keys off ext.season (ui/Season.kt)
+        assertEquals(app.pulpit.mobile.ui.Season.CHRISTMAS, app.pulpit.mobile.ui.seasonOf(sync.values))
+        assertEquals("16 dni", sync.values["ext.season-countdown"]!!.jsonPrimitive.content)
         val timer = sync.values["ext.tool-timer"]!!.jsonObject
         assertEquals(false, timer["running"]!!.jsonPrimitive.boolean)
         assertEquals(300000L, timer["durationMs"]!!.jsonPrimitive.long)

@@ -3703,6 +3703,7 @@ dependencies = [
  "pulpit-obs",
  "pulpit-os",
  "pulpit-proto",
+ "pulpit-season",
  "pulpit-spotify",
  "pulpit-sysinfo",
  "pulpit-tools",
@@ -3770,6 +3771,7 @@ dependencies = [
  "pulpit-ext",
  "pulpit-legacy",
  "pulpit-os",
+ "pulpit-season",
  "pulpit-spotify",
  "pulpit-sysinfo",
  "pulpit-tools",
@@ -3849,6 +3851,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulpit-season"
+version = "1.8.0"
+dependencies = [
+ "chrono",
+ "pulpit-i18n",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "pulpit-server"
 version = "1.8.0"
 dependencies = [
@@ -3866,6 +3879,7 @@ dependencies = [
  "pulpit-obs",
  "pulpit-os",
  "pulpit-proto",
+ "pulpit-season",
  "pulpit-spotify",
  "pulpit-sysinfo",
  "pulpit-tools",
@@ -3933,6 +3947,7 @@ dependencies = [
  "pulpit-db",
  "pulpit-legacy",
  "pulpit-proto",
+ "pulpit-season",
  "pulpit-tools",
  "rand 0.8.8",
  "serde",

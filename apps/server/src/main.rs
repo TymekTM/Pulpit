@@ -255,6 +255,18 @@ async fn main() -> anyhow::Result<()> {
         state.backend.clone(),
     ));
     tokio::spawn(pulpit_host::forward_producer(feed.clone(), tools_rx));
+    // Christmas mode: the desktop's choice in editor.json when this box
+    // has one, `auto` (the calendar) otherwise. Read once - a headless
+    // server has no Settings to change it at runtime.
+    let season_mode = std::fs::read_to_string(data_dir.join("editor.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .map(|stored| pulpit_season::Mode::from_editor_json(&stored))
+        .unwrap_or_default();
+    tokio::spawn(pulpit_host::forward_producer(
+        feed.clone(),
+        pulpit_season::spawn_push_fixed(season_mode),
+    ));
     // Timer finish -> switch board: legacy tablets listen on their own
     // `change_board` event (the same one a board-switch tile's exec
     // emits), v2 tablets on the typed `board.open` frame.

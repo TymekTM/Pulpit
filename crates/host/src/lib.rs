@@ -400,6 +400,10 @@ pub fn register_inputs(ext: &pulpit_ext::ExtManager) {
     for (value, icon, color, mode) in pulpit_tools::input_declarations() {
         register_input(value, Some(icon), Some(color), "fas", mode, None);
     }
+    // Christmas mode: the days-until-Wigilia display tile
+    for (value, icon, color, mode) in pulpit_season::input_declarations() {
+        register_input(value, Some(icon), Some(color), "fas", mode, None);
+    }
     // native system media (SMTC): the now-playing display tile, transport
     // buttons and the seek slider, for any player the system reports
     for (value, icon, color, mode) in pulpit_os::media::input_declarations() {

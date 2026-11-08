@@ -28,6 +28,8 @@ describe("api", () => {
     ["setAutostart", [true], "set_autostart", { enable: true }],
     ["setStartMinimized", [true], "set_start_minimized", { enable: true }],
     ["setLang", ["pl", "en"], "set_lang", { lang: "pl", locale: "en" }],
+    ["getSeason", [], "get_season", undefined],
+    ["setSeason", ["on"], "set_season", { mode: "on" }],
     ["readImageData", ["C:/a.png"], "read_image_data", { path: "C:/a.png" }],
     ["listKnownInputs", [], "list_known_inputs", undefined],
     ["listLanAddresses", [], "list_lan_addresses", undefined],
@@ -74,7 +76,7 @@ describe("api", () => {
   });
 
   it("covers every method in the table above", () => {
-    expect(Object.keys(api)).toHaveLength(61);
+    expect(Object.keys(api)).toHaveLength(63);
   });
 
   it("passes the command's result through", async () => {

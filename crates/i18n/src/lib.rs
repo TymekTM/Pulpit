@@ -75,6 +75,21 @@ pub fn spotify_login_hint() -> &'static str {
     )
 }
 
+/// The Christmas-mode countdown text (`season-countdown`): days left
+/// until Wigilia, 24 December. Polish needs "dzień" only for exactly
+/// one; every other count takes "dni".
+pub fn season_countdown(days: i64) -> String {
+    let pl = locale() == "pl";
+    match (days, pl) {
+        (0, true) => "Wigilia!".to_string(),
+        (0, false) => "Christmas Eve!".to_string(),
+        (1, true) => "1 dzień".to_string(),
+        (1, false) => "1 day".to_string(),
+        (n, true) => format!("{n} dni"),
+        (n, false) => format!("{n} days"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,6 +115,9 @@ mod tests {
         assert_eq!(media_idle(), "Nothing is playing");
         assert_eq!(spotify_idle(), "Nothing is playing");
         assert_eq!(spotify_login_hint(), "Log in via Pulpit settings");
+        assert_eq!(season_countdown(0), "Christmas Eve!");
+        assert_eq!(season_countdown(1), "1 day");
+        assert_eq!(season_countdown(46), "46 days");
     }
 
     #[test]
@@ -111,6 +129,9 @@ mod tests {
         assert_eq!(media_idle(), "Nic nie jest odtwarzane");
         assert_eq!(spotify_idle(), "Nic nie jest odtwarzane");
         assert_eq!(spotify_login_hint(), "Zaloguj się w ustawieniach Pulpita");
+        assert_eq!(season_countdown(0), "Wigilia!");
+        assert_eq!(season_countdown(1), "1 dzień");
+        assert_eq!(season_countdown(22), "22 dni");
         reset_locale();
     }
 

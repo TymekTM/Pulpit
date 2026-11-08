@@ -4,6 +4,7 @@ import { ask } from "../confirm";
 import { api } from "../api";
 import { MAX_BOARD_DIM, boardDim } from "../catalog";
 import { t } from "../i18n";
+import { TEMPLATES, createFromTemplate } from "../templates";
 
 const props = defineProps({
   mode: { type: String, required: true }, // 'create' | 'edit'
@@ -71,6 +72,22 @@ async function save() {
     }
   } catch (e) {
     error.value = e ? String(e) : t("Saving the board failed.");
+  }
+}
+
+// "Start from a template" (create mode): the board and its tiles are
+// created in one go and recorded as one undo step
+const templateBusy = ref(false);
+async function useTemplate(template) {
+  error.value = "";
+  templateBusy.value = true;
+  try {
+    const board = await createFromTemplate(api, template);
+    emit("saved", { mode: "template", board });
+  } catch (e) {
+    error.value = e ? String(e) : t("Creating the board failed.");
+  } finally {
+    templateBusy.value = false;
   }
 }
 
@@ -169,6 +186,22 @@ async function deleteBoard() {
             ></button>
           </div>
         </div>
+        <div v-if="mode === 'create'" class="field template-field">
+          <span>{{ t("Or start from a template") }}</span>
+          <div class="template-row">
+            <button
+              v-for="tpl in TEMPLATES"
+              :key="tpl.id"
+              type="button"
+              class="template-btn"
+              :disabled="templateBusy"
+              @click="useTemplate(tpl)"
+            >
+              <i :class="'fas fa-' + tpl.icon" aria-hidden="true"></i>
+              {{ t(tpl.label) }}
+            </button>
+          </div>
+        </div>
         <p v-if="error" class="modal-error" role="alert">{{ error }}</p>
       </div>
       <div class="modal-actions">
@@ -220,6 +253,22 @@ async function deleteBoard() {
 .quiet-danger:hover { background: var(--danger-soft); }
 .quiet-danger.left { margin-right: 0; }
 .quiet-danger.left + .quiet-danger { margin-right: auto; }
+.template-field { display: block; margin-bottom: 4px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.template-row { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.template-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--r-control);
+  background: var(--tile-2);
+  color: var(--ink);
+  font-size: 13px;
+  transition: background 120ms ease-out;
+}
+.template-btn:hover:not(:disabled) { background: var(--lift); }
+.template-btn i { color: var(--accent); font-size: 13px; }
 .modal-error {
   font-size: 12px;
   color: var(--danger);

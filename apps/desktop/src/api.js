@@ -32,6 +32,9 @@ export const api = {
   setAutostart: (enable) => invoke("set_autostart", { enable }),
   setStartMinimized: (enable) => invoke("set_start_minimized", { enable }),
   setLang: (lang, locale) => invoke("set_lang", { lang, locale }),
+  // Christmas mode: {mode: "auto"|"on"|"off", season: "christmas"|"off"}
+  getSeason: () => invoke("get_season"),
+  setSeason: (mode) => invoke("set_season", { mode }),
   readImageData: (path) => invoke("read_image_data", { path }),
   listKnownInputs: () => invoke("list_known_inputs"),
   listLanAddresses: () => invoke("list_lan_addresses"),

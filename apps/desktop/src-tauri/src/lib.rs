@@ -58,6 +58,10 @@ struct DesktopState {
         std::sync::Mutex<Option<(std::time::Instant, Vec<pulpit_spotify::Playlist>)>>,
     #[allow(dead_code)]
     tools: Option<Arc<pulpit_tools::ToolManager>>,
+    /// Christmas-mode choice (`season` in editor.json). Sending a new
+    /// mode makes the season producer push right away; the fallback
+    /// launch has no producer, and `get_season` resolves directly.
+    season: tokio::sync::watch::Sender<pulpit_season::Mode>,
 }
 
 impl DesktopState {
@@ -235,6 +239,8 @@ pub fn run() {
             set_touch_mode_hotkey,
             set_server_port,
             set_start_minimized,
+            get_season,
+            set_season,
             get_autostart,
             set_autostart,
             read_image_data,
@@ -410,6 +416,8 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
         stored_editor.get("port"),
     );
     let start_minimized = stored_flag(&stored_editor, "start_minimized");
+    let (season, season_rx) =
+        tokio::sync::watch::channel(pulpit_season::Mode::from_editor_json(&stored_editor));
 
     // PULPIT_DB overrides the database location (profiling / hermetic runs)
     let db_path = std::env::var_os("PULPIT_DB").map(std::path::PathBuf::from);
@@ -433,6 +441,7 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
 
             spotify_playlists: std::sync::Mutex::new(None),
             tools: None,
+            season,
         };
     }
     let db = db.unwrap();
@@ -655,6 +664,10 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
     ));
     tauri::async_runtime::spawn(pulpit_host::forward_producer(feed.clone(), tools_rx));
     tauri::async_runtime::spawn(pulpit_host::forward_producer(feed.clone(), discord_push_rx));
+    tauri::async_runtime::spawn(pulpit_host::forward_producer(
+        feed.clone(),
+        pulpit_season::spawn_push(season_rx),
+    ));
 
     // Spotify (when its config is readable): the poller's consumers
     // signal counts connected legacy + v2 clients plus this host's extra
@@ -811,6 +824,7 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
 
         spotify_playlists: std::sync::Mutex::new(None),
         tools: Some(tools),
+        season,
     }
 }
 
@@ -3096,6 +3110,37 @@ async fn set_start_minimized(state: State<'_, DesktopState>, enable: bool) -> Re
         .as_ref()
         .ok_or_else(|| "Brak ścieżki ustawień (uruchomienie awaryjne).".to_string())?;
     persist_editor_setting(path, "start_minimized", serde_json::json!(enable))
+}
+
+/// Christmas mode for the editor chrome: the stored choice and the
+/// season it resolves to today. Live changes (midnight rollover, a mode
+/// switch) also arrive as the `season` custom value; this covers the
+/// first paint, before any push reached the WebView.
+#[tauri::command]
+fn get_season(state: State<'_, DesktopState>) -> serde_json::Value {
+    let mode = *state.season.borrow();
+    serde_json::json!({
+        "mode": mode.as_str(),
+        "season": pulpit_season::resolve(mode, pulpit_season::today()).wire_name(),
+    })
+}
+
+/// Persist the seasonal-theme choice (Settings -> General): `auto`,
+/// `off` or a season's wire name. Applies at once: the season producer
+/// re-pushes to the WebView and to every tablet. Returns the same payload
+/// as `get_season`.
+#[tauri::command]
+async fn set_season(
+    state: State<'_, DesktopState>,
+    mode: String,
+) -> Result<serde_json::Value, String> {
+    let parsed = pulpit_season::Mode::from_name(&mode)
+        .ok_or_else(|| format!("Unknown season mode: {mode}"))?;
+    if let Some(path) = state.settings_path.as_ref() {
+        persist_editor_setting(path, pulpit_season::SETTING_KEY, serde_json::json!(parsed.as_str()))?;
+    }
+    state.season.send_replace(parsed);
+    Ok(get_season(state))
 }
 
 /// The `status` section of aidev.json, with the defaults an absent
