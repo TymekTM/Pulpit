@@ -42,6 +42,7 @@ export function comboAllowed(combo) {
 import { nextTick, onMounted, ref } from "vue";
 import { api } from "../../api";
 import { setUiLang, t, uiLang } from "../../i18n";
+import { SEASON_MODES, season, seasonMode, setSeasonMode } from "../../season.js";
 
 const autostart = ref(false);
 const autostartBusy = ref(false);
@@ -60,6 +61,34 @@ const hotkeyError = ref("");
 const captureBtn = ref(null);
 
 const langError = ref("");
+
+// Settings labels for SEASON_MODES (season names double as the "always
+// this one" choices)
+const SEASON_LABELS = {
+  auto: "Auto (calendar)",
+  off: "Never",
+  christmas: "Christmas time",
+  halloween: "Halloween",
+  easter: "Easter",
+  valentines: "Valentine's Day",
+};
+const seasonBusy = ref(false);
+const seasonError = ref("");
+
+async function onSeasonChange(e) {
+  const select = e.target;
+  seasonBusy.value = true;
+  seasonError.value = "";
+  try {
+    await setSeasonMode(select.value);
+  } catch (err) {
+    // the stored choice did not change: put the select back on it
+    select.value = seasonMode.value;
+    seasonError.value = err ? String(err) : t("Could not save the seasonal theme.");
+  } finally {
+    seasonBusy.value = false;
+  }
+}
 
 async function onLangChange(e) {
   langError.value = "";
@@ -248,6 +277,37 @@ onMounted(async () => {
       </div>
       <p v-if="hotkeyError" class="err">{{ hotkeyError }}</p>
       <p v-if="langError" class="err">{{ langError }}</p>
+    </section>
+
+    <section class="group">
+      <h3 class="group-title">{{ t("Appearance") }}</h3>
+      <div class="card">
+        <div class="row">
+          <div class="row-text">
+            <span class="row-name">{{ t("Seasonal theme") }}</span>
+            <span class="row-note">
+              {{ t("Holiday colours and effects here and on connected tablets. Auto follows the calendar: Valentine's Day 10-14 February, Easter from Palm Sunday to Easter Monday, Halloween 25 October - 1 November, Christmas 1 December - 6 January.") }}
+              <template v-if="seasonMode === 'auto'">
+                {{
+                  season === "off"
+                    ? t("Nothing on right now.")
+                    : t("On right now: {season}.", { season: t(SEASON_LABELS[season]) })
+                }}
+              </template>
+            </span>
+          </div>
+          <select
+            class="select"
+            :value="seasonMode"
+            :aria-label="t('Seasonal theme')"
+            :disabled="seasonBusy"
+            @change="onSeasonChange"
+          >
+            <option v-for="m in SEASON_MODES" :key="m" :value="m">{{ t(SEASON_LABELS[m]) }}</option>
+          </select>
+        </div>
+      </div>
+      <p v-if="seasonError" class="err">{{ seasonError }}</p>
     </section>
   </div>
 </template>

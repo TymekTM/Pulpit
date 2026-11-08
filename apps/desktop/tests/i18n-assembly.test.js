@@ -117,7 +117,9 @@ describe("i18n assembly", () => {
     setLocaleForTest("pl");
     await nextTick();
     const plDate = w.find(".tool-sub").text();
-    expect(plDate).toMatch(/nd|pon|wt|śr|czw|pt|sob/);
+    // ICU spells Sunday "niedz." (older data: "nd."); any day of the week
+    // can be today, so both spellings must pass
+    expect(plDate).toMatch(/niedz|nd|pon|wt|śr|czw|pt|sob/);
     expect(plDate).not.toMatch(/sun|mon|tue|wed|thu|fri|sat/i);
     expect(plDate).not.toBe(enDate);
 

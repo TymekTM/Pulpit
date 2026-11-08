@@ -1,0 +1,118 @@
+/* Seasonal theme skins (.scratch/christmas-mode/spec.md). Everything here
+   keys off <html data-season="...">, set by src/season.js, so the
+   default skin is untouched while no season is on. Red stays reserved
+   for errors (DESIGN.md): no accent below is red, and the festive reds
+   live only in the decorations. Each season sets the accent tokens plus
+   four garland colours (--garland-1..4) for the lights under the top
+   bar. */
+
+html[data-season="christmas"] {
+  --accent: #3fb56b;
+  --accent-2: #2e9656;
+  --accent-ink: #0a2414;
+  --accent-soft: rgba(63, 181, 107, 0.15);
+  --garland-1: #e2504a;
+  --garland-2: #f2c14e;
+  --garland-3: #3fb56b;
+  --garland-4: #5aa9e6;
+  --garland-glow: rgba(242, 193, 78, 0.55);
+  --garland-speed: 2.4s;
+}
+
+/* pumpkin orange, with violet and candle-gold lanterns */
+html[data-season="halloween"] {
+  --accent: #f0882a;
+  --accent-2: #d9701a;
+  --accent-ink: #2a1300;
+  --accent-soft: rgba(240, 136, 42, 0.15);
+  --garland-1: #f0882a;
+  --garland-2: #9b6ad6;
+  --garland-3: #ffd36e;
+  --garland-4: #7ccf5a;
+  --garland-glow: rgba(240, 136, 42, 0.6);
+  --garland-speed: 3.2s;
+}
+
+/* spring lavender, with pastel bulbs */
+html[data-season="easter"] {
+  --accent: #b18be8;
+  --accent-2: #9a72d9;
+  --accent-ink: #1c1030;
+  --accent-soft: rgba(177, 139, 232, 0.16);
+  --garland-1: #f7c6d9;
+  --garland-2: #fff3b0;
+  --garland-3: #cde8b5;
+  --garland-4: #c9d8f5;
+  --garland-glow: rgba(255, 243, 176, 0.45);
+  --garland-speed: 3.6s;
+}
+
+/* rose pink (bluer than the error pink, never the error red) */
+html[data-season="valentines"] {
+  --accent: #e2679f;
+  --accent-2: #cc4f88;
+  --accent-ink: #2d0a1c;
+  --accent-soft: rgba(226, 103, 159, 0.15);
+  --garland-1: #f06292;
+  --garland-2: #f8bbd0;
+  --garland-3: #ffffff;
+  --garland-4: #e2679f;
+  --garland-glow: rgba(240, 98, 146, 0.55);
+  --garland-speed: 3.6s;
+}
+
+/* a string of lights hanging under the top bar: two bulb sets that
+   twinkle in turn (one opacity animation each, composited) */
+html[data-season] .topbar {
+  position: relative;
+}
+html[data-season] .topbar::before,
+html[data-season] .topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -7px;
+  height: 10px;
+  pointer-events: none;
+  z-index: 5;
+  background-repeat: repeat-x;
+  background-size: 96px 10px;
+  filter: drop-shadow(0 0 3px var(--garland-glow));
+}
+html[data-season] .topbar::before {
+  background-image:
+    radial-gradient(circle at 12px 5px, var(--garland-1) 0 3px, transparent 3.5px),
+    radial-gradient(circle at 60px 5px, var(--garland-2) 0 3px, transparent 3.5px);
+  animation: season-twinkle var(--garland-speed) ease-in-out infinite;
+}
+html[data-season] .topbar::after {
+  background-image:
+    radial-gradient(circle at 36px 5px, var(--garland-3) 0 3px, transparent 3.5px),
+    radial-gradient(circle at 84px 5px, var(--garland-4) 0 3px, transparent 3.5px);
+  animation: season-twinkle var(--garland-speed) ease-in-out calc(var(--garland-speed) / -2) infinite;
+}
+/* Halloween lanterns flicker like candles instead of pulsing */
+html[data-season="halloween"] .topbar::before,
+html[data-season="halloween"] .topbar::after {
+  animation-name: season-flicker;
+}
+@keyframes season-twinkle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@keyframes season-flicker {
+  0%, 100% { opacity: 1; }
+  12% { opacity: 0.55; }
+  18% { opacity: 0.95; }
+  46% { opacity: 0.7; }
+  52% { opacity: 1; }
+  78% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-season] .topbar::before,
+  html[data-season] .topbar::after {
+    animation: none;
+  }
+}

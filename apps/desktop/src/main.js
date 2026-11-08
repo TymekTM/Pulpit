@@ -9,8 +9,13 @@ import { createApp } from "vue";
 // use this CSS.
 import "@fortawesome/fontawesome-free/css/fontawesome.min.css";
 import "./style.css";
+import "./season.css";
 import App from "./App.vue";
 import { i18n, initUiLang } from "./i18n.js";
+import { initSeason } from "./season.js";
 
-// the stored language is applied before the first paint
-initUiLang().finally(() => createApp(App).use(i18n).mount("#app"));
+// the stored language and the Christmas-mode skin are applied before the
+// first paint (initSeason never rejects)
+Promise.allSettled([initUiLang(), initSeason()]).finally(() =>
+  createApp(App).use(i18n).mount("#app")
+);

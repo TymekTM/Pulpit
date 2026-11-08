@@ -228,6 +228,10 @@ fn state_sync() {
     let (_, sync) = pinned::<StateSync>("state.sync", TYPE_STATE_SYNC);
     assert_eq!(sync.values["ext.speaker-muted"], "OFF");
     assert_eq!(sync.values["discord.microphone-muted"], true);
+    // Christmas mode (pulpit-season): the season and the Wigilia
+    // countdown ride as ordinary custom-value channels
+    assert_eq!(sync.values["ext.season"], "christmas");
+    assert_eq!(sync.values["ext.season-countdown"], "16 dni");
     assert_eq!(
         sync.values["ext.tool-timer"],
         serde_json::json!({

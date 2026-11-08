@@ -20,6 +20,7 @@ pulpit-vm = { path = "../vm" }
 pulpit-discord = { path = "../discord" }
 pulpit-spotify = { path = "../spotify" }
 pulpit-tools = { path = "../tools" }
+pulpit-season = { path = "../season" }
 pulpit-os = { path = "../os" }
 base64 = { workspace = true }
 sha2 = { workspace = true }

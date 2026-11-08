@@ -626,6 +626,17 @@ export const CATALOG = [
       { key: "label", label: "Label", placeholder: "Licznik" },
     ],
   },
+  // Christmas mode (pulpit-season): days until Wigilia as a live text,
+  // pushed as `season-countdown` all year round. The server registers it
+  // as a custom-value input (like the Discord toggles), so every surface
+  // already renders it; the value only shows while the tile has no title
+  // of its own.
+  {
+    value: "season-countdown",
+    label: "Christmas countdown",
+    icon: "gifts",
+    color: "#2f7d4a",
+  },
   { header: "Multimedia (system)" },
   // natywna integracja SMTC (Windows global media transport): działa dla
   // dowolnego odtwarzacza widocznego w systemie (przeglądarka, Tidal,

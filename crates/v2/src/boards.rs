@@ -973,6 +973,37 @@ mod tests {
     }
 
     #[test]
+    fn season_countdown_is_a_live_text_tile_on_both_wire_builders() {
+        // registered the way pulpit_host::register_inputs does it
+        for (value, icon, color, mode) in pulpit_season::input_declarations() {
+            pulpit_legacy::props::register_extension_input(pulpit_legacy::props::ExtInput {
+                value: value.into(),
+                icon: Some(icon.into()),
+                color: Some(color.into()),
+                font_icon: Some("fas".into()),
+                mode: mode.map(Into::into),
+                command: None,
+            });
+        }
+        // stored the way the editor and the template create it
+        let r = row("season-countdown", "button", None);
+
+        // stock client: the custom-value lane keyed by the pushed key
+        let legacy = Mapper::new().shortcut_payload(&r);
+        assert_eq!(legacy["app"], "custom-value");
+        assert_eq!(legacy["color"], "#2f7d4a");
+
+        // v2: a Toggle on ext.season-countdown, whose text the client shows
+        let (assets, _dir) = asset_store();
+        let engine = StateEngine::new(120);
+        let tile = build_tile(&r, &HashMap::new(), &assets, &engine);
+        assert_eq!(tile.manifest.kind, WidgetKind::Toggle);
+        let state = tile.manifest.state.expect("countdown carries its channel");
+        assert_eq!(state.channel, "ext.season-countdown");
+        assert_eq!(state.shape, StateShape::Scalar);
+    }
+
+    #[test]
     fn http_request_tile_is_a_plain_button_on_the_v2_wire() {
         // the config lives in the command column (server-side execution);
         // the client needs no kind-specific treatment, just the tap

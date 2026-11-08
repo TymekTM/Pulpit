@@ -39,6 +39,7 @@ pulpit-os = { path = "../../../crates/os" }
 pulpit-i18n = { path = "../../../crates/i18n" }
 pulpit-obs = { path = "../../../crates/obs" }
 pulpit-sysinfo = { path = "../../../crates/sysinfo" }
+pulpit-season = { path = "../../../crates/season" }
 pulpit-proto = { path = "../../../crates/proto" }
 pulpit-v2 = { path = "../../../crates/v2" }
 pulpit-aidev = { path = "../../../crates/aidev" }

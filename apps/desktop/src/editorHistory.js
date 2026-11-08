@@ -421,6 +421,18 @@ export function boardDeleteCommand({ boardSnapshot }) {
   };
 }
 
+/// A board created together with its tiles (a template): undo deletes it,
+/// redo rebuilds board and tiles - exactly a board delete run backwards.
+export function boardCreateFromSnapshotCommand({ boardSnapshot }) {
+  const inverse = boardDeleteCommand({ boardSnapshot });
+  return {
+    description: `Utwórz tablicę: ${boardSnapshot.name}`,
+    remapBoardId: (oldId, newId) => inverse.remapBoardId(oldId, newId),
+    undo: (api, ctx) => inverse.redo(api, ctx),
+    redo: (api, ctx) => inverse.undo(api, ctx),
+  };
+}
+
 export function boardClearCommand({ boardId, tilesSnapshot }) {
   let currentBoardId = boardId;
   let snapshots = tilesSnapshot.map((b) => ({ ...b }));
