@@ -10,6 +10,7 @@ pub mod discovery;
 mod hub;
 mod service;
 mod session;
+mod slides;
 mod state;
 
 use std::sync::atomic::{AtomicU64, Ordering};

@@ -21,6 +21,9 @@ use crate::devices::DeviceEntry;
 pub struct V2Hub {
     sessions: Mutex<HashMap<u64, Arc<V2Session>>>,
     next_id: AtomicU64,
+    /// Per-tile slider lanes (see `crate::slides`): slide values for one
+    /// tile reach the backend in submit order, newest waiting value wins.
+    slides: Arc<crate::slides::SlideLanes>,
 }
 
 impl V2Hub {
@@ -62,6 +65,12 @@ impl V2Hub {
 
     pub fn count(&self) -> usize {
         self.sessions.lock().expect("v2 hub poisoned").len()
+    }
+
+    /// The per-tile slider lanes shared by every session: values for the
+    /// same tile must apply in order, latest wins (`crate::slides`).
+    pub(crate) fn slides(&self) -> &Arc<crate::slides::SlideLanes> {
+        &self.slides
     }
 
     /// Serializes once and pushes to every live session. A full or closed
