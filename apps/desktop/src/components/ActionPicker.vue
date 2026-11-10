@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { t } from "../i18n";
+import { vmSupported } from "../api";
 
 // action picker for the tile dialog: searchable, grouped listbox that
 // replaces the native <select> with optgroups. Groups carry
@@ -28,9 +29,9 @@ const currentColor = computed(() => current.value?.color || "#7f8c8d");
 
 // unknown type gets its own trailing group so it stays reachable
 const withCustom = computed(() => {
-  if (current.value || props.modelValue === "") return props.groups;
+  if (current.value || props.modelValue === "") return markVmUnavailable(props.groups);
   return [
-    ...props.groups,
+    ...markVmUnavailable(props.groups),
     {
       header: t("Custom"),
       items: [{ value: props.modelValue, label: t("{value} (custom)", { value: String(props.modelValue) }) }],
@@ -39,6 +40,23 @@ const withCustom = computed(() => {
 });
 
 // ---- search + visible items ------------------------------------------------
+
+// Linux: the platform cannot run Voicemeeter (no Remote API DLL), so
+// its actions stay listed - tiles already using one keep showing their
+// selection - but greyed out with the same unavailable rendering the
+// never-integrated actions (SLOBS, Twitch) use.
+function markVmUnavailable(groups) {
+  if (vmSupported.value) return groups;
+  const reason = t("Voicemeeter is not available on this system");
+  return groups.map((g) => ({
+    ...g,
+    items: g.items.map((it) =>
+      String(it.value || "").startsWith("vm-") && !it.unavailable
+        ? { ...it, unavailable: reason }
+        : it
+    ),
+  }));
+}
 
 
 const recentValues = ref(loadRecentActions());

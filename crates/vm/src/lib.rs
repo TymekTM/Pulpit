@@ -95,6 +95,13 @@ pub fn format_version(ver: i32) -> String {
 /// Status of the Voicemeeter integration.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct VoicemeeterStatus {
+    /// Whether this platform can run the integration at all: the Remote
+    /// API DLL is Windows-only, so Linux desktops grey the whole
+    /// Voicemeeter surface out instead of probing forever. Older
+    /// payloads without the field deserialize as `true` (they can only
+    /// come from a Windows build).
+    #[serde(default = "default_true")]
+    pub supported: bool,
     pub installed: bool,
     pub dll_path: Option<String>,
     pub logged_in: bool,
@@ -103,6 +110,11 @@ pub struct VoicemeeterStatus {
     pub strip_count: usize,
     pub bus_count: usize,
     pub dll_override: Option<String>,
+}
+
+/// Serde default for [`VoicemeeterStatus::supported`].
+fn default_true() -> bool {
+    true
 }
 
 /// Selectable item for catalog dropdowns (`devices: "vm-strip"` / `"vm-bus"`).
@@ -531,6 +543,7 @@ impl VoicemeeterState {
         let installed = existing_path.is_some();
         if !installed {
             return VoicemeeterStatus {
+                supported: cfg!(windows),
                 installed: false,
                 dll_path: None,
                 logged_in: false,
@@ -553,6 +566,7 @@ impl VoicemeeterState {
 
         match details {
             Ok((vm_type, version, strip_count, bus_count)) => VoicemeeterStatus {
+                supported: cfg!(windows),
                 installed: true,
                 dll_path: existing_path,
                 logged_in: self.logged_in,
@@ -563,6 +577,7 @@ impl VoicemeeterState {
                 dll_override: override_str,
             },
             Err(_) => VoicemeeterStatus {
+                supported: cfg!(windows),
                 installed: true,
                 dll_path: existing_path,
                 logged_in: false,

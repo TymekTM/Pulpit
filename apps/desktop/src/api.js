@@ -3,6 +3,30 @@ import { ref } from "vue";
 
 export const vmDevicesState = ref({ strips: [], buses: [] });
 
+// Can this platform run the Voicemeeter integration at all? The Remote
+// API DLL is Windows-only; the backend's vm_status answers
+// `supported: false` there. It starts optimistic (true) so nothing
+// flickers greyed-in on Windows, and a failed probe leaves it there.
+export const vmSupported = ref(true);
+let vmSupportProbed = false;
+
+// One vm_status probe at startup (this module loads with the app): the
+// action picker and the settings nav grey the vm-* surface out when the
+// platform says no. Guarded so only the first call ever fires. Calls
+// invoke directly - `api` below is not initialized yet at module load.
+export function probeVmSupport() {
+  if (vmSupportProbed) return;
+  vmSupportProbed = true;
+  invoke("vm_status")
+    .then((status) => {
+      vmSupported.value = status?.supported !== false;
+    })
+    .catch(() => {
+      // errors keep the optimistic default
+    });
+}
+probeVmSupport();
+
 export const api = {
   serverStatus: () => invoke("server_status"),
   listBoards: () => invoke("list_boards"),

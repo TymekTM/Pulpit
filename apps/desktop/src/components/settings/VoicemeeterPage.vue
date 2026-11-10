@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
-import { api, refreshVmDevices } from "../../api";
+import { api, refreshVmDevices, vmSupported } from "../../api";
 import { t } from "../../i18n";
 
 // Voicemeeter through its Remote API DLL. The status query logs into the
@@ -133,6 +133,9 @@ async function runVoicemeeter() {
 
 let poll = null;
 onMounted(() => {
+  // Linux: there is nothing to probe - the DLL cannot load - so the
+  // page shows one line instead of controls and never polls
+  if (!vmSupported.value) return;
   refresh();
   poll = setInterval(refresh, 8000);
 });
@@ -146,8 +149,9 @@ onUnmounted(() => {
   <div class="page">
     <header class="page-head">
       <h2>Voicemeeter</h2>
-      <span class="chip" :class="chip.cls">{{ chip.text }}</span>
     </header>
+    <p v-if="!vmSupported" class="lead">{{ t("Voicemeeter is not available on this system") }}</p>
+    <template v-else>
     <p class="lead">{{ t("Volume, mute and routing tiles for Voicemeeter strips and buses. Once connected, the tile editor shows your own strip and bus names.") }}</p>
 
     <section class="group">
@@ -195,5 +199,6 @@ onUnmounted(() => {
         </div>
       </div>
     </section>
+    </template>
   </div>
 </template>

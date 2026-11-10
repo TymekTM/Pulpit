@@ -240,6 +240,7 @@
   "Voicemeeter was not found on this computer. Installed somewhere unusual? Point at the DLL below.": "Nie znaleziono Voicemeetera na tym komputerze. Zainstalowany w nietypowym miejscu? Wskaż DLL poniżej.",
   "{type} {version} - {strips} inputs, {buses} outputs.": "{type} {version} — wejścia: {strips}, wyjścia: {buses}.",
   "Voicemeeter is installed but not running.": "Voicemeeter jest zainstalowany, ale nie działa.",
+  "Voicemeeter is not available on this system": "Voicemeeter nie jest dostępny w tym systemie",
   "Back to automatic detection.": "Przywrócono automatyczne wykrywanie.",
   "Starting Voicemeeter...": "Uruchamiam Voicemeeter...",
   "Volume, mute and routing tiles for Voicemeeter strips and buses. Once connected, the tile editor shows your own strip and bus names.": "Kafelki głośności, wyciszenia i routingu dla stripów i busów Voicemeetera. Po połączeniu edytor kafelków pokazuje Twoje nazwy stripów i busów.",

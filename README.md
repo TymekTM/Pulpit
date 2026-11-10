@@ -127,6 +127,28 @@ mDNS discovery list (compare the code on both screens, then approve on the
 desktop) or by typing a pairing code minted on the desktop ("Generuj kod
 parowania" under "Nowy klient (v2)").
 
+### Linux
+
+The server (headless `pulpit-server`, also embedded in the desktop app)
+builds and runs on Linux with most features working. It shells out to
+standard desktop tools instead of native libraries; each feature
+degrades to a clean "unsupported" state when its tool is missing.
+
+| Feature | Tool |
+| --- | --- |
+| Volume / mute / output device | `pactl` (PulseAudio or PipeWire-pulse) |
+| Now-playing media + control | `busctl --user` (systemd) speaking MPRIS |
+| Clipboard | `wl-copy`/`wl-paste` (Wayland) or `xclip` (X11) |
+| Screenshot | `grim` (Wayland) or `import` (ImageMagick, X11) |
+| Play Audio tiles | first of `pw-play`, `paplay`, `aplay` |
+| System-info tiles | none (reads `/proc`) |
+
+All tools are called with `LC_ALL=C` so parsing never meets translated
+output. Not available on Linux: Voicemeeter (greyed out in the editor
+and Settings), Discord voice integration, the in-app auto-updater, and
+keyboard synthesis into native Wayland windows (enigo's default X11
+backend reaches X11/XWayland windows only).
+
 ## Build from source
 
 Prerequisites: a Rust toolchain (stable, MSVC), Node.js with npm, and for
