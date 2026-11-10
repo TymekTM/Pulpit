@@ -7,6 +7,7 @@
 
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::{OsError, Result};
@@ -26,6 +27,13 @@ pub(crate) const TOOL_TIMEOUT: Duration = Duration::from_secs(3);
 /// How often the runner polls the child while waiting for it to exit.
 const WAIT_TICK: Duration = Duration::from_millis(20);
 
+/// How long the runner waits for the pipe readers after the child
+/// exits. `read_to_end` only returns when EVERY holder of the pipe
+/// closes it, and tools that fork a daemon (`wl-copy`, `xclip -i`)
+/// leave the write end open in the child - whatever the readers have
+/// collected by the end of this bound is what the caller gets.
+const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
+
 /// Run `program args` with `LC_ALL=C`, feeding `stdin` (if any) and
 /// closing it, and return the collected stdout.
 ///
@@ -34,12 +42,41 @@ const WAIT_TICK: Duration = Duration::from_millis(20);
 /// - non-zero exit -> [`OsError::Failed`] with the first 200 chars of
 ///   stderr
 /// - still running after `timeout` -> kill, reap, [`OsError::Failed`]
+///
+/// The pipe readers are never joined: see [`DRAIN_TIMEOUT`]. Use
+/// [`run_tool_detached_output`] for tools known to fork a daemon.
 pub(crate) fn run_tool(
     missing: &'static str,
     program: &str,
     args: &[&str],
     stdin: Option<&[u8]>,
     timeout: Duration,
+) -> Result<Vec<u8>> {
+    run_tool_inner(missing, program, args, stdin, timeout, false)
+}
+
+/// [`run_tool`] with stdout and stderr sent to `Stdio::null()`: nothing
+/// is read, so the call returns as soon as the child exits even when
+/// the tool forks a daemon that keeps the pipes open (`wl-copy`,
+/// `xclip -i` clipboard writes). On a non-zero exit the error text is
+/// the bare `exit status …` - there is no stderr to report.
+pub(crate) fn run_tool_detached_output(
+    missing: &'static str,
+    program: &str,
+    args: &[&str],
+    stdin: Option<&[u8]>,
+    timeout: Duration,
+) -> Result<Vec<u8>> {
+    run_tool_inner(missing, program, args, stdin, timeout, true)
+}
+
+fn run_tool_inner(
+    missing: &'static str,
+    program: &str,
+    args: &[&str],
+    stdin: Option<&[u8]>,
+    timeout: Duration,
+    discard_output: bool,
 ) -> Result<Vec<u8>> {
     let mut child = Command::new(program)
         .args(args)
@@ -49,8 +86,16 @@ pub(crate) fn run_tool(
         } else {
             Stdio::null()
         })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(if discard_output {
+            Stdio::null()
+        } else {
+            Stdio::piped()
+        })
+        .stderr(if discard_output {
+            Stdio::null()
+        } else {
+            Stdio::piped()
+        })
         .spawn()
         .map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => OsError::Unsupported(missing),
@@ -60,24 +105,48 @@ pub(crate) fn run_tool(
     // Take the pipe handles out of `child` so the reader threads own
     // them; `try_wait` below needs only the process handle.
     let mut stdin_pipe = child.stdin.take();
-    let mut stdout_pipe = child.stdout.take();
-    let mut stderr_pipe = child.stderr.take();
 
     // Drain stdout/stderr on their own threads: a tool that fills one
     // pipe while this loop ignores it must not deadlock on a full pipe.
-    let stderr_thread = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(pipe) = stderr_pipe.as_mut() {
-            let _ = pipe.read_to_end(&mut buf);
-        }
-        buf
+    // Each chunk crosses the channel as soon as it is read, so a reader
+    // stuck waiting for EOF (a daemon holds the write end open) has
+    // still delivered everything the child wrote.
+    let stdout_rx = child.stdout.take().map(|mut pipe| {
+        let (tx, rx) = mpsc::channel::<Option<Vec<u8>>>();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            loop {
+                match pipe.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if tx.send(Some(buf[..n].to_vec())).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+            // end of pipe: everything that will ever arrive has
+            let _ = tx.send(None);
+        });
+        rx
     });
-    let stdout_thread = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(pipe) = stdout_pipe.as_mut() {
-            let _ = pipe.read_to_end(&mut buf);
-        }
-        buf
+    let stderr_rx = child.stderr.take().map(|mut pipe| {
+        let (tx, rx) = mpsc::channel::<Option<Vec<u8>>>();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            loop {
+                match pipe.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if tx.send(Some(buf[..n].to_vec())).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+            let _ = tx.send(None);
+        });
+        rx
     });
 
     // stdin payloads are tiny (clipboard text); write, then close so
@@ -91,8 +160,8 @@ pub(crate) fn run_tool(
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                let stdout = stdout_thread.join().unwrap_or_default();
-                let stderr = stderr_thread.join().unwrap_or_default();
+                let stdout = recv_drained(stdout_rx.as_ref());
+                let stderr = recv_drained(stderr_rx.as_ref());
                 if status.success() {
                     return Ok(stdout);
                 }
@@ -108,6 +177,9 @@ pub(crate) fn run_tool(
                 if Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait(); // reap the killed child
+                    // the reader threads are abandoned, not joined: a
+                    // daemon holding the pipes open must not wedge the
+                    // caller past the kill
                     return Err(OsError::Failed(format!("{program} timed out")));
                 }
                 std::thread::sleep(WAIT_TICK);
@@ -115,6 +187,30 @@ pub(crate) fn run_tool(
             Err(e) => return Err(OsError::Failed(format!("{program}: {e}"))),
         }
     }
+}
+
+/// What a reader thread delivered within [`DRAIN_TIMEOUT`]: every chunk
+/// that arrived, ending early at end-of-pipe. `None` (discarded-output
+/// mode) reads nothing and waits for nobody.
+fn recv_drained(rx: Option<&mpsc::Receiver<Option<Vec<u8>>>>) -> Vec<u8> {
+    let Some(rx) = rx else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let deadline = Instant::now() + DRAIN_TIMEOUT;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break; // the bound is up: keep what arrived so far
+        }
+        match rx.recv_timeout(remaining) {
+            Ok(Some(chunk)) => out.extend_from_slice(&chunk),
+            // end of pipe or dropped reader: nothing more is coming
+            Ok(None) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => break,
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -175,5 +271,26 @@ mod tests {
         )
         .expect("run");
         assert_eq!(out, "pulpit 四".as_bytes());
+    }
+
+    #[test]
+    fn a_daemonizing_tool_does_not_block_the_runner() {
+        // the background sleep inherits both pipes and keeps them open
+        // after sh exits, the way wl-copy's clipboard daemon does
+        let started = Instant::now();
+        let out = run_tool(NO_SH, "sh", &["-c", "sleep 4 & echo hi"], None, TOOL_TIMEOUT)
+            .expect("run");
+        assert_eq!(String::from_utf8_lossy(&out).trim(), "hi");
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn discarded_output_mode_returns_as_soon_as_the_child_exits() {
+        // same daemonizing script, but nothing is read: the runner has
+        // no pipe to wait for, so the call ends with the child
+        let started = Instant::now();
+        run_tool_detached_output(NO_SH, "sh", &["-c", "sleep 4 & echo hi"], None, TOOL_TIMEOUT)
+            .expect("run");
+        assert!(started.elapsed() < Duration::from_secs(1));
     }
 }

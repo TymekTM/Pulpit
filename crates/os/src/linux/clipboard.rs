@@ -1,9 +1,11 @@
 //! Clipboard text via the desktop's clipboard tools: `wl-paste`/
-//! `wl-copy` on Wayland, `xclip` on X11. `wl-copy` and `xclip -i` fork a
-//! child that keeps owning the selection after the parent exits, which
-//! the runner's timeout bounds.
+//! `wl-copy` on Wayland, `xclip` on X11. `wl-copy` and `xclip -i` fork
+//! a child that keeps owning the selection after the parent exits and
+//! inherits the output pipes, so writes go through the runner's
+//! discarded-output mode, which reads nothing and cannot be wedged by
+//! that daemon.
 
-use crate::linux::{run_tool, TOOL_TIMEOUT};
+use crate::linux::{run_tool, run_tool_detached_output, TOOL_TIMEOUT};
 use crate::{OsError, Result};
 
 const NO_SESSION: &str = "clipboard: no display session";
@@ -72,7 +74,10 @@ pub(crate) fn set_text(text: &str) -> Result<()> {
             "clipboard write: xclip not found",
         ),
     };
-    run_tool(missing, program, args, Some(text.as_bytes()), TOOL_TIMEOUT).map(|_| ())
+    // discarded output: the forked clipboard daemon holds the pipes
+    // open, and a paste must not queue behind reading them
+    run_tool_detached_output(missing, program, args, Some(text.as_bytes()), TOOL_TIMEOUT)
+        .map(|_| ())
 }
 
 #[cfg(test)]
