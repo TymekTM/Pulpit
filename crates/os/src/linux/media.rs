@@ -501,25 +501,30 @@ fn poll_interval(any_player: bool) -> Duration {
 
 /// Read a `file://` cover into bytes (same 5 MB cap as the Windows
 /// thumbnail read); `http(s)` art needs a fetcher and stays ignored.
+/// Only bytes that sniff as an image travel: a player naming a
+/// non-image file yields no art at all, never garbage cover bytes.
 fn load_art(url: Option<&str>) -> Option<(Vec<u8>, &'static str)> {
     let path = percent_decode(url?.strip_prefix("file://")?);
     let bytes = std::fs::read(path).ok()?;
     if bytes.is_empty() || bytes.len() > 5 * 1024 * 1024 {
         return None;
     }
-    let ext = art_ext(&bytes);
+    let ext = art_ext(&bytes)?;
     Some((bytes, ext))
 }
 
-fn art_ext(bytes: &[u8]) -> &'static str {
+/// The image format of the cover by magic bytes; `None` when the bytes
+/// are no image this app can render - unknown content must not reach
+/// tablets as a guessed-at jpg.
+fn art_ext(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
-        "jpg"
+        Some("jpg")
     } else if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
-        "png"
+        Some("png")
     } else if bytes.len() > 12 && bytes.starts_with(b"RIFF") && bytes[8..].starts_with(b"WEBP") {
-        "webp"
+        Some("webp")
     } else {
-        "jpg"
+        None
     }
 }
 
@@ -802,5 +807,31 @@ mod tests {
         // a dangling or invalid escape never truncates
         assert_eq!(percent_decode("/50%"), "/50%");
         assert_eq!(percent_decode("/%zz"), "/%zz");
+    }
+
+    #[test]
+    fn only_image_cover_bytes_ship() {
+        // magic bytes only: unknown content is no art, never a jpg guess
+        assert_eq!(art_ext(b"plain text, not a cover"), None);
+        assert_eq!(art_ext(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("jpg"));
+        assert_eq!(art_ext(&[0x89, b'P', b'N', b'G']), Some("png"));
+        let mut webp = b"RIFF".to_vec();
+        webp.extend_from_slice(&[0, 0, 0, 0]);
+        webp.extend_from_slice(b"WEBP");
+        webp.extend_from_slice(b"VP8 ");
+        assert_eq!(art_ext(&webp), Some("webp"));
+
+        // through the file path: text content yields no art, a PNG
+        // magic yields png bytes (tempfile dirs, never ~/pulpitApp)
+        let dir = tempfile::tempdir().unwrap();
+        let text = dir.path().join("cover.txt");
+        std::fs::write(&text, "plain text, not a cover").unwrap();
+        assert!(load_art(Some(&format!("file://{}", text.display()))).is_none());
+
+        let png = dir.path().join("cover.bin");
+        std::fs::write(&png, b"\x89PNG\r\n\x1a\nfake png body").unwrap();
+        let (bytes, ext) = load_art(Some(&format!("file://{}", png.display()))).expect("png art");
+        assert_eq!(ext, "png");
+        assert!(bytes.starts_with(&[0x89, b'P', b'N', b'G']));
     }
 }
