@@ -50,7 +50,13 @@ impl Speaker for LinuxSpeaker {
 
     fn devices(&mut self) -> Result<Vec<AudioDevice>> {
         let default = self.active_device()?;
-        let out = run_tool(MISSING, "pactl", &["-f", "json", "list", "sinks"], None, TOOL_TIMEOUT)?;
+        let out = run_tool(
+            MISSING,
+            "pactl",
+            &["-f", "json", "list", "sinks"],
+            None,
+            TOOL_TIMEOUT,
+        )?;
         parse_sink_list(&String::from_utf8_lossy(&out), &default)
     }
 
@@ -64,7 +70,14 @@ impl Speaker for LinuxSpeaker {
     }
 
     fn set_active_device(&mut self, id: &str) -> Result<()> {
-        run_tool(MISSING, "pactl", &["set-default-sink", id], None, TOOL_TIMEOUT).map(|_| ())
+        run_tool(
+            MISSING,
+            "pactl",
+            &["set-default-sink", id],
+            None,
+            TOOL_TIMEOUT,
+        )
+        .map(|_| ())
     }
 }
 
@@ -113,8 +126,8 @@ pub(crate) fn parse_mute(output: &str) -> Result<bool> {
 /// `pactl -f json list sinks`: the sink's `name` is the id tiles store
 /// (the Windows endpoint-id equivalent), `description` the shown label.
 pub(crate) fn parse_sink_list(json: &str, default_sink: &str) -> Result<Vec<AudioDevice>> {
-    let sinks: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| OsError::Failed(format!("pactl sink list: {e}")))?;
+    let sinks: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| OsError::Failed(format!("pactl sink list: {e}")))?;
     let Some(array) = sinks.as_array() else {
         return Err(OsError::Failed("pactl sink list: not a JSON array".into()));
     };
@@ -137,7 +150,12 @@ pub(crate) fn parse_sink_list(json: &str, default_sink: &str) -> Result<Vec<Audi
 }
 
 fn first_line(text: &str) -> String {
-    text.lines().next().unwrap_or_default().chars().take(80).collect()
+    text.lines()
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .take(80)
+        .collect()
 }
 
 #[cfg(test)]
@@ -158,7 +176,10 @@ mod tests {
     fn volume_above_one_hundred_is_reported_clamped() {
         // pactl scales percent against the sink's base volume; a boosted
         // sink reads 153% there. The tile contract is 0..=100.
-        assert_eq!(parse_volume_percent("Volume: front-left: 39850 / 153% / 6.00 dB\n").unwrap(), 100.0);
+        assert_eq!(
+            parse_volume_percent("Volume: front-left: 39850 / 153% / 6.00 dB\n").unwrap(),
+            100.0
+        );
     }
 
     #[test]
@@ -173,7 +194,10 @@ mod tests {
         assert!(!parse_mute("Mute: no\n").unwrap());
         assert!(parse_mute("Mute: yes\n").unwrap());
         assert!(parse_mute("Mute: yes").is_ok());
-        assert!(parse_mute("Wyciszono: tak\n").is_err(), "translated output must fail loudly");
+        assert!(
+            parse_mute("Wyciszono: tak\n").is_err(),
+            "translated output must fail loudly"
+        );
         assert!(parse_mute("").is_err());
     }
 
@@ -181,11 +205,7 @@ mod tests {
 
     #[test]
     fn sink_list_maps_names_descriptions_and_default() {
-        let devices = parse_sink_list(
-            SINKS,
-            "alsa_output.pci-0000_00_1f.3.analog-stereo",
-        )
-        .unwrap();
+        let devices = parse_sink_list(SINKS, "alsa_output.pci-0000_00_1f.3.analog-stereo").unwrap();
         assert_eq!(devices.len(), 2);
         assert_eq!(
             devices[0],

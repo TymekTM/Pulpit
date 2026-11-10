@@ -472,8 +472,7 @@ pub(crate) fn spawn_push(
                     }
                     None => {
                         let snapshot = build_snapshot_keyed(None, None, None, "", None);
-                        (gate.decide(&snapshot, Instant::now()).send)
-                            .then_some(snapshot)
+                        (gate.decide(&snapshot, Instant::now()).send).then_some(snapshot)
                     }
                 };
 
@@ -607,7 +606,8 @@ mod tests {
         let names = parse_bus_names(LIST_NAMES).unwrap();
         assert_eq!(names, vec!["org.mpris.MediaPlayer2.spotify"]);
         // the bare prefix is the interface, not a player
-        let bare = parse_bus_names(r#"{"type":"as","data":[["org.mpris.MediaPlayer2."]]}"#).unwrap();
+        let bare =
+            parse_bus_names(r#"{"type":"as","data":[["org.mpris.MediaPlayer2."]]}"#).unwrap();
         assert!(bare.is_empty());
         assert!(parse_bus_names("garbage").is_err());
     }
@@ -752,11 +752,7 @@ mod tests {
     fn players_for_selection() -> Vec<PlayerSnapshot> {
         let mut states = Vec::new();
         for (bus, friendly, status) in [
-            (
-                "org.mpris.MediaPlayer2.vlc",
-                "VLC",
-                PlaybackStatus::Paused,
-            ),
+            ("org.mpris.MediaPlayer2.vlc", "VLC", PlaybackStatus::Paused),
             (
                 "org.mpris.MediaPlayer2.spotify",
                 "Spotify",

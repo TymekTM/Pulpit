@@ -20,9 +20,8 @@ pub(crate) fn play_audio(path: &str) -> Result<(), String> {
     if path.trim().is_empty() {
         return Ok(());
     }
-    let player = first_player().ok_or(
-        "no audio player found (pw-play, paplay, aplay)".to_string(),
-    )?;
+    let player =
+        first_player().ok_or("no audio player found (pw-play, paplay, aplay)".to_string())?;
 
     let mut last = LAST.lock().unwrap_or_else(|p| p.into_inner());
     if let Some(mut child) = last.take() {
@@ -55,7 +54,10 @@ fn first_player() -> Option<String> {
 
 /// `which`-style lookup over one PATH value, in pure Rust. Executable
 /// bit required: a data file named `paplay` on PATH must not "play".
-pub(crate) fn lookup_in_path(program: &str, path_var: &std::ffi::OsStr) -> Option<std::path::PathBuf> {
+pub(crate) fn lookup_in_path(
+    program: &str,
+    path_var: &std::ffi::OsStr,
+) -> Option<std::path::PathBuf> {
     for dir in std::env::split_paths(path_var) {
         let candidate = dir.join(program);
         if is_executable_file(&candidate) {

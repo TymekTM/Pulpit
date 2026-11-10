@@ -12,13 +12,11 @@ use std::time::{Duration, Instant};
 
 use crate::{OsError, Result};
 
-pub(crate) mod speaker;
-pub(crate) mod clipboard;
 pub(crate) mod capture;
-pub(crate) mod play;
+pub(crate) mod clipboard;
 pub(crate) mod media;
-
-
+pub(crate) mod play;
+pub(crate) mod speaker;
 
 /// Default bound for one tool call: everything invoked here answers in
 /// tens of milliseconds; three seconds only guards a wedged daemon.
@@ -175,11 +173,11 @@ fn run_tool_inner(
             }
             Ok(None) => {
                 if Instant::now() >= deadline {
+                    // kill and reap the child; the reader threads are
+                    // abandoned, not joined - a daemon holding the pipes
+                    // open must not wedge the caller past the kill
                     let _ = child.kill();
-                    let _ = child.wait(); // reap the killed child
-                    // the reader threads are abandoned, not joined: a
-                    // daemon holding the pipes open must not wedge the
-                    // caller past the kill
+                    let _ = child.wait();
                     return Err(OsError::Failed(format!("{program} timed out")));
                 }
                 std::thread::sleep(WAIT_TICK);
@@ -243,8 +241,14 @@ mod tests {
 
     #[test]
     fn nonzero_exit_reports_trimmed_stderr() {
-        let err = run_tool(NO_SH, "sh", &["-c", "echo boom >&2; exit 3"], None, TOOL_TIMEOUT)
-            .unwrap_err();
+        let err = run_tool(
+            NO_SH,
+            "sh",
+            &["-c", "echo boom >&2; exit 3"],
+            None,
+            TOOL_TIMEOUT,
+        )
+        .unwrap_err();
         let OsError::Failed(message) = err else {
             panic!("expected Failed");
         };
@@ -254,8 +258,14 @@ mod tests {
     #[test]
     fn timeout_kills_the_child_and_fails_quickly() {
         let started = Instant::now();
-        let err = run_tool(NO_SH, "sh", &["-c", "sleep 5"], None, Duration::from_millis(100))
-            .unwrap_err();
+        let err = run_tool(
+            NO_SH,
+            "sh",
+            &["-c", "sleep 5"],
+            None,
+            Duration::from_millis(100),
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("timed out"), "error: {err}");
         assert!(started.elapsed() < Duration::from_secs(2));
     }
@@ -278,8 +288,14 @@ mod tests {
         // the background sleep inherits both pipes and keeps them open
         // after sh exits, the way wl-copy's clipboard daemon does
         let started = Instant::now();
-        let out = run_tool(NO_SH, "sh", &["-c", "sleep 4 & echo hi"], None, TOOL_TIMEOUT)
-            .expect("run");
+        let out = run_tool(
+            NO_SH,
+            "sh",
+            &["-c", "sleep 4 & echo hi"],
+            None,
+            TOOL_TIMEOUT,
+        )
+        .expect("run");
         assert_eq!(String::from_utf8_lossy(&out).trim(), "hi");
         assert!(started.elapsed() < Duration::from_secs(2));
     }
@@ -289,8 +305,14 @@ mod tests {
         // same daemonizing script, but nothing is read: the runner has
         // no pipe to wait for, so the call ends with the child
         let started = Instant::now();
-        run_tool_detached_output(NO_SH, "sh", &["-c", "sleep 4 & echo hi"], None, TOOL_TIMEOUT)
-            .expect("run");
+        run_tool_detached_output(
+            NO_SH,
+            "sh",
+            &["-c", "sleep 4 & echo hi"],
+            None,
+            TOOL_TIMEOUT,
+        )
+        .expect("run");
         assert!(started.elapsed() < Duration::from_secs(1));
     }
 }
