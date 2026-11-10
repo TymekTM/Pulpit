@@ -736,6 +736,46 @@ impl Input for EnigoInput {
             .map_err(|e| ActionError::Input(e.to_string()))
     }
 
+    /// Same capture path as Windows: the platform seam is the only
+    /// difference (grim/import instead of GDI).
+    #[cfg(target_os = "linux")]
+    fn screenshot(&mut self, dir: &str) -> Result<()> {
+        pulpit_os::capture::screenshot_to_dir(dir)
+            .map(|_| ())
+            .map_err(|e| ActionError::Input(e.to_string()))
+    }
+
+    /// Clipboard paste, mirroring the Windows `typeString` round trip.
+    /// With no clipboard tool (headless box) it degrades to plain key
+    /// synthesis; the restore check compares text because Linux has no
+    /// clipboard sequence number.
+    #[cfg(target_os = "linux")]
+    fn paste_text(&mut self, text: &str) -> Result<()> {
+        // Non-text clipboard content (images) cannot be restored by this
+        // text-only path - same as the original app.
+        let previous = pulpit_os::clipboard::get_text()
+            .ok()
+            .filter(|s| !s.is_empty());
+        if pulpit_os::clipboard::set_text(text).is_err() {
+            // no clipboard tooling: unicode synthesis is out of reach,
+            // fall back to whatever the keyboard layer can do
+            return self.text(text);
+        }
+        let pasted = self.key_tap(&[KeyName::Control, KeyName::Char('v')]);
+        if let Some(previous) = previous {
+            // give the focused app a beat to read the paste before the
+            // user's clipboard content comes back
+            self.sleep(80)?;
+            // Restore only if the clipboard still holds OUR paste: when
+            // the user (or any app) copied something meanwhile, that
+            // content wins and must not be clobbered by the restore.
+            if pulpit_os::clipboard::get_text().unwrap_or_default() == text {
+                let _ = pulpit_os::clipboard::set_text(&previous);
+            }
+        }
+        pasted
+    }
+
     fn open_url(&mut self, url: &str) -> Result<()> {
         open::that(url).map_err(|e| ActionError::Input(e.to_string()))
     }
