@@ -138,6 +138,24 @@ pub fn redact_headers(headers: &[(String, String)]) -> Vec<(String, String)> {
         .collect()
 }
 
+/// What a log line may show of a request URL: scheme and authority only.
+/// Webhook services carry their secret in the path or query, so both are
+/// dropped; userinfo (`user:pw@`) is dropped too.
+fn log_safe_url(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return "[url]".to_string();
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = authority.rsplit('@').next().unwrap_or("");
+    if scheme.is_empty()
+        || host.is_empty()
+        || !scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
+    {
+        return "[url]".to_string();
+    }
+    format!("{scheme}://{host}/…")
+}
+
 /// RFC 3986 percent-encoding for URI components.
 pub fn url_encode(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -326,7 +344,7 @@ pub(crate) fn execute_http_action(
             let status = response.status().as_u16();
             tracing::info!(
                 method = %method_upper,
-                url = %substituted_url,
+                url = %log_safe_url(&substituted_url),
                 status = status,
                 duration_ms = duration.as_millis(),
                 "HTTP request completed"
@@ -383,11 +401,18 @@ pub(crate) fn execute_http_action(
             }
         }
         Err(e) => {
+            // ureq can embed the request URL in the error text (e.g.
+            // "bad uri: ..."), so the logged copy swaps it for the
+            // scheme+host form; the value handed to the caller stays
+            // untouched - the user owns that URL and needs it to debug
+            let safe_error = e
+                .to_string()
+                .replace(substituted_url.as_str(), &log_safe_url(&substituted_url));
             tracing::warn!(
                 method = %method_upper,
-                url = %substituted_url,
+                url = %log_safe_url(&substituted_url),
                 duration_ms = duration.as_millis(),
-                error = %e,
+                error = %safe_error,
                 "HTTP request failed"
             );
             backend.set_last_http_error(format!("HTTP request failed: {e}"));
@@ -485,6 +510,33 @@ mod tests {
                 ("Accept".into(), "*/*".into()),
             ]
         );
+    }
+
+    #[test]
+    fn log_safe_url_drops_path_query_and_userinfo() {
+        let cases = [
+            (
+                "https://hooks.example.com/services/T0/B0/s3cr3t?x=1#f",
+                "https://hooks.example.com/…",
+            ),
+            ("http://user:pw@host.local:8080/a/b", "http://host.local:8080/…"),
+            ("http://127.0.0.1:9", "http://127.0.0.1:9/…"),
+            ("not a url", "[url]"),
+            ("://nohost", "[url]"),
+        ];
+        let outputs: Vec<String> = cases
+            .iter()
+            .map(|(input, expected)| {
+                let output = log_safe_url(input);
+                assert_eq!(&output, expected, "input: {input}");
+                output
+            })
+            .collect();
+        for output in &outputs {
+            assert!(!output.contains("s3cr3t"), "leaked a path secret: {output}");
+            assert!(!output.contains("pw"), "leaked userinfo: {output}");
+            assert!(!output.contains("x=1"), "leaked a query: {output}");
+        }
     }
 
     #[test]
