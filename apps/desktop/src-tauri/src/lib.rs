@@ -1603,7 +1603,7 @@ fn parse_version_name(dumpsys: &str) -> Option<String> {
 /// (`{"version": "...", "url": "...", "sha256": "..."}`). editor.json's
 /// `update_url` overrides it; the literal "off" disables checking.
 const DEFAULT_UPDATE_URL: &str =
-    "https://raw.githubusercontent.com/TymekTM/deckboard/main/latest.json";
+    "https://raw.githubusercontent.com/TymekTM/Pulpit/main/latest.json";
 
 /// The effective update feed: editor.json's `update_url` wins ("off"
 /// disables), the public repo manifest is the default.
@@ -2264,6 +2264,11 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(&path).expect("read")).expect("json");
         assert_eq!(saved["port"], 8600);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn default_update_feed_points_at_the_pulpit_repo() {
+        assert!(DEFAULT_UPDATE_URL.contains("/TymekTM/Pulpit/"));
     }
 
     #[test]
