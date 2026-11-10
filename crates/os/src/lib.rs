@@ -79,6 +79,11 @@ pub fn platform_speaker() -> impl Speaker {
 #[cfg(windows)]
 pub(crate) mod win;
 
+#[cfg(target_os = "linux")]
+pub(crate) mod linux;
+
+// Linux keeps the stub compiled until its Speaker lands (Phase 2 swaps
+// the platform_speaker dispatch); every other non-Windows OS keeps it.
 #[cfg(not(windows))]
 pub(crate) mod unsupported;
 
