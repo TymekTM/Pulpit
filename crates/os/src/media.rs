@@ -5,7 +5,7 @@
 //! etc.) via Windows Global System Media Transport Controls
 //! (Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager).
 
-#[cfg(not(windows))]
+#[cfg(not(target_os = "linux"))]
 use crate::OsError;
 use crate::Result;
 use serde_json::{json, Value};
@@ -13,6 +13,9 @@ use std::sync::Arc;
 
 #[cfg(windows)]
 mod win_media;
+
+#[cfg(target_os = "linux")]
+use crate::linux;
 
 /// Convert an Application User Model ID (AUMID) or process name to a
 /// friendly application title (e.g. "Spotify.exe" -> "Spotify",
@@ -114,7 +117,7 @@ pub fn aumid_to_friendly_name(aumid: &str) -> String {
     humanize_identifier(raw)
 }
 
-fn humanize_identifier(s: &str) -> String {
+pub(crate) fn humanize_identifier(s: &str) -> String {
     let s = s.trim();
     if s.is_empty() {
         return String::new();
@@ -469,7 +472,11 @@ pub fn control(target_app: Option<&str>, action: &str, slider_value: Option<f64>
     {
         win_media::control(target_app, action, slider_value)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::media::control(target_app, action, slider_value)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = (target_app, action, slider_value);
         Err(OsError::Unsupported("media"))
@@ -482,7 +489,11 @@ pub fn list_sessions() -> Result<Vec<String>> {
     {
         win_media::list_sessions()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::media::list_sessions()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         Err(OsError::Unsupported("media"))
     }
@@ -496,7 +507,11 @@ pub fn spawn_push(
     {
         win_media::spawn_push(consumers)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::media::spawn_push(consumers)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = consumers;
         let (_tx, rx) = tokio::sync::mpsc::unbounded_channel();
