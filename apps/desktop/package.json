@@ -26,6 +26,6 @@
     "@vue/test-utils": "^2.5.1",
     "happy-dom": "^18.0.1",
     "vite": "^6.3",
-    "vitest": "^3.2.7"
+    "vitest": "^5.1.0"
   }
 }
