@@ -783,4 +783,16 @@ describe("Voicemeeter gating (unsupported platform)", () => {
     expect(w.find("[data-page='voicemeeter']").attributes("aria-disabled")).toBeUndefined();
     w.unmount();
   });
+
+  it("loads the api module without ever asking vm_status on its own", async () => {
+    // vm_status opens and logs into the remote DLL (starting
+    // Voicemeeter when closed); the startup probe must only ever read
+    // the side-effect-free platform flag
+    vi.resetModules();
+    const fresh = await import("../src/api.js");
+    expect(cmds("vm_status")).toHaveLength(0);
+    expect(cmds("vm_supported")).toHaveLength(1);
+    // a probe without a backend answer keeps the optimistic default
+    expect(fresh.vmSupported.value).toBe(true);
+  });
 });

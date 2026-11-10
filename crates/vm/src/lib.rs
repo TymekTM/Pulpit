@@ -36,6 +36,9 @@ pub enum VmError {
 
 pub type Result<T> = std::result::Result<T, VmError>;
 
+/// Whether this platform can run the Voicemeeter integration at all.
+pub const SUPPORTED: bool = cfg!(windows);
+
 /// Voicemeeter edition identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum VoicemeeterType {
@@ -543,7 +546,7 @@ impl VoicemeeterState {
         let installed = existing_path.is_some();
         if !installed {
             return VoicemeeterStatus {
-                supported: cfg!(windows),
+                supported: SUPPORTED,
                 installed: false,
                 dll_path: None,
                 logged_in: false,
@@ -566,7 +569,7 @@ impl VoicemeeterState {
 
         match details {
             Ok((vm_type, version, strip_count, bus_count)) => VoicemeeterStatus {
-                supported: cfg!(windows),
+                supported: SUPPORTED,
                 installed: true,
                 dll_path: existing_path,
                 logged_in: self.logged_in,
@@ -577,7 +580,7 @@ impl VoicemeeterState {
                 dll_override: override_str,
             },
             Err(_) => VoicemeeterStatus {
-                supported: cfg!(windows),
+                supported: SUPPORTED,
                 installed: true,
                 dll_path: existing_path,
                 logged_in: false,

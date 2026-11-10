@@ -276,6 +276,7 @@ pub fn run() {
             discord_save_config,
             discord_authorize,
             discord_disconnect,
+            vm_supported,
             vm_status,
             vm_set_dll_override,
             vm_reconnect,
@@ -3854,6 +3855,14 @@ async fn discord_disconnect(state: State<'_, DesktopState>) -> Result<(), String
         }
     }
     Ok(())
+}
+
+/// Whether Voicemeeter can exist on this platform. Unlike
+/// [`vm_status`] this touches nothing (no DLL, no login), so the UI
+/// may ask at startup.
+#[tauri::command]
+fn vm_supported() -> bool {
+    pulpit_vm::SUPPORTED
 }
 
 /// Voicemeeter status for the settings panel. The first query opens and
