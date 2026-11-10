@@ -619,6 +619,134 @@ async fn pair_request_expires_and_frees_the_slot() {
     assert_eq!(status, 201);
 }
 
+/// Plan 034: the tablet's "Przerwj" (DELETE /v2/pair-request/:id) -
+/// the request's code dies at once (it can never pair), the status
+/// poll answers unknown instead of a new wire word, and the slot frees
+/// after the decided grace (shortened here through the PairRequests
+/// test seam) instead of the whole code TTL.
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_a_pair_request_frees_the_slot() {
+    let Some(lan_ip) = lan_bind_ip() else {
+        return;
+    };
+    // The gate parks until the test ends so the first request is
+    // deterministically Pending when cancelled; its late `false` must
+    // not resurrect the cancelled request (no pre-approval).
+    let pairing = Arc::new(Pairing::new());
+    let (_release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    pairing.set_pair_request_gate(move |_, _| {
+        let _ = held.lock().unwrap().recv_timeout(Duration::from_secs(10));
+        false
+    });
+    let (state, _dir) = test_state_with_pair_requests(
+        sample_backend(),
+        pairing,
+        PairRequests::default().with_decided_grace(Duration::from_millis(250)),
+        |_| {},
+    );
+    let addr = spawn_server_on(state, &format!("{lan_ip}:0")).await;
+
+    let (status, _, body) = http_post_json(addr, "/v2/pair-request", r#"{"name":"Deck"}"#).await;
+    assert_eq!(status, 201, "{}", String::from_utf8_lossy(&body));
+    let created = pair_request_json(&body);
+    let id = created["request_id"].as_str().unwrap().to_string();
+    let code = created["code"].as_str().unwrap().to_string();
+
+    // cancel: 204, then the status poll reads as unknown (404)
+    let (status, _, _) = http_request(
+        addr,
+        format!(
+            "DELETE /v2/pair-request/{id} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n"
+        ),
+    )
+    .await;
+    assert_eq!(status, 204, "cancel must answer No Content");
+    let (status, _, body) = http_get(addr, &format!("/v2/pair-request/{id}")).await;
+    assert_eq!(status, 404);
+    assert_eq!(pair_request_json(&body)["status"], "unknown");
+
+    // the cancelled code no longer pairs: the socket path answers
+    // pair-invalid (the code was discarded, not merely expired)
+    let mut ws = ws_open(&format!("ws://{addr}/v2/ws?pair={code}")).await;
+    send_frame(
+        &mut ws,
+        &Frame::request(
+            TYPE_HELLO,
+            "h1",
+            serde_json::json!({"client": "pulpit-mobile", "version": "0.2.0"}),
+        ),
+    )
+    .await;
+    let err = next_frame(&mut ws).await;
+    assert_eq!(err.ack.as_deref(), Some("h1"));
+    let payload: ErrorPayload = serde_json::from_value(err.payload.unwrap()).unwrap();
+    assert_eq!(
+        payload.code,
+        error_code::PAIR_INVALID,
+        "a cancelled request's code must be dead"
+    );
+    let closed = tokio::time::timeout(Duration::from_secs(2), async {
+        while let Some(msg) = ws.next().await {
+            if msg.is_err() || matches!(msg, Ok(tokio_tungstenite::tungstenite::Message::Close(_)))
+            {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(closed.is_ok(), "socket must close after pair-invalid");
+
+    // past the decided grace the slot is free for the next request (the
+    // ws dance above already took a moment; the sleep tops it up past
+    // the 250 ms grace)
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let (status, _, body) = http_post_json(addr, "/v2/pair-request", r#"{"name":"Deck"}"#).await;
+    assert_eq!(
+        status,
+        201,
+        "the slot must free after the decided grace, not the TTL: {}",
+        String::from_utf8_lossy(&body)
+    );
+}
+
+/// Plan 034: a 409-refused request must not leave its freshly minted
+/// code behind - nobody was told it, yet it would pair for 5 minutes.
+#[tokio::test(flavor = "current_thread")]
+async fn a_refused_pair_request_leaves_no_code() {
+    let Some(lan_ip) = lan_bind_ip() else {
+        return;
+    };
+    // Hold the gate so the first request stays live (Pending) and the
+    // conflict is deterministic.
+    let pairing = Arc::new(Pairing::new());
+    let (_release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    pairing.set_pair_request_gate(move |_, _| {
+        let _ = held.lock().unwrap().recv_timeout(Duration::from_secs(10));
+        false
+    });
+    let (state, _dir) = test_state_with_pairing(sample_backend(), pairing, |_| {});
+    let addr = spawn_server_on(state.clone(), &format!("{lan_ip}:0")).await;
+
+    let (status, _, body) = http_post_json(addr, "/v2/pair-request", r#"{"name":"Deck"}"#).await;
+    assert_eq!(status, 201, "{}", String::from_utf8_lossy(&body));
+    assert_eq!(
+        state.pairing.outstanding_codes(),
+        1,
+        "exactly the live request's code is outstanding"
+    );
+
+    let (status, _, body) = http_post_json(addr, "/v2/pair-request", r#"{"name":"Other"}"#).await;
+    assert_eq!(status, 409, "{}", String::from_utf8_lossy(&body));
+    assert_eq!(pair_request_json(&body)["code"], "request-in-flight");
+    assert_eq!(
+        state.pairing.outstanding_codes(),
+        1,
+        "the refused request's code must be discarded with the 409"
+    );
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn expired_code_gets_pair_expired_over_the_socket() {
     let (state, _dir) = test_state_with_pairing(

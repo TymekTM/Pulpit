@@ -76,7 +76,10 @@ pub fn router(state: Arc<V2State>) -> Router {
         .route("/v2/ws", get(ws_connect))
         .route("/v2/pair", post(pair_create))
         .route("/v2/pair-request", post(pair_request_create))
-        .route("/v2/pair-request/:id", get(pair_request_status))
+        .route(
+            "/v2/pair-request/:id",
+            get(pair_request_status).delete(pair_request_cancel),
+        )
         .route("/assets/:hash", get(asset_get))
         .with_state(state)
 }
@@ -190,17 +193,29 @@ async fn pair_request_create(
         session::sanitize_device_name(Some(&body.name)).unwrap_or_else(|| "Device".to_string());
     let id = hex_string_16();
     let code = state.pairing.new_code();
-    let Some(request) = state
-        .pair_requests
-        .begin(id.clone(), code.clone(), name.clone())
+    let Some((request, replaced)) =
+        state
+            .pair_requests
+            .begin(id.clone(), code.clone(), name.clone())
     else {
+        // The code minted for a refused request dies with the refusal:
+        // nobody was told it, and a valid-but-untold code would pair for
+        // the whole TTL (plan 034).
+        state.pairing.discard(&code);
         return (
             StatusCode::CONFLICT,
             Json(json!({"code": "request-in-flight"})),
         )
             .into_response();
     };
+    if let Some(replaced) = replaced {
+        // A newer request displaced an older one (expired, or decided
+        // past its grace): the old request's code must not outlive the
+        // request.
+        state.pairing.discard(&replaced.code);
+    }
     let pairing = state.pairing.clone();
+    let task_state = state.clone();
     let decision_request = request.clone();
     let pairing_code = code.clone();
     tokio::spawn(async move {
@@ -215,6 +230,22 @@ async fn pair_request_create(
         .await
         .unwrap_or(false);
         use crate::devices::PairDecision;
+        // The gate may have parked for minutes while the operator looked
+        // at the dialog. A request that was cancelled (DELETE) or
+        // replaced by a newer one in the meantime must not be
+        // resurrected: never apply a stale decision - and in particular
+        // never pre-approve its code - unless this request is still the
+        // pending current one.
+        if request.decision() != PairDecision::Pending
+            || task_state.pair_requests.get(&request.id).is_none()
+        {
+            tracing::info!(
+                name = %request.name,
+                approved = decision,
+                "pair-request resolved elsewhere - gate decision dropped"
+            );
+            return;
+        }
         request.set_decision(if decision {
             // the operator just compared this code on the dialog: the
             // hello that consumes it must not ask a second time
@@ -264,7 +295,37 @@ async fn pair_request_status(
             state.pair_requests.reset(&id);
             Json(json!({"status": "rejected"})).into_response()
         }
+        // A cancelled request answers as unknown (plan 034): the wire
+        // gains no new status, and the slot frees itself after the
+        // decided grace instead of on this poll.
+        PairDecision::Cancelled => {
+            (StatusCode::NOT_FOUND, Json(json!({"status": "unknown"}))).into_response()
+        }
     }
+}
+
+/// M8 plan 034: the tablet backed out ("Przerwj"). Cancelling kills the
+/// request's code at once (a cancelled pairing must not complete over a
+/// code nobody is watching any more) and marks the request `Cancelled`.
+/// The slot is NOT reset - it frees itself after the decided grace -
+/// so a rogue client cannot cycle the operator dialog any faster by
+/// cancel-and-retry. Same origin guard as the POST (B1); no loopback
+/// restriction, the endpoint returns nothing sensitive.
+async fn pair_request_cancel(
+    State(state): State<Arc<V2State>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if !pulpit_legacy::origin_host_allowed(&headers) {
+        return (StatusCode::FORBIDDEN, "browser requests are not allowed").into_response();
+    }
+    let Some(request) = state.pair_requests.get(&id) else {
+        return (StatusCode::NOT_FOUND, Json(json!({"status": "unknown"}))).into_response();
+    };
+    state.pairing.discard(&request.code);
+    request.set_decision(crate::devices::PairDecision::Cancelled);
+    tracing::info!(name = %request.name, "pair-request cancelled by the client");
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// Random request id: hex so it survives any logging/casing untouched.

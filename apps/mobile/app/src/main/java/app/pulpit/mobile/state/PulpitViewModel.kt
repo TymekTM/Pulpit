@@ -21,6 +21,7 @@ import app.pulpit.mobile.net.ConnState
 import app.pulpit.mobile.net.PairRequestRejected
 import app.pulpit.mobile.net.V2Client
 import app.pulpit.mobile.net.V2Event
+import app.pulpit.mobile.net.cancelPairRequest
 import app.pulpit.mobile.net.createPairRequest
 import app.pulpit.mobile.net.pairRequestStatus
 import app.pulpit.mobile.proto.Board
@@ -213,6 +214,9 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
         val port: Int,
         val code: String,
         val deviceName: String,
+        /** The server-side request id - cancelPairRequest's DELETE
+         *  needs it (plan 034). */
+        val requestId: String,
     )
 
     private val _pairRequest = MutableStateFlow<PairRequestUi?>(null)
@@ -227,7 +231,8 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
         pairPollJob = scope.launch {
             try {
                 val created = createPairRequest(V2Client.httpCalls, host, port, deviceName)
-                _pairRequest.value = PairRequestUi(host, port, created.code, deviceName)
+                _pairRequest.value =
+                    PairRequestUi(host, port, created.code, deviceName, created.request_id)
                 pollPairDecision(host, port, created.request_id, created.expires_in_secs)
             } catch (e: Exception) {
                 _pairRequest.value = null
@@ -244,11 +249,27 @@ class PulpitViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Leaves the waiting state without touching the desktop (its dialog
-     *  still resolves on its own; the unanswered request expires). The
-     *  poll job stops too (MOB-16) - no pointless radio wakeups until
-     *  the TTL, and a later startPairRequest gets a clean slate. */
+    /** Leaves the waiting state AND cancels the request on the desktop
+     *  (best-effort DELETE, plan 034): the slot frees after a short
+     *  grace instead of the full code TTL, so the next attempt - from
+     *  this or any tablet - is not answered with "busy", and the code
+     *  dies at once. The DELETE is launched in the background (local
+     *  state clears immediately); a desktop that cannot be reached
+     *  still expires the request on its own. The poll job stops too
+     *  (MOB-16) - no pointless radio wakeups, and a later
+     *  startPairRequest gets a clean slate. */
     fun cancelPairRequest() {
+        val current = _pairRequest.value
+        if (current != null) {
+            scope.launch {
+                cancelPairRequest(
+                    V2Client.httpCalls,
+                    current.host,
+                    current.port,
+                    current.requestId,
+                )
+            }
+        }
         pairPollJob?.cancel()
         pairPollJob = null
         _pairRequest.value = null

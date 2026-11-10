@@ -15,6 +15,12 @@ use sha2::{Digest, Sha256};
 pub const PAIR_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ234567";
 pub const PAIR_CODE_LEN: usize = 8;
 pub const PAIR_CODE_TTL: Duration = Duration::from_secs(300);
+/// How long a decided (approved / rejected / cancelled) pair request
+/// still holds the one-live-request slot after its decision: long
+/// enough for the original tablet to poll its terminal answer, short
+/// enough to bound how fast a client can re-spawn the operator dialog
+/// (each request parks a blocking gate worker for up to 6 minutes).
+pub const PAIR_DECIDED_GRACE: Duration = Duration::from_secs(5);
 
 /// Wrong pairing codes within one TTL window that burn every
 /// outstanding code. Codes are 8 chars from a 31-char alphabet - short
@@ -411,6 +417,25 @@ impl Pairing {
             .expect("pairing poisoned")
             .remove(code)
     }
+
+    /// Kills a code outright: off the valid set and off the
+    /// pre-approvals. Called when a request dies without a hello - a
+    /// 409-refused attempt (nobody was told the code), a tablet cancel,
+    /// or a newer request displacing an older one - so no unattended
+    /// code stays pairable for the TTL.
+    pub fn discard(&self, code: &str) {
+        self.codes.lock().expect("pairing poisoned").remove(code);
+        self.pre_approved
+            .lock()
+            .expect("pairing poisoned")
+            .remove(code);
+    }
+
+    /// How many codes are currently valid (a read-only probe for
+    /// tests).
+    pub fn outstanding_codes(&self) -> usize {
+        self.codes.lock().expect("pairing poisoned").len()
+    }
 }
 
 /// M8 Bluetooth-style pairing requests (plan 014): the tablet posts a
@@ -424,6 +449,10 @@ pub enum PairDecision {
     Pending,
     Approved,
     Rejected,
+    /// The tablet backed out (DELETE /v2/pair-request/:id): terminal
+    /// like the operator decisions, but answered as `unknown` on the
+    /// wire and never pre-approving its code.
+    Cancelled,
 }
 
 pub struct PairRequest {
@@ -432,6 +461,11 @@ pub struct PairRequest {
     pub name: String,
     created: Instant,
     decision: std::sync::Mutex<PairDecision>,
+    /// When the request became terminal (any non-`Pending` decision);
+    /// `None` while pending - `set_decision` keeps the two in sync, so
+    /// a terminal decision always has a stamp. Bounds how long a
+    /// decided request still holds the slot ([`PAIR_DECIDED_GRACE`]).
+    decided_at: std::sync::Mutex<Option<Instant>>,
 }
 
 impl PairRequest {
@@ -441,6 +475,17 @@ impl PairRequest {
 
     pub fn set_decision(&self, decision: PairDecision) {
         *self.decision.lock().expect("pair request poisoned") = decision;
+        if decision != PairDecision::Pending {
+            *self.decided_at.lock().expect("pair request poisoned") = Some(Instant::now());
+        }
+    }
+
+    /// How long ago the request became terminal; `None` while pending.
+    fn terminal_for(&self) -> Option<Duration> {
+        self.decided_at
+            .lock()
+            .expect("pair request poisoned")
+            .map(|at| at.elapsed())
     }
 
     pub fn age(&self) -> Duration {
@@ -454,6 +499,10 @@ pub struct PairRequests {
     /// A field so tests can shorten it and exercise the expiry path
     /// without waiting five minutes.
     ttl: Duration,
+    /// How long a *decided* request keeps holding the slot after its
+    /// decision: `PAIR_DECIDED_GRACE` in production; tests shrink it so
+    /// the grace path is observable without waiting.
+    decided_grace: Duration,
 }
 
 impl Default for PairRequests {
@@ -467,36 +516,63 @@ impl PairRequests {
         PairRequests {
             current: std::sync::Mutex::new(None),
             ttl,
+            decided_grace: PAIR_DECIDED_GRACE,
         }
+    }
+
+    /// Test seam: shrink the decided-grace window (production keeps
+    /// [`PAIR_DECIDED_GRACE`]).
+    pub fn with_decided_grace(mut self, decided_grace: Duration) -> PairRequests {
+        self.decided_grace = decided_grace;
+        self
     }
 
     pub fn ttl(&self) -> Duration {
         self.ttl
     }
 
-    /// Registers a new request; `None` when one is already live (the
-    /// caller answers HTTP 409).
+    /// Registers a new request; `None` while the existing one is live:
+    /// not expired, and either still `Pending` or terminal for less
+    /// than `decided_grace`. The grace lets the original tablet poll
+    /// its terminal answer before the slot is reused, and bounds how
+    /// fast a client can re-spawn the operator dialog. On success
+    /// returns the new request plus the one it replaced (if any), so
+    /// the caller can discard the replaced request's code.
     pub fn begin(
         &self,
         id: String,
         code: String,
         name: String,
-    ) -> Option<std::sync::Arc<PairRequest>> {
+    ) -> Option<(
+        std::sync::Arc<PairRequest>,
+        Option<std::sync::Arc<PairRequest>>,
+    )> {
         let mut current = self.current.lock().expect("pair requests poisoned");
-        if let Some(existing) = current.as_ref() {
-            if existing.age() < self.ttl {
-                return None;
+        let holds_slot = current.as_ref().is_some_and(|existing| {
+            if existing.age() >= self.ttl {
+                return false;
             }
+            match existing.terminal_for() {
+                // Pending: holds the slot for the whole TTL.
+                None => true,
+                // Decided: holds it only for the grace window.
+                Some(terminal_for) => terminal_for < self.decided_grace,
+            }
+        });
+        if holds_slot {
+            return None;
         }
+        let replaced = current.take();
         let request = std::sync::Arc::new(PairRequest {
             id,
             code,
             name,
             created: Instant::now(),
             decision: std::sync::Mutex::new(PairDecision::Pending),
+            decided_at: std::sync::Mutex::new(None),
         });
         *current = Some(request.clone());
-        Some(request)
+        Some((request, replaced))
     }
 
     pub fn get(&self, id: &str) -> Option<std::sync::Arc<PairRequest>> {
@@ -552,7 +628,8 @@ mod tests {
         let requests = PairRequests::default();
         let first = requests
             .begin("r1".into(), "CODE1".into(), "Tab".into())
-            .expect("begin");
+            .expect("begin")
+            .0;
         assert!(
             requests
                 .begin("r2".into(), "CODE2".into(), "Tab".into())
@@ -572,6 +649,77 @@ mod tests {
         assert!(requests
             .begin("r3".into(), "CODE3".into(), "Tab".into())
             .is_some());
+    }
+
+    #[test]
+    fn a_decided_request_frees_the_slot_after_the_grace() {
+        let requests = PairRequests::with_ttl(Duration::from_secs(60))
+            .with_decided_grace(Duration::from_millis(50));
+        let first = requests
+            .begin("r1".into(), "CODE1".into(), "Tab".into())
+            .expect("begin")
+            .0;
+        // a Pending request is a conflict, decided or not
+        assert!(requests
+            .begin("r2".into(), "CODE2".into(), "Tab".into())
+            .is_none());
+        first.set_decision(PairDecision::Rejected);
+        assert!(
+            requests
+                .begin("r2".into(), "CODE2".into(), "Tab".into())
+                .is_none(),
+            "a decided request holds the slot for the grace"
+        );
+        std::thread::sleep(Duration::from_millis(80));
+        // past the grace begin succeeds and reports the replaced request
+        let (second, replaced) = requests
+            .begin("r2".into(), "CODE2".into(), "Tab".into())
+            .expect("begin after the grace");
+        let replaced = replaced.expect("the decided request was replaced");
+        assert!(std::sync::Arc::ptr_eq(&replaced, &first));
+        assert_eq!(second.id, "r2");
+    }
+
+    #[test]
+    fn a_pending_request_holds_the_slot_until_expiry() {
+        let requests = PairRequests::with_ttl(Duration::from_millis(40))
+            .with_decided_grace(Duration::from_millis(200));
+        let first = requests
+            .begin("r1".into(), "CODE1".into(), "Tab".into())
+            .expect("begin")
+            .0;
+        // Pending is never replaced before the TTL, however short the grace
+        assert!(
+            requests
+                .begin("r2".into(), "CODE2".into(), "Tab".into())
+                .is_none(),
+            "a Pending request holds the slot for the whole TTL"
+        );
+        std::thread::sleep(Duration::from_millis(60));
+        let (second, replaced) = requests
+            .begin("r2".into(), "CODE2".into(), "Tab".into())
+            .expect("an expired request frees the slot");
+        assert!(std::sync::Arc::ptr_eq(&replaced.expect("replaced"), &first));
+        assert_eq!(second.id, "r2");
+    }
+
+    #[test]
+    fn discard_removes_the_code_and_its_pre_approval() {
+        let pairing = Pairing::new();
+        let code = pairing.new_code();
+        pairing.pre_approve(&code);
+        assert_eq!(pairing.outstanding_codes(), 1);
+        pairing.discard(&code);
+        assert!(
+            !pairing.take_pre_approved(&code),
+            "the pre-approval dies with the code"
+        );
+        assert_eq!(
+            pairing.consume(&code),
+            Err(PairError::Invalid),
+            "a discarded code must not pair"
+        );
+        assert_eq!(pairing.outstanding_codes(), 0);
     }
 
     #[test]

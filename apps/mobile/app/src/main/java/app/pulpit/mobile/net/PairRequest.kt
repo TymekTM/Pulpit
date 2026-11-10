@@ -89,3 +89,22 @@ suspend fun pairRequestStatus(http: OkHttpClient, host: String, port: Int, id: S
             PULPIT_JSON.decodeFromString(PairRequestStatus.serializer(), resp.body?.string().orEmpty()).status
         }
     }
+
+/** Best-effort cancel (the tablet's "Przerwij", plan 034): DELETE the
+ *  request so the desktop frees the slot at once instead of after the
+ *  code TTL. Every exception is swallowed and the status code ignored -
+ *  cancelling is courtesy; a desktop that cannot be reached still
+ *  expires the request on its own. */
+suspend fun cancelPairRequest(http: OkHttpClient, host: String, port: Int, id: String) {
+    withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("http://$host:$port/v2/pair-request/$id")
+                .delete()
+                .build()
+            http.newCall(request).execute().use { /* best effort: status ignored */ }
+        } catch (_: Exception) {
+            // unreachable desktop / radio off: the server-side TTL cleans up
+        }
+    }
+}

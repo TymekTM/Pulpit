@@ -152,8 +152,11 @@ advertised while the server runs; TXT `proto=v2`, `version`, `host`):
 
 1. `POST /v2/pair-request` `{"name": "SM-T561"}` - LAN only, loopback is
    refused (the desktop has its own dialog), browser `Origin` refused
-   like everywhere (B1). One request may be live at a time (else `409`).
-   The response carries the **verification code**
+   like everywhere (B1). One request may be live at a time (else `409`;
+   a decided request keeps the slot for a 5 s grace so the tablet can
+   poll its answer, then the next request may start). The code minted
+   for a refused request is discarded with the `409` - no untold code
+   stays pairable. The response carries the **verification code**
    `{"request_id", "code", "expires_in_secs"}` - the tablet displays it.
 2. The desktop shows its gate dialog with the SAME code
    (`pairing.set_pair_request_gate`); approving marks the code
@@ -163,6 +166,13 @@ advertised while the server runs; TXT `proto=v2`, `version`, `host`):
    On `approved` it opens `/v2/ws?pair=<code>` + `hello` as usual; the
    pre-approval replaces the operator dialog on that path, the code
    burns, the token is issued in `welcome.token`.
+4. `DELETE /v2/pair-request/:id` - the tablet's cancel ("Przerwij").
+   `204 No Content`; the request's code is discarded at once (it can no
+   longer pair) and later status polls answer `404
+   {"status": "unknown"}` - there is no new wire status. The slot frees
+   after the 5 s decided grace, not the code TTL, so a cancelled request
+   no longer blocks the next attempt for minutes. Browser `Origin` is
+   refused like everywhere (B1); an unknown id answers the same `404`.
 
 The verification code is a numeric-comparison: pairing completes only
 when the same number is visible on both screens and a human on each side
