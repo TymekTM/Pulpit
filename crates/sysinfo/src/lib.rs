@@ -250,11 +250,13 @@ fn parse_meminfo(info: &str) -> (u64, u64) {
                 .and_then(|v| v.parse::<u64>().ok())
                 .map(|kb| kb.saturating_mul(1024))
         };
+        // MemAvailable wins wherever it appears; MemFree only fills in
+        // (pre-3.14 kernels without MemAvailable)
+        let available_key = line.starts_with("MemAvailable:")
+            || (line.starts_with("MemFree:") && available.is_none());
         if line.starts_with("MemTotal:") {
             total = value();
-        } else if line.starts_with("MemAvailable:") {
-            available = value();
-        } else if line.starts_with("MemFree:") && available.is_none() {
+        } else if available_key {
             available = value();
         }
     }
