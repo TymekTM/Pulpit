@@ -13,6 +13,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 /// Everything the UI commands need, built once in [`setup_core`].
 struct DesktopState {
@@ -1506,21 +1507,106 @@ struct DeviceInfo {
 const TABLET_PACKAGE: &str = "app.pulpit.mobile";
 const TABLET_ACTIVITY: &str = "app.pulpit.mobile/.MainActivity";
 
+/// Runs `cmd` to completion or kills it after `timeout`. `Ok(None)` means
+/// it was killed. Output is read on helper threads so a child that fills
+/// its pipe cannot deadlock, and so a daemon that inherited the pipes
+/// (adb's own server does) cannot keep us waiting after the child exited.
+type ChildOutput = (std::process::ExitStatus, Vec<u8>, Vec<u8>);
+
+fn output_with_timeout(
+    mut cmd: std::process::Command,
+    timeout: std::time::Duration,
+) -> std::io::Result<Option<ChildOutput>> {
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::sync::mpsc;
+
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn()?;
+
+    fn spawn_reader<R: Read + Send + 'static>(
+        mut pipe: R,
+        tx: mpsc::Sender<Vec<u8>>,
+    ) {
+        // reader threads are never joined: a daemon holding the pipe
+        // open would outlive the wait below on purpose
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = pipe.read_to_end(&mut buf);
+            let _ = tx.send(buf);
+        });
+    }
+
+    let (stdout_tx, stdout_rx) = mpsc::channel::<Vec<u8>>();
+    let (stderr_tx, stderr_rx) = mpsc::channel::<Vec<u8>>();
+    if let Some(pipe) = child.stdout.take() {
+        spawn_reader(pipe, stdout_tx);
+    }
+    if let Some(pipe) = child.stderr.take() {
+        spawn_reader(pipe, stderr_tx);
+    }
+
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            // a daemon that inherited the pipes may never close them;
+            // take what arrived within a second and move on
+            let stdout = stdout_rx
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap_or_default();
+            let stderr = stderr_rx
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap_or_default();
+            return Ok(Some((status, stdout, stderr)));
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok(None);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 /// Runs adb and returns its stdout+stderr, trimmed, plus the exit
 /// success. A missing binary is the one error worth its own message.
+/// On Windows adb runs without a console window, and a call that wedges
+/// (unauthorised device prompt, stuck daemon) is killed after a timeout
+/// instead of blocking the UI forever.
 fn run_adb(args: &[&str]) -> Result<(bool, String), String> {
-    let out = std::process::Command::new("adb")
-        .args(args)
-        .output()
-        .map_err(|e| format!("adb nie znaleziony w PATH: {e}"))?;
+    let mut cmd = std::process::Command::new("adb");
+    cmd.args(args);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    // an install pushes megabytes over USB and may restart the app;
+    // anything else answers in seconds, but the first `adb devices`
+    // can pay a one-time daemon start-up
+    let timeout = if args.contains(&"install") {
+        Duration::from_secs(180)
+    } else {
+        Duration::from_secs(20)
+    };
+    let Some((status, stdout, stderr)) =
+        output_with_timeout(cmd, timeout).map_err(|e| format!("adb nie znaleziony w PATH: {e}"))?
+    else {
+        return Err(format!(
+            "adb nie odpowiedział w ciągu {} s",
+            timeout.as_secs()
+        ));
+    };
     let text = format!(
         "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
+        String::from_utf8_lossy(&stdout),
+        String::from_utf8_lossy(&stderr)
     )
     .trim()
     .to_string();
-    Ok((out.status.success(), text))
+    Ok((status.success(), text))
 }
 
 /// `(serial, state)` pairs from `adb devices` output; the header and the
@@ -2269,6 +2355,56 @@ mod tests {
     #[test]
     fn default_update_feed_points_at_the_pulpit_repo() {
         assert!(DEFAULT_UPDATE_URL.contains("/TymekTM/Pulpit/"));
+    }
+
+    /// Builds the platform shell command used to exercise
+    /// `output_with_timeout` without depending on adb being installed.
+    #[cfg(unix)]
+    fn shell_command(script: &str) -> std::process::Command {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.arg("-c").arg(script);
+        cmd
+    }
+
+    #[cfg(windows)]
+    fn shell_command(script: &str) -> std::process::Command {
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.arg("/C").arg(script);
+        cmd
+    }
+
+    #[test]
+    fn output_with_timeout_collects_output_of_a_fast_command() {
+        let (status, stdout, stderr) = output_with_timeout(
+            shell_command("echo hi"),
+            std::time::Duration::from_secs(10),
+        )
+        .expect("spawn")
+        .expect("finished before the deadline");
+        assert!(status.success());
+        let stdout = String::from_utf8_lossy(&stdout);
+        assert!(stdout.contains("hi"), "stdout was {stdout:?}");
+        assert!(stderr.is_empty(), "stderr was {stderr:?}");
+    }
+
+    #[test]
+    fn output_with_timeout_kills_a_command_that_overruns() {
+        #[cfg(unix)]
+        let slow = "sleep 5";
+        #[cfg(windows)]
+        let slow = "ping -n 6 127.0.0.1 >NUL";
+        let started = std::time::Instant::now();
+        let out = output_with_timeout(
+            shell_command(slow),
+            std::time::Duration::from_millis(200),
+        )
+        .expect("spawn");
+        assert!(out.is_none(), "the command should have been killed");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(3),
+            "kill took {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
