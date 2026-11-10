@@ -5,7 +5,7 @@
 //! etc.) via Windows Global System Media Transport Controls
 //! (Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager).
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(windows, target_os = "linux")))]
 use crate::OsError;
 use crate::Result;
 use serde_json::{json, Value};
