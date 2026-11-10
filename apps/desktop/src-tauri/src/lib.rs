@@ -1636,6 +1636,21 @@ async fn adb_devices() -> Result<Vec<String>, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// A human explanation for the `adb install` failures a user can act on;
+/// `None` for everything else (the raw adb text is shown then).
+fn explain_adb_install_failure(output: &str) -> Option<&'static str> {
+    if output.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
+        return Some("Na tablecie jest Pulpit podpisany innym kluczem (np. wersja deweloperska). Odinstaluj aplikację na tablecie, zainstaluj ponownie i sparuj tablet od nowa.");
+    }
+    if output.contains("INSTALL_FAILED_VERSION_DOWNGRADE") {
+        return Some("Na tablecie jest nowsza wersja niż instalowana. Odinstaluj aplikację na tablecie, jeśli chcesz wrócić do starszej.");
+    }
+    if output.contains("INSTALL_FAILED_INSUFFICIENT_STORAGE") {
+        return Some("Na tablecie brakuje miejsca na instalację.");
+    }
+    None
+}
+
 /// `adb install -r` on one device (keep-data reinstall); `serial: None`
 /// lets adb pick the only device. Returns adb's own output.
 fn adb_install(serial: Option<&str>, path: &str) -> Result<String, String> {
@@ -1649,6 +1664,8 @@ fn adb_install(serial: Option<&str>, path: &str) -> Result<String, String> {
         Ok(text)
     } else if text.is_empty() {
         Err("adb install nie powiodł się (brak wyjścia)".to_string())
+    } else if let Some(msg) = explain_adb_install_failure(&text) {
+        Err(format!("{msg}\n\n{text}"))
     } else {
         Err(text)
     }
@@ -2475,6 +2492,33 @@ mod tests {
             r#","apk_url":"http://x/p.apk","apk_sha256":"{digest}""#
         ))
         .is_err());
+    }
+
+    #[test]
+    fn adb_install_failures_are_explained() {
+        // signature mismatch: the tablet has a build signed with a
+        // different key (developer build vs release APK)
+        let incompatible = explain_adb_install_failure(
+            "adb: failed to install app.apk: Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Existing package app.pulpit.mobile signatures do not match newer version; ignoring!]",
+        );
+        assert!(incompatible.is_some());
+        assert!(incompatible.unwrap().contains("kluczem"));
+
+        let downgrade = explain_adb_install_failure(
+            "adb: failed to install app.apk: Failure [INSTALL_FAILED_VERSION_DOWNGRADE]",
+        );
+        assert!(downgrade.is_some());
+        assert!(downgrade.unwrap().contains("nowsza wersja"));
+
+        let storage = explain_adb_install_failure(
+            "adb: failed to install app.apk: Failure [INSTALL_FAILED_INSUFFICIENT_STORAGE]",
+        );
+        assert!(storage.is_some());
+        assert!(storage.unwrap().contains("miejsca"));
+
+        // anything else falls through to the raw adb text
+        assert!(explain_adb_install_failure("adb: failed to install app.apk: Failure [INSTALL_PARSE_FAILED_NO_CERTIFICATES]").is_none());
+        assert!(explain_adb_install_failure("").is_none());
     }
 
     #[test]
