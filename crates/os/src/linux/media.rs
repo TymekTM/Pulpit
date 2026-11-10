@@ -40,6 +40,15 @@ pub(crate) fn unwrap_busctl(value: &Value) -> &Value {
     value.get("data").unwrap_or(value)
 }
 
+/// An integer of either sign: busctl prints signed (`x`) and unsigned
+/// (`t`) values as bare JSON numbers - `as_i64` covers negatives,
+/// `as_u64` the ones past i64's range (those stay out of scope).
+pub(crate) fn as_int(value: &Value) -> Option<i64> {
+    value
+        .as_i64()
+        .or_else(|| value.as_u64().and_then(|u| i64::try_from(u).ok()))
+}
+
 /// The dict of a `GetAll s <interface>` reply: `{"type":"a{sv}","data":
 /// [{…dict…}]}` -> the dict object (owned: busctl replies are small and
 /// parsed once per poll).
@@ -195,22 +204,26 @@ pub(crate) fn parse_player(
         playback.can_stop = field("CanStop").and_then(Value::as_bool) == Some(true);
         playback.can_seek = field("CanSeek").and_then(Value::as_bool) == Some(true);
 
-        // Metadata is an a{sv} inside the outer a{sv}: its dict is the
-        // first element of the wrapped array
-        if let Some(metadata) = field("Metadata")
-            .and_then(Value::as_array)
-            .and_then(|entries| entries.first())
-        {
+        // Metadata is an a{sv} inside the outer a{sv}: busctl hands its
+        // dict over directly inside the variant; the one-element-array
+        // shape the first fixture assumed is accepted too
+        let metadata = field("Metadata").and_then(|value| match value {
+            Value::Object(_) => Some(value),
+            Value::Array(entries) => entries.first(),
+            _ => None,
+        });
+        if let Some(metadata) = metadata {
             let meta = |key: &str| metadata.get(key).map(unwrap_busctl);
-            // busctl renders "as" as data:[[…names…]]: two arrays deep,
-            // and the names only matter as the first entry
+            // a string array ("as") is flat in real replies (["Queen"]);
+            // the wrapped [["Queen"]] shape stays accepted - the names
+            // only matter as the first entry either way
             fn first_string(v: &Value) -> Option<&str> {
-                unwrap_busctl(v)
-                    .as_array()
-                    .and_then(|outer| outer.first())
-                    .and_then(Value::as_array)
-                    .and_then(|names| names.first())
-                    .and_then(Value::as_str)
+                let first = unwrap_busctl(v).as_array()?.first()?;
+                match first {
+                    Value::String(s) => Some(s.as_str()),
+                    Value::Array(names) => names.first().and_then(Value::as_str),
+                    _ => None,
+                }
             }
             if let Some(title) = meta("xesam:title").and_then(Value::as_str) {
                 props.title = title.to_string();
@@ -227,7 +240,10 @@ pub(crate) fn parse_player(
             if let Some(number) = meta("xesam:trackNumber").and_then(Value::as_i64) {
                 props.track_number = Some(number as i32);
             }
-            if let Some(length_us) = meta("mpris:length").and_then(Value::as_i64) {
+            // mpris:length is signed ("x") per the MPRIS spec but a
+            // player may answer unsigned ("t"); read either as an
+            // integer and keep the negative clamp
+            if let Some(length_us) = meta("mpris:length").and_then(as_int) {
                 timeline.duration_ms = (length_us.max(0) / 1000) as u64;
                 timeline.max_seek_ms = timeline.duration_ms;
             }
@@ -604,22 +620,26 @@ mod tests {
         assert_eq!(fallback_friendly_name("org.mpris.MediaPlayer2.vlc"), "VLC");
     }
 
-    // hand-written from the MPRIS2 D-Bus interface specification: no
-    // player was running on this machine to capture a real reply from
+    // Real `busctl --user --json=short call org.freedesktop.DBus.Properties
+    // GetAll s org.mpris.MediaPlayer2.Player` shape, verified against
+    // live busctl output: only the top-level reply wraps its arguments
+    // in an array - inside a variant, `data` is the value itself
+    // (Metadata's is the dict object, an "as" is a flat array). Values
+    // hand-written.
     const GET_ALL: &str = r#"{"type":"a{sv}","data":[{
         "PlaybackStatus":{"type":"s","data":"Playing"},
         "LoopStatus":{"type":"s","data":"Track"},
         "Shuffle":{"type":"b","data":true},
-        "Metadata":{"type":"a{sv}","data":[{
-            "xesam:title":{"type":"s","data":"Bohemian Rhapsody"},
-            "xesam:artist":{"type":"as","data":[["Queen"]]},
-            "xesam:album":{"type":"s","data":"A Night at the Opera"},
-            "xesam:albumArtist":{"type":"as","data":[["Queen"]]},
-            "xesam:trackNumber":{"type":"i","data":11},
+        "Metadata":{"type":"a{sv}","data":{
+            "mpris:trackid":{"type":"o","data":"/org/mpris/MediaPlayer2/track/1"},
             "mpris:length":{"type":"x","data":354000000},
             "mpris:artUrl":{"type":"s","data":"file:///home/u/Music/cov%20er.jpg"},
-            "mpris:trackid":{"type":"o","data":"/org/mpris/MediaPlayer2/track/1"}
-        }]},
+            "xesam:title":{"type":"s","data":"Bohemian Rhapsody"},
+            "xesam:artist":{"type":"as","data":["Queen"]},
+            "xesam:album":{"type":"s","data":"A Night at the Opera"},
+            "xesam:albumArtist":{"type":"as","data":["Queen"]},
+            "xesam:trackNumber":{"type":"i","data":11}
+        }},
         "Position":{"type":"x","data":60000000},
         "CanGoNext":{"type":"b","data":true},
         "CanGoPrevious":{"type":"b","data":true},
@@ -662,6 +682,30 @@ mod tests {
             player.track_id.as_deref(),
             Some("/org/mpris/MediaPlayer2/track/1")
         );
+    }
+
+    #[test]
+    fn the_old_wrapped_metadata_shape_still_parses() {
+        // the shape the first fixture assumed: Metadata's data a
+        // one-element array, artist arrays one level deeper, and an
+        // unsigned "t" length - real busctl does not render this today,
+        // but the parser stays tolerant of both
+        const WRAPPED: &str = r#"{"type":"a{sv}","data":[{
+            "PlaybackStatus":{"type":"s","data":"Paused"},
+            "Metadata":{"type":"a{sv}","data":[{
+                "xesam:title":{"type":"s","data":"Wrapped Shape"},
+                "xesam:artist":{"type":"as","data":[["Queen"]]},
+                "xesam:albumArtist":{"type":"as","data":[["Queen"]]},
+                "mpris:length":{"type":"t","data":61000000}
+            }]}
+        }]}"#;
+        let dict = get_all_dict(WRAPPED).expect("dict");
+        let player = parse_player(Some(&dict), "org.mpris.MediaPlayer2.x", "X");
+        assert_eq!(player.props.title, "Wrapped Shape");
+        assert_eq!(player.props.artist, "Queen");
+        assert_eq!(player.props.album_artist, "Queen");
+        assert_eq!(player.playback.status, PlaybackStatus::Paused);
+        assert_eq!(player.timeline.duration_ms, 61_000);
     }
 
     #[test]
