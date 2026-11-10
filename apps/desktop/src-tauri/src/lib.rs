@@ -1526,10 +1526,7 @@ fn output_with_timeout(
         .stderr(Stdio::piped());
     let mut child = cmd.spawn()?;
 
-    fn spawn_reader<R: Read + Send + 'static>(
-        mut pipe: R,
-        tx: mpsc::Sender<Vec<u8>>,
-    ) {
+    fn spawn_reader<R: Read + Send + 'static>(mut pipe: R, tx: mpsc::Sender<Vec<u8>>) {
         // reader threads are never joined: a daemon holding the pipe
         // open would outlive the wait below on purpose
         std::thread::spawn(move || {
@@ -1591,10 +1588,15 @@ fn run_adb(args: &[&str]) -> Result<(bool, String), String> {
     } else {
         Duration::from_secs(20)
     };
-    let Some((status, stdout, stderr)) =
-        output_with_timeout(cmd, timeout).map_err(|e| format!("adb nie znaleziony w PATH: {e}"))?
+    let Some((status, stdout, stderr)) = output_with_timeout(cmd, timeout).map_err(|e| {
+        pulpit_i18n::trf!(
+            "adb not found in PATH: {e}",
+            "adb nie znaleziony w PATH: {e}"
+        )
+    })?
     else {
-        return Err(format!(
+        return Err(pulpit_i18n::trf!(
+            "adb did not answer within {} s",
             "adb nie odpowiedział w ciągu {} s",
             timeout.as_secs()
         ));
@@ -1640,13 +1642,22 @@ async fn adb_devices() -> Result<Vec<String>, String> {
 /// `None` for everything else (the raw adb text is shown then).
 fn explain_adb_install_failure(output: &str) -> Option<&'static str> {
     if output.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
-        return Some("Na tablecie jest Pulpit podpisany innym kluczem (np. wersja deweloperska). Odinstaluj aplikację na tablecie, zainstaluj ponownie i sparuj tablet od nowa.");
+        return Some(pulpit_i18n::tr(
+            "The tablet has a Pulpit build signed with a different key (e.g. a developer build). Uninstall the app on the tablet, install again and pair the tablet again.",
+            "Na tablecie jest Pulpit podpisany innym kluczem (np. wersja deweloperska). Odinstaluj aplikację na tablecie, zainstaluj ponownie i sparuj tablet od nowa.",
+        ));
     }
     if output.contains("INSTALL_FAILED_VERSION_DOWNGRADE") {
-        return Some("Na tablecie jest nowsza wersja niż instalowana. Odinstaluj aplikację na tablecie, jeśli chcesz wrócić do starszej.");
+        return Some(pulpit_i18n::tr(
+            "A newer version than the one being installed is already on the tablet. Uninstall the app on the tablet if you want to go back to an older one.",
+            "Na tablecie jest nowsza wersja niż instalowana. Odinstaluj aplikację na tablecie, jeśli chcesz wrócić do starszej.",
+        ));
     }
     if output.contains("INSTALL_FAILED_INSUFFICIENT_STORAGE") {
-        return Some("Na tablecie brakuje miejsca na instalację.");
+        return Some(pulpit_i18n::tr(
+            "There is not enough storage on the tablet to install.",
+            "Na tablecie brakuje miejsca na instalację.",
+        ));
     }
     None
 }
@@ -1663,7 +1674,11 @@ fn adb_install(serial: Option<&str>, path: &str) -> Result<String, String> {
     if ok && text.contains("Success") {
         Ok(text)
     } else if text.is_empty() {
-        Err("adb install nie powiodł się (brak wyjścia)".to_string())
+        Err(pulpit_i18n::tr(
+            "adb install failed (no output)",
+            "adb install nie powiodł się (brak wyjścia)",
+        )
+        .to_string())
     } else if let Some(msg) = explain_adb_install_failure(&text) {
         Err(format!("{msg}\n\n{text}"))
     } else {
@@ -1678,10 +1693,13 @@ fn adb_install(serial: Option<&str>, path: &str) -> Result<String, String> {
 #[tauri::command]
 async fn adb_install_apk(path: String) -> Result<String, String> {
     if !path.to_lowercase().ends_with(".apk") {
-        return Err("Wybierz plik .apk.".to_string());
+        return Err(pulpit_i18n::tr("Choose a .apk file.", "Wybierz plik .apk.").to_string());
     }
     if !std::path::Path::new(&path).exists() {
-        return Err(format!("Plik nie istnieje: {path}"));
+        return Err(pulpit_i18n::trf!(
+            "The file does not exist: {path}",
+            "Plik nie istnieje: {path}"
+        ));
     }
     tauri::async_runtime::spawn_blocking(move || adb_install(None, &path))
         .await
@@ -1742,12 +1760,19 @@ fn is_sha256_hex(s: &str) -> bool {
 }
 
 fn parse_update_manifest(text: &str) -> Result<UpdateManifest, String> {
-    let manifest: serde_json::Value =
-        serde_json::from_str(text).map_err(|e| format!("Manifest nie jest JSON-em: {e}"))?;
+    let manifest: serde_json::Value = serde_json::from_str(text).map_err(|e| {
+        pulpit_i18n::trf!(
+            "The manifest is not valid JSON: {e}",
+            "Manifest nie jest JSON-em: {e}"
+        )
+    })?;
     let version = manifest
         .get("version")
         .and_then(|v| v.as_str())
-        .ok_or("Manifest nie ma pola \"version\".")?
+        .ok_or(pulpit_i18n::tr(
+            "The manifest has no \"version\" field.",
+            "Manifest nie ma pola \"version\".",
+        ))?
         .to_string();
     let url = manifest
         .get("url")
@@ -1755,36 +1780,58 @@ fn parse_update_manifest(text: &str) -> Result<UpdateManifest, String> {
         .unwrap_or("")
         .to_string();
     if url.is_empty() {
-        return Err("Manifest nie ma pola \"url\".".to_string());
+        return Err(pulpit_i18n::tr(
+            "The manifest has no \"url\" field.",
+            "Manifest nie ma pola \"url\".",
+        )
+        .to_string());
     }
     if !url.starts_with("https://") {
-        return Err("Adres pliku aktualizacji musi być HTTPS.".to_string());
+        return Err(pulpit_i18n::tr(
+            "The update file URL must be HTTPS.",
+            "Adres pliku aktualizacji musi być HTTPS.",
+        )
+        .to_string());
     }
     let sha256 = manifest
         .get("sha256")
         .and_then(|v| v.as_str())
-        .ok_or("Manifest nie ma pola \"sha256\" - bez sumy kontrolnej odmowa instalacji.")?
+        .ok_or(pulpit_i18n::tr(
+            "The manifest has no \"sha256\" field - without a checksum the install is refused.",
+            "Manifest nie ma pola \"sha256\" - bez sumy kontrolnej odmowa instalacji.",
+        ))?
         .to_string();
     if !is_sha256_hex(&sha256) {
-        return Err(
-            "Pole \"sha256\" manifestu nie jest sumą kontrolną (64 znaki hex).".to_string(),
-        );
+        return Err(pulpit_i18n::tr(
+            "The manifest's \"sha256\" field is not a checksum (64 hex characters).",
+            "Pole \"sha256\" manifestu nie jest sumą kontrolną (64 znaki hex).",
+        )
+        .to_string());
     }
     let apk = match manifest.get("apk_url").and_then(|v| v.as_str()) {
         None => None,
         Some(apk_url) => {
             if !apk_url.starts_with("https://") {
-                return Err("Adres APK musi być HTTPS.".to_string());
+                return Err(pulpit_i18n::tr(
+                    "The APK URL must be HTTPS.",
+                    "Adres APK musi być HTTPS.",
+                )
+                .to_string());
             }
-            let apk_sha = manifest
-                .get("apk_sha256")
-                .and_then(|v| v.as_str())
-                .ok_or("Manifest ma \"apk_url\" bez \"apk_sha256\" - odmowa instalacji.")?;
+            let apk_sha =
+                manifest
+                    .get("apk_sha256")
+                    .and_then(|v| v.as_str())
+                    .ok_or(pulpit_i18n::tr(
+                    "The manifest has \"apk_url\" without \"apk_sha256\" - the install is refused.",
+                    "Manifest ma \"apk_url\" bez \"apk_sha256\" - odmowa instalacji.",
+                ))?;
             if !is_sha256_hex(apk_sha) {
-                return Err(
-                    "Pole \"apk_sha256\" manifestu nie jest sumą kontrolną (64 znaki hex)."
-                        .to_string(),
-                );
+                return Err(pulpit_i18n::tr(
+                    "The manifest's \"apk_sha256\" field is not a checksum (64 hex characters).",
+                    "Pole \"apk_sha256\" manifestu nie jest sumą kontrolną (64 znaki hex).",
+                )
+                .to_string());
             }
             Some(ApkAsset {
                 url: apk_url.to_string(),
@@ -1805,14 +1852,18 @@ fn fetch_manifest(url: &str) -> Result<UpdateManifest, String> {
         .timeout_global(Some(std::time::Duration::from_secs(10)))
         .build()
         .new_agent();
-    let mut resp = agent
-        .get(url)
-        .call()
-        .map_err(|e| format!("Nie udało się pobrać manifestu: {e}"))?;
-    let text = resp
-        .body_mut()
-        .read_to_string()
-        .map_err(|e| format!("Nie udało się odczytać manifestu: {e}"))?;
+    let mut resp = agent.get(url).call().map_err(|e| {
+        pulpit_i18n::trf!(
+            "Could not download the manifest: {e}",
+            "Nie udało się pobrać manifestu: {e}"
+        )
+    })?;
+    let text = resp.body_mut().read_to_string().map_err(|e| {
+        pulpit_i18n::trf!(
+            "Could not read the manifest: {e}",
+            "Nie udało się odczytać manifestu: {e}"
+        )
+    })?;
     parse_update_manifest(&text)
 }
 
@@ -1842,16 +1893,20 @@ fn version_newer(latest: &str, current: &str) -> bool {
 #[tauri::command]
 async fn check_for_updates(state: State<'_, DesktopState>) -> Result<serde_json::Value, String> {
     let url = {
-        let path = state
-            .settings_path
-            .as_ref()
-            .ok_or("Brak ścieżki ustawień (uruchomienie awaryjne).")?;
+        let path = state.settings_path.as_ref().ok_or(pulpit_i18n::tr(
+            "No settings path (fallback launch).",
+            "Brak ścieżki ustawień (uruchomienie awaryjne).",
+        ))?;
         let stored: serde_json::Value = std::fs::read_to_string(path)
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or(serde_json::Value::Null);
-        resolve_update_url(stored.get("update_url").and_then(|v| v.as_str()))
-            .ok_or("Sprawdzanie aktualizacji jest wyłączone (update_url: \"off\").")?
+        resolve_update_url(stored.get("update_url").and_then(|v| v.as_str())).ok_or(
+            pulpit_i18n::tr(
+                "Update checking is disabled (update_url: \"off\").",
+                "Sprawdzanie aktualizacji jest wyłączone (update_url: \"off\").",
+            ),
+        )?
     };
     let current = env!("CARGO_PKG_VERSION").to_string();
     let manifest = tauri::async_runtime::spawn_blocking(move || fetch_manifest(url.trim()))
@@ -1878,17 +1933,20 @@ fn download_update(url: &str, dest: &std::path::Path) -> Result<(), String> {
         .timeout_global(Some(std::time::Duration::from_secs(600)))
         .build()
         .new_agent();
-    let resp = agent
-        .get(url)
-        .call()
-        .map_err(|e| format!("Nie udało się pobrać aktualizacji: {e}"))?;
+    let resp = agent.get(url).call().map_err(|e| {
+        pulpit_i18n::trf!(
+            "Could not download the update: {e}",
+            "Nie udało się pobrać aktualizacji: {e}"
+        )
+    })?;
     let mut body = resp.into_body().into_reader().take(UPDATE_MAX_BYTES + 1);
     let mut file = std::fs::File::create(dest).map_err(|e| e.to_string())?;
-    let written =
-        std::io::copy(&mut body, &mut file).map_err(|e| format!("Pobieranie przerwane: {e}"))?;
+    let written = std::io::copy(&mut body, &mut file)
+        .map_err(|e| pulpit_i18n::trf!("Download interrupted: {e}", "Pobieranie przerwane: {e}"))?;
     if written > UPDATE_MAX_BYTES {
         let _ = std::fs::remove_file(dest);
-        return Err(format!(
+        return Err(pulpit_i18n::trf!(
+            "The update file is {written} B - above the limit of {UPDATE_MAX_BYTES} B.",
             "Plik aktualizacji ma {written} B - powyżej limitu {UPDATE_MAX_BYTES} B."
         ));
     }
@@ -1909,11 +1967,19 @@ fn sha256_matches(path: &std::path::Path, expected: &str) -> Result<bool, String
 fn apply_update(exe: &std::path::Path, downloaded: &std::path::Path) -> Result<(), String> {
     let old = exe.with_extension("exe.old");
     let _ = std::fs::remove_file(&old);
-    std::fs::rename(exe, &old).map_err(|e| format!("Nie udało się odłożyć starego exe: {e}"))?;
+    std::fs::rename(exe, &old).map_err(|e| {
+        pulpit_i18n::trf!(
+            "Could not set the old exe aside: {e}",
+            "Nie udało się odłożyć starego exe: {e}"
+        )
+    })?;
     if let Err(e) = std::fs::rename(downloaded, exe) {
         // put the running version back; the app must keep working
         let _ = std::fs::rename(&old, exe);
-        return Err(format!("Nie udało się podmienić pliku: {e}"));
+        return Err(pulpit_i18n::trf!(
+            "Could not swap the file: {e}",
+            "Nie udało się podmienić pliku: {e}"
+        ));
     }
     Ok(())
 }
@@ -1957,7 +2023,11 @@ fn spawn_update_guard(
 ) -> Result<std::process::Child, String> {
     // the self-update swap is a cmd.exe script; other platforms update
     // through their package manager
-    Err("Automatyczna aktualizacja działa tylko w systemie Windows".into())
+    Err(pulpit_i18n::tr(
+        "Automatic updates work on Windows only",
+        "Automatyczna aktualizacja działa tylko w systemie Windows",
+    )
+    .into())
 }
 
 #[cfg(windows)]
@@ -1977,7 +2047,12 @@ fn spawn_update_guard(
     cmd.raw_arg(relaunch_script(exe, staged, &exe.with_extension("exe.old")))
         .creation_flags(DETACHED | NO_WINDOW)
         .spawn()
-        .map_err(|e| format!("Nie udało się zaplanować restartu: {e}"))
+        .map_err(|e| {
+            pulpit_i18n::trf!(
+                "Could not schedule the restart: {e}",
+                "Nie udało się zaplanować restartu: {e}"
+            )
+        })
 }
 
 /// Download (manifest URL again, so the check cannot go stale), verify
@@ -1989,16 +2064,20 @@ async fn install_update(
     state: State<'_, DesktopState>,
 ) -> Result<String, String> {
     let (url, staging_dir) = {
-        let path = state
-            .settings_path
-            .as_ref()
-            .ok_or("Brak ścieżki ustawień (uruchomienie awaryjne).")?;
+        let path = state.settings_path.as_ref().ok_or(pulpit_i18n::tr(
+            "No settings path (fallback launch).",
+            "Brak ścieżki ustawień (uruchomienie awaryjne).",
+        ))?;
         let stored: serde_json::Value = std::fs::read_to_string(path)
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or(serde_json::Value::Null);
-        let feed = resolve_update_url(stored.get("update_url").and_then(|v| v.as_str()))
-            .ok_or("Sprawdzanie aktualizacji jest wyłączone (update_url: \"off\").")?;
+        let feed = resolve_update_url(stored.get("update_url").and_then(|v| v.as_str())).ok_or(
+            pulpit_i18n::tr(
+                "Update checking is disabled (update_url: \"off\").",
+                "Sprawdzanie aktualizacji jest wyłączone (update_url: \"off\").",
+            ),
+        )?;
         let dir = path
             .parent()
             .unwrap_or_else(|| std::path::Path::new("."))
@@ -2010,7 +2089,8 @@ async fn install_update(
         let manifest = fetch_manifest(&url)?;
         let current = env!("CARGO_PKG_VERSION");
         if !version_newer(&manifest.version, current) {
-            return Err(format!(
+            return Err(pulpit_i18n::trf!(
+                "The installed version {current} is up to date (feed: {}).",
                 "Zainstalowana wersja {current} jest aktualna (feed: {}).",
                 manifest.version
             ));
@@ -2023,9 +2103,11 @@ async fn install_update(
         // unverified binary can never be swapped in (DESK-02)
         if !sha256_matches(&staged, &manifest.sha256)? {
             let _ = std::fs::remove_file(&staged);
-            return Err(
-                "Suma kontrolna pobranego pliku się nie zgadza - instalacja przerwana.".to_string(),
-            );
+            return Err(pulpit_i18n::tr(
+                "The downloaded file's checksum does not match - the install was aborted.",
+                "Suma kontrolna pobranego pliku się nie zgadza - instalacja przerwana.",
+            )
+            .to_string());
         }
         // The guard is alive BEFORE the first rename: a death between
         // the swap's two renames (no exe in place) gets healed by its
@@ -2040,7 +2122,8 @@ async fn install_update(
                 return Err(e);
             }
         }
-        Ok(format!(
+        Ok(pulpit_i18n::trf!(
+            "Installed v{}. The app will restart.",
             "Zainstalowano v{}. Aplikacja uruchomi się ponownie.",
             manifest.version
         ))
@@ -2066,16 +2149,20 @@ async fn install_update(
 #[tauri::command]
 async fn install_tablet_update(state: State<'_, DesktopState>) -> Result<String, String> {
     let (url, staging_dir) = {
-        let path = state
-            .settings_path
-            .as_ref()
-            .ok_or("Brak ścieżki ustawień (uruchomienie awaryjne).")?;
+        let path = state.settings_path.as_ref().ok_or(pulpit_i18n::tr(
+            "No settings path (fallback launch).",
+            "Brak ścieżki ustawień (uruchomienie awaryjne).",
+        ))?;
         let stored: serde_json::Value = std::fs::read_to_string(path)
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or(serde_json::Value::Null);
-        let feed = resolve_update_url(stored.get("update_url").and_then(|v| v.as_str()))
-            .ok_or("Sprawdzanie aktualizacji jest wyłączone (update_url: \"off\").")?;
+        let feed = resolve_update_url(stored.get("update_url").and_then(|v| v.as_str())).ok_or(
+            pulpit_i18n::tr(
+                "Update checking is disabled (update_url: \"off\").",
+                "Sprawdzanie aktualizacji jest wyłączone (update_url: \"off\").",
+            ),
+        )?;
         let dir = path
             .parent()
             .unwrap_or_else(|| std::path::Path::new("."))
@@ -2084,10 +2171,10 @@ async fn install_tablet_update(state: State<'_, DesktopState>) -> Result<String,
     };
     tauri::async_runtime::spawn_blocking(move || {
         let manifest = fetch_manifest(&url)?;
-        let apk = manifest
-            .apk
-            .as_ref()
-            .ok_or("Ten release nie zawiera APK dla tabletu.")?;
+        let apk = manifest.apk.as_ref().ok_or(pulpit_i18n::tr(
+            "This release has no APK for the tablet.",
+            "Ten release nie zawiera APK dla tabletu.",
+        ))?;
         let (_, listing) = run_adb(&["devices"])?;
         let ready: Vec<String> = parse_adb_devices(&listing)
             .into_iter()
@@ -2095,9 +2182,11 @@ async fn install_tablet_update(state: State<'_, DesktopState>) -> Result<String,
             .map(|(serial, _)| serial)
             .collect();
         if ready.is_empty() {
-            return Err(
-                "Brak tabletu w adb (podłącz po USB i zaakceptuj debugowanie).".to_string(),
-            );
+            return Err(pulpit_i18n::tr(
+                "No tablet in adb (connect it over USB and accept debugging).",
+                "Brak tabletu w adb (podłącz po USB i zaakceptuj debugowanie).",
+            )
+            .to_string());
         }
         // Decide before downloading: nothing to fetch when every tablet is current.
         let mut todo = Vec::new();
@@ -2105,7 +2194,10 @@ async fn install_tablet_update(state: State<'_, DesktopState>) -> Result<String,
         for serial in ready {
             match tablet_version(&serial)? {
                 Some(v) if !version_newer(&manifest.version, &v) => {
-                    lines.push(format!("{serial}: już v{v}"));
+                    lines.push(pulpit_i18n::trf!(
+                        "{serial}: already v{v}",
+                        "{serial}: już v{v}"
+                    ));
                 }
                 _ => todo.push(serial),
             }
@@ -2117,7 +2209,11 @@ async fn install_tablet_update(state: State<'_, DesktopState>) -> Result<String,
             download_update(&apk.url, &staged)?;
             if !sha256_matches(&staged, &apk.sha256)? {
                 let _ = std::fs::remove_file(&staged);
-                return Err("Suma kontrolna APK się nie zgadza - instalacja przerwana.".to_string());
+                return Err(pulpit_i18n::tr(
+                    "The APK checksum does not match - the install was aborted.",
+                    "Suma kontrolna APK się nie zgadza - instalacja przerwana.",
+                )
+                .to_string());
             }
             let staged_path = staged.to_string_lossy().to_string();
             for serial in todo {
@@ -2133,9 +2229,16 @@ async fn install_tablet_update(state: State<'_, DesktopState>) -> Result<String,
                             "-n",
                             TABLET_ACTIVITY,
                         ]);
-                        lines.push(format!("{serial}: zainstalowano v{}", manifest.version));
+                        lines.push(pulpit_i18n::trf!(
+                            "{serial}: installed v{}",
+                            "{serial}: zainstalowano v{}",
+                            manifest.version
+                        ));
                     }
-                    Err(e) => lines.push(format!("{serial}: błąd - {e}")),
+                    Err(e) => lines.push(pulpit_i18n::trf!(
+                        "{serial}: error - {e}",
+                        "{serial}: błąd - {e}"
+                    )),
                 }
             }
             let _ = std::fs::remove_file(&staged);
@@ -2392,12 +2495,10 @@ mod tests {
 
     #[test]
     fn output_with_timeout_collects_output_of_a_fast_command() {
-        let (status, stdout, stderr) = output_with_timeout(
-            shell_command("echo hi"),
-            std::time::Duration::from_secs(10),
-        )
-        .expect("spawn")
-        .expect("finished before the deadline");
+        let (status, stdout, stderr) =
+            output_with_timeout(shell_command("echo hi"), std::time::Duration::from_secs(10))
+                .expect("spawn")
+                .expect("finished before the deadline");
         assert!(status.success());
         let stdout = String::from_utf8_lossy(&stdout);
         assert!(stdout.contains("hi"), "stdout was {stdout:?}");
@@ -2411,11 +2512,8 @@ mod tests {
         #[cfg(windows)]
         let slow = "ping -n 6 127.0.0.1 >NUL";
         let started = std::time::Instant::now();
-        let out = output_with_timeout(
-            shell_command(slow),
-            std::time::Duration::from_millis(200),
-        )
-        .expect("spawn");
+        let out = output_with_timeout(shell_command(slow), std::time::Duration::from_millis(200))
+            .expect("spawn");
         assert!(out.is_none(), "the command should have been killed");
         assert!(
             started.elapsed() < std::time::Duration::from_secs(3),
@@ -2496,28 +2594,32 @@ mod tests {
 
     #[test]
     fn adb_install_failures_are_explained() {
-        // signature mismatch: the tablet has a build signed with a
-        // different key (developer build vs release APK)
+        // The explanations are locale-dependent (tr), so assert on the
+        // stable part - which failure marker maps to an explanation -
+        // not on the sentence (locale is process-global).
         let incompatible = explain_adb_install_failure(
             "adb: failed to install app.apk: Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Existing package app.pulpit.mobile signatures do not match newer version; ignoring!]",
         );
         assert!(incompatible.is_some());
-        assert!(incompatible.unwrap().contains("kluczem"));
+        assert!(!incompatible.unwrap().is_empty());
 
         let downgrade = explain_adb_install_failure(
             "adb: failed to install app.apk: Failure [INSTALL_FAILED_VERSION_DOWNGRADE]",
         );
         assert!(downgrade.is_some());
-        assert!(downgrade.unwrap().contains("nowsza wersja"));
+        assert!(!downgrade.unwrap().is_empty());
 
         let storage = explain_adb_install_failure(
             "adb: failed to install app.apk: Failure [INSTALL_FAILED_INSUFFICIENT_STORAGE]",
         );
         assert!(storage.is_some());
-        assert!(storage.unwrap().contains("miejsca"));
+        assert!(!storage.unwrap().is_empty());
 
         // anything else falls through to the raw adb text
-        assert!(explain_adb_install_failure("adb: failed to install app.apk: Failure [INSTALL_PARSE_FAILED_NO_CERTIFICATES]").is_none());
+        assert!(explain_adb_install_failure(
+            "adb: failed to install app.apk: Failure [INSTALL_PARSE_FAILED_NO_CERTIFICATES]"
+        )
+        .is_none());
         assert!(explain_adb_install_failure("").is_none());
     }
 
@@ -2694,7 +2796,10 @@ mod tests {
         file.set_len(IMPORT_READ_CAP_BYTES + 1).expect("extend");
         drop(file);
         let err = import_boards_blocking(backend, &big.to_string_lossy()).expect_err("must refuse");
-        assert!(err.contains("limit to 64 MiB"), "unexpected error: {err}");
+        // locale-independent: both the size and the cap ride in the
+        // message ("... 64 MiB ... 64 MiB" - the file is cap+1 bytes,
+        // which integer-divides back to 64) whichever language is active
+        assert_eq!(err.matches("64 MiB").count(), 2, "unexpected error: {err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -3269,19 +3374,25 @@ fn stored_flag(stored: &serde_json::Value, key: &str) -> bool {
 #[tauri::command]
 async fn set_server_port(state: State<'_, DesktopState>, port: u16) -> Result<(), String> {
     if !(1024..=65535).contains(&port) {
-        return Err(format!(
+        return Err(pulpit_i18n::trf!(
+            "Port {port} is outside the allowed range 1024-65535.",
             "Port {port} jest poza dozwolonym zakresem 1024-65535."
         ));
     }
     if std::env::var_os("PULPIT_PORT").is_some() {
-        return Err(
-            "Port nadpisuje zmienna środowiskowa PULPIT_PORT — ma ona pierwszeństwo.".to_string(),
-        );
+        return Err(pulpit_i18n::tr(
+            "The PULPIT_PORT environment variable overrides the port and takes precedence.",
+            "Port nadpisuje zmienna środowiskowa PULPIT_PORT — ma ona pierwszeństwo.",
+        )
+        .to_string());
     }
-    let path = state
-        .settings_path
-        .as_ref()
-        .ok_or_else(|| "Brak ścieżki ustawień (uruchomienie awaryjne).".to_string())?;
+    let path = state.settings_path.as_ref().ok_or_else(|| {
+        pulpit_i18n::tr(
+            "No settings path (fallback launch).",
+            "Brak ścieżki ustawień (uruchomienie awaryjne).",
+        )
+        .to_string()
+    })?;
     persist_editor_setting(path, "port", serde_json::json!(port))
 }
 
@@ -3290,10 +3401,13 @@ async fn set_server_port(state: State<'_, DesktopState>, port: u16) -> Result<()
 /// hidden or not, once, in `setup`.
 #[tauri::command]
 async fn set_start_minimized(state: State<'_, DesktopState>, enable: bool) -> Result<(), String> {
-    let path = state
-        .settings_path
-        .as_ref()
-        .ok_or_else(|| "Brak ścieżki ustawień (uruchomienie awaryjne).".to_string())?;
+    let path = state.settings_path.as_ref().ok_or_else(|| {
+        pulpit_i18n::tr(
+            "No settings path (fallback launch).",
+            "Brak ścieżki ustawień (uruchomienie awaryjne).",
+        )
+        .to_string()
+    })?;
     persist_editor_setting(path, "start_minimized", serde_json::json!(enable))
 }
 
@@ -3379,10 +3493,9 @@ struct AidevStatusConfig {
 
 #[tauri::command]
 async fn aidev_status_config(state: State<'_, DesktopState>) -> Result<AidevStatusConfig, String> {
-    let path = state
-        .aidev_config
-        .clone()
-        .ok_or_else(|| "Brak ścieżki konfiguracji aidev.".to_string())?;
+    let path = state.aidev_config.clone().ok_or_else(|| {
+        pulpit_i18n::tr("No aidev config path.", "Brak ścieżki konfiguracji aidev.").to_string()
+    })?;
     // the config read (and any provider detection) is file IO: run it
     // off the main thread
     tauri::async_runtime::spawn_blocking(move || {
@@ -3412,10 +3525,9 @@ async fn set_aidev_status_config(
     summary: bool,
     row_style: String,
 ) -> Result<(), String> {
-    let path = state
-        .aidev_config
-        .clone()
-        .ok_or_else(|| "Brak ścieżki konfiguracji aidev.".to_string())?;
+    let path = state.aidev_config.clone().ok_or_else(|| {
+        pulpit_i18n::tr("No aidev config path.", "Brak ścieżki konfiguracji aidev.").to_string()
+    })?;
     persist_editor_setting(
         &path,
         "status",
@@ -3455,7 +3567,8 @@ fn import_boards_blocking(backend: Arc<SqlBackend>, path: &str) -> Result<Vec<i6
     // stat first: an oversized file rejects before a single byte is read
     let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
     if meta.len() > IMPORT_READ_CAP_BYTES {
-        return Err(format!(
+        return Err(pulpit_i18n::trf!(
+            "The import file is {} MiB - the limit is {} MiB.",
             "Plik importu ma {} MiB - limit to {} MiB.",
             meta.len() / (1024 * 1024),
             IMPORT_READ_CAP_BYTES / (1024 * 1024)
@@ -3471,7 +3584,11 @@ fn import_boards_blocking(backend: Arc<SqlBackend>, path: &str) -> Result<Vec<i6
         .read_to_string(&mut content)
         .map_err(|e| e.to_string())?;
     if content.len() as u64 > IMPORT_READ_CAP_BYTES {
-        return Err("Plik importu przekracza limit 64 MiB.".to_string());
+        return Err(pulpit_i18n::tr(
+            "The import file exceeds the 64 MiB limit.",
+            "Plik importu przekracza limit 64 MiB.",
+        )
+        .to_string());
     }
     let boards: Vec<serde_json::Value> =
         serde_json::from_str(&content).map_err(|e| e.to_string())?;
@@ -3527,10 +3644,9 @@ async fn spotify_set_client_id(
     state: State<'_, DesktopState>,
     client_id: String,
 ) -> Result<(), String> {
-    let path = state
-        .spotify_path
-        .clone()
-        .ok_or_else(|| "Brak ścieżki spotify.json.".to_string())?;
+    let path = state.spotify_path.clone().ok_or_else(|| {
+        pulpit_i18n::tr("No spotify.json path.", "Brak ścieżki spotify.json.").to_string()
+    })?;
     let client_id = client_id.trim().to_string();
     // file IO off the main thread
     tauri::async_runtime::spawn_blocking(move || {
@@ -3553,17 +3669,23 @@ async fn spotify_set_client_id(
 /// there is no port fallback.
 #[tauri::command]
 async fn spotify_login(state: State<'_, DesktopState>) -> Result<serde_json::Value, String> {
-    let spotify = state
-        .spotify
-        .clone()
-        .ok_or_else(|| "Spotify wyłączony - spotify.json jest uszkodzony.".to_string())?;
-    let path = state
-        .spotify_path
-        .clone()
-        .ok_or_else(|| "Brak ścieżki spotify.json.".to_string())?;
+    let spotify = state.spotify.clone().ok_or_else(|| {
+        pulpit_i18n::tr(
+            "Spotify is disabled - spotify.json is corrupted.",
+            "Spotify wyłączony - spotify.json jest uszkodzony.",
+        )
+        .to_string()
+    })?;
+    let path = state.spotify_path.clone().ok_or_else(|| {
+        pulpit_i18n::tr("No spotify.json path.", "Brak ścieżki spotify.json.").to_string()
+    })?;
     let client_id = spotify.config().client_id;
     if client_id.trim().is_empty() {
-        return Err("Wklej najpierw Client ID swojej aplikacji Spotify.".into());
+        return Err(pulpit_i18n::tr(
+            "Paste your Spotify app's Client ID first.",
+            "Wklej najpierw Client ID swojej aplikacji Spotify.",
+        )
+        .into());
     }
     let result = tauri::async_runtime::spawn_blocking(move || {
         pulpit_spotify::login(&client_id, |url| {
@@ -3587,10 +3709,9 @@ async fn spotify_login(state: State<'_, DesktopState>) -> Result<serde_json::Val
 /// Logout: delete the tokens, keep the client id (design §2).
 #[tauri::command]
 async fn spotify_logout(state: State<'_, DesktopState>) -> Result<(), String> {
-    let path = state
-        .spotify_path
-        .clone()
-        .ok_or_else(|| "Brak ścieżki spotify.json.".to_string())?;
+    let path = state.spotify_path.clone().ok_or_else(|| {
+        pulpit_i18n::tr("No spotify.json path.", "Brak ścieżki spotify.json.").to_string()
+    })?;
     tauri::async_runtime::spawn_blocking(move || {
         pulpit_spotify::logout(&path).map_err(|e| e.to_string())
     })
@@ -3610,7 +3731,7 @@ async fn spotify_playlists(
     state: State<'_, DesktopState>,
 ) -> Result<Vec<pulpit_spotify::Playlist>, String> {
     let Some(spotify) = state.spotify.clone() else {
-        return Err("Spotify wyłączony.".into());
+        return Err(pulpit_i18n::tr("Spotify is disabled.", "Spotify wyłączony.").into());
     };
     {
         let cache = state.spotify_playlists.lock().unwrap();
@@ -3637,7 +3758,7 @@ async fn spotify_devices(
     let spotify = state
         .spotify
         .clone()
-        .ok_or_else(|| "Spotify wyłączony.".to_string())?;
+        .ok_or_else(|| pulpit_i18n::tr("Spotify is disabled.", "Spotify wyłączony.").to_string())?;
     tauri::async_runtime::spawn_blocking(move || spotify.devices().map_err(|e| e.to_string()))
         .await
         .map_err(|e| e.to_string())?
@@ -3757,7 +3878,7 @@ async fn obs_status(state: State<'_, DesktopState>) -> Result<serde_json::Value,
     let obs = state
         .obs
         .as_ref()
-        .ok_or_else(|| "OBS wyłączony.".to_string())?;
+        .ok_or_else(|| pulpit_i18n::tr("OBS is disabled.", "OBS wyłączony.").to_string())?;
     let status = obs.status().await;
     Ok(serde_json::json!({
         "enabled": status.enabled,
@@ -3785,7 +3906,7 @@ async fn obs_apply_config(
     let obs = state
         .obs
         .as_ref()
-        .ok_or_else(|| "OBS wyłączony.".to_string())?;
+        .ok_or_else(|| pulpit_i18n::tr("OBS is disabled.", "OBS wyłączony.").to_string())?;
     let mut config = obs.config_async().await;
     config.enabled = enabled;
     let host = host.trim().to_string();
@@ -3833,7 +3954,7 @@ async fn obs_choices(state: State<'_, DesktopState>) -> Result<pulpit_obs::ObsCh
     let obs = state
         .obs
         .as_ref()
-        .ok_or_else(|| "OBS wyłączony.".to_string())?;
+        .ok_or_else(|| pulpit_i18n::tr("OBS is disabled.", "OBS wyłączony.").to_string())?;
     Ok(obs.choices().await)
 }
 
@@ -3945,8 +4066,14 @@ async fn discord_save_config(
 
     let path_clone = path.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        pulpit_discord::save_config(&path_clone, &client_id_trimmed, secret_arg.as_deref())
-            .map_err(|e| format!("Nie udało się zapisać konfiguracji Discorda: {e}"))
+        pulpit_discord::save_config(&path_clone, &client_id_trimmed, secret_arg.as_deref()).map_err(
+            |e| {
+                pulpit_i18n::trf!(
+                    "Could not save the Discord config: {e}",
+                    "Nie udało się zapisać konfiguracji Discorda: {e}"
+                )
+            },
+        )
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -3965,11 +4092,19 @@ async fn discord_save_config(
 #[tauri::command]
 async fn discord_authorize(state: State<'_, DesktopState>) -> Result<serde_json::Value, String> {
     let backend = state.backend()?;
-    let config = backend
-        .get_discord_config()
-        .ok_or_else(|| "Najpierw skonfiguruj Client ID i Client Secret.".to_string())?;
+    let config = backend.get_discord_config().ok_or_else(|| {
+        pulpit_i18n::tr(
+            "Configure the Client ID and Client Secret first.",
+            "Najpierw skonfiguruj Client ID i Client Secret.",
+        )
+        .to_string()
+    })?;
     if config.client_id.trim().is_empty() || config.client_secret.trim().is_empty() {
-        return Err("Wprowadź i zapisz Client ID oraz Client Secret.".into());
+        return Err(pulpit_i18n::tr(
+            "Enter and save the Client ID and Client Secret.",
+            "Wprowadź i zapisz Client ID oraz Client Secret.",
+        )
+        .into());
     }
     let path = integ_settings_path(&backend);
 
@@ -3978,19 +4113,29 @@ async fn discord_authorize(state: State<'_, DesktopState>) -> Result<serde_json:
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     let tokens = tauri::async_runtime::spawn_blocking(move || {
         pulpit_discord::authorize(&config, deadline).map_err(|e| match e {
-            pulpit_discord::DiscordError::NotRunning => "Discord nie działa.".to_string(),
-            pulpit_discord::DiscordError::AuthCancelled => {
-                "Anulowano autoryzację w aplikacji Discord.".to_string()
+            pulpit_discord::DiscordError::NotRunning => {
+                pulpit_i18n::tr("Discord is not running.", "Discord nie działa.").to_string()
             }
-            pulpit_discord::DiscordError::AuthRejected => "Odrzucono autoryzację.".to_string(),
-            other => format!("Błąd autoryzacji: {other}"),
+            pulpit_discord::DiscordError::AuthCancelled => pulpit_i18n::tr(
+                "Authorization was cancelled in the Discord app.",
+                "Anulowano autoryzację w aplikacji Discord.",
+            )
+            .to_string(),
+            pulpit_discord::DiscordError::AuthRejected => {
+                pulpit_i18n::tr("Authorization was rejected.", "Odrzucono autoryzację.").to_string()
+            }
+            other => pulpit_i18n::trf!("Authorization error: {other}", "Błąd autoryzacji: {other}"),
         })
     })
     .await
     .map_err(|e| e.to_string())??;
 
-    pulpit_discord::save_tokens(&path, &tokens)
-        .map_err(|e| format!("Nie udało się zapisać tokenów: {e}"))?;
+    pulpit_discord::save_tokens(&path, &tokens).map_err(|e| {
+        pulpit_i18n::trf!(
+            "Could not save the tokens: {e}",
+            "Nie udało się zapisać tokenów: {e}"
+        )
+    })?;
 
     let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let val: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
@@ -4024,8 +4169,12 @@ async fn discord_disconnect(state: State<'_, DesktopState>) -> Result<(), String
 
     let path_clone = path.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        pulpit_discord::clear_tokens(&path_clone)
-            .map_err(|e| format!("Nie udało się wyczyścić tokenów: {e}"))
+        pulpit_discord::clear_tokens(&path_clone).map_err(|e| {
+            pulpit_i18n::trf!(
+                "Could not clear the tokens: {e}",
+                "Nie udało się wyczyścić tokenów: {e}"
+            )
+        })
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -4069,8 +4218,12 @@ async fn vm_set_dll_override(
 
     let clean_clone = clean.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        pulpit_vm::save_dll_override(&settings_path, clean_clone.as_deref())
-            .map_err(|e| format!("Nie udało się zapisać override Voicemeeter: {e}"))
+        pulpit_vm::save_dll_override(&settings_path, clean_clone.as_deref()).map_err(|e| {
+            pulpit_i18n::trf!(
+                "Could not save the Voicemeeter override: {e}",
+                "Nie udało się zapisać override Voicemeeter: {e}"
+            )
+        })
     })
     .await
     .map_err(|e| e.to_string())??;

@@ -298,7 +298,9 @@ impl Obs {
         request_data: Option<Value>,
     ) -> Result<Value, String> {
         if !self.state.read().await.connected {
-            return Err("OBS nie jest połączony".to_string());
+            return Err(
+                pulpit_i18n::tr("OBS is not connected", "OBS nie jest połączony").to_string(),
+            );
         }
         let (reply, rx) = oneshot::channel();
         self.cmd_tx
@@ -335,9 +337,10 @@ impl Obs {
             Some(s) if !s.is_empty() => s.to_string(),
             _ => {
                 let st = self.state.read().await;
-                st.current_scene
-                    .clone()
-                    .ok_or_else(|| "Brak aktywnej sceny w OBS".to_string())?
+                st.current_scene.clone().ok_or_else(|| {
+                    pulpit_i18n::tr("No active scene in OBS", "Brak aktywnej sceny w OBS")
+                        .to_string()
+                })?
             }
         };
 
@@ -353,7 +356,12 @@ impl Obs {
         let item_id = id_res
             .get("sceneItemId")
             .and_then(Value::as_i64)
-            .ok_or_else(|| format!("Nie znaleziono zrodla {source_name} na scenie {scene}"))?;
+            .ok_or_else(|| {
+                pulpit_i18n::trf!(
+                    "Source {source_name} not found on scene {scene}",
+                    "Nie znaleziono zrodla {source_name} na scenie {scene}"
+                )
+            })?;
 
         let enabled_res = self
             .send_request(
@@ -405,7 +413,12 @@ impl Obs {
                 .keys()
                 .find(|(_, f)| f == filter_name)
                 .map(|(s, _)| s.clone())
-                .ok_or_else(|| format!("Nie znaleziono filtra {filter_name}"))?
+                .ok_or_else(|| {
+                    pulpit_i18n::trf!(
+                        "Filter {filter_name} not found",
+                        "Nie znaleziono filtra {filter_name}"
+                    )
+                })?
         };
 
         let filter_res = self
@@ -482,19 +495,31 @@ impl Obs {
         let url = config.ws_url();
         let (ws_stream, _) = tokio::time::timeout(Duration::from_secs(3), connect_async(&url))
             .await
-            .map_err(|_| "Timeout połączenia z OBS".to_string())?
-            .map_err(|e| format!("Błąd połączenia: {e}"))?;
+            .map_err(|_| {
+                pulpit_i18n::tr("Connection to OBS timed out", "Timeout połączenia z OBS")
+                    .to_string()
+            })?
+            .map_err(|e| pulpit_i18n::trf!("Connection error: {e}", "Błąd połączenia: {e}"))?;
 
         let (mut write, mut read) = ws_stream.split();
 
         let hello = read_handshake_half(&mut read, "Hello").await?;
         let hello = match hello {
             Message::Hello(h) => h,
-            _ => return Err("Oczekiwano Hello (op 0)".to_string()),
+            _ => {
+                return Err(
+                    pulpit_i18n::tr("Expected Hello (op 0)", "Oczekiwano Hello (op 0)").to_string(),
+                )
+            }
         };
 
-        let auth_str = handshake_auth(&hello, config.password.as_deref())
-            .map_err(|_| "OBS wymaga hasła, a hasło nie zostało podane".to_string())?;
+        let auth_str = handshake_auth(&hello, config.password.as_deref()).map_err(|_| {
+            pulpit_i18n::tr(
+                "OBS requires a password and none was provided",
+                "OBS wymaga hasła, a hasło nie zostało podane",
+            )
+            .to_string()
+        })?;
 
         let identify = Message::Identify(Identify {
             rpc_version: RPC_VERSION,
@@ -506,12 +531,21 @@ impl Obs {
                 serde_json::to_string(&identify).map_err(|e| e.to_string())?,
             ))
             .await
-            .map_err(|e| format!("Błąd wysyłania Identify: {e}"))?;
+            .map_err(|e| {
+                pulpit_i18n::trf!(
+                    "Error sending Identify: {e}",
+                    "Błąd wysyłania Identify: {e}"
+                )
+            })?;
 
         let identified = read_handshake_half(&mut read, "Identified").await?;
         match identified {
             Message::Identified(_) => Ok(format!("OBS v{}", hello.obs_web_socket_version)),
-            _ => Err("Uwierzytelnienie odrzucone przez OBS".to_string()),
+            _ => Err(pulpit_i18n::tr(
+                "Authentication rejected by OBS",
+                "Uwierzytelnienie odrzucone przez OBS",
+            )
+            .to_string()),
         }
     }
 }
@@ -550,14 +584,30 @@ async fn read_handshake_half(
 ) -> Result<Message, String> {
     let msg = tokio::time::timeout(Duration::from_secs(3), read.next())
         .await
-        .map_err(|_| format!("Timeout oczekiwania na {what}"))?
-        .ok_or_else(|| format!("Połączenie zamknięte przed {what}"))?
-        .map_err(|e| format!("Błąd odczytu {what}: {e}"))?;
+        .map_err(|_| {
+            pulpit_i18n::trf!(
+                "Timed out waiting for {what}",
+                "Timeout oczekiwania na {what}"
+            )
+        })?
+        .ok_or_else(|| {
+            pulpit_i18n::trf!(
+                "Connection closed before {what}",
+                "Połączenie zamknięte przed {what}"
+            )
+        })?
+        .map_err(|e| pulpit_i18n::trf!("Read error for {what}: {e}", "Błąd odczytu {what}: {e}"))?;
     match msg {
-        WsMessage::Text(t) => {
-            serde_json::from_str(&t).map_err(|e| format!("Nieprawidłowa ramka {what}: {e}"))
-        }
-        _ => Err(format!("Nieprawidłowy format {what}")),
+        WsMessage::Text(t) => serde_json::from_str(&t).map_err(|e| {
+            pulpit_i18n::trf!(
+                "Invalid frame for {what}: {e}",
+                "Nieprawidłowa ramka {what}: {e}"
+            )
+        }),
+        _ => Err(pulpit_i18n::trf!(
+            "Invalid format for {what}",
+            "Nieprawidłowy format {what}"
+        )),
     }
 }
 
@@ -593,7 +643,7 @@ async fn send_tracked(
     let json = serde_json::to_string(&req).map_err(|e| e.to_string())?;
     sink.send(WsMessage::Text(json))
         .await
-        .map_err(|e| format!("Błąd wysyłania: {e}"))?;
+        .map_err(|e| pulpit_i18n::trf!("Send error: {e}", "Błąd wysyłania: {e}"))?;
     pending.insert(
         request_id,
         PendingResponse {
@@ -959,10 +1009,9 @@ async fn handle_response_frame(
             if resp.request_status.result {
                 let _ = reply.send(Ok(resp.response_data.unwrap_or(Value::Null)));
             } else {
-                let comment = resp
-                    .request_status
-                    .comment
-                    .unwrap_or_else(|| "Błąd zapytania OBS".to_string());
+                let comment = resp.request_status.comment.unwrap_or_else(|| {
+                    pulpit_i18n::tr("OBS query error", "Błąd zapytania OBS").to_string()
+                });
                 let _ = reply.send(Err(comment));
             }
         }

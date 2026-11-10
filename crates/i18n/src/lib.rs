@@ -42,11 +42,32 @@ pub fn reset_locale() {
 /// Polish when the locale says so, English otherwise (any unknown
 /// locale included).
 fn pick(en: &'static str, pl: &'static str) -> &'static str {
+    tr(en, pl)
+}
+
+/// Pick `en` or `pl` for a user-facing message by the process locale.
+/// The same rule [`pick`] applies, public so backends can localize the
+/// messages they hand to the UI (`format!`-style messages: [`trf!`]).
+pub fn tr(en: &'static str, pl: &'static str) -> &'static str {
     if locale() == "pl" {
         pl
     } else {
         en
     }
+}
+
+/// `format!` in the UI language: `trf!("{n} tiles", "{n} kafelków")`.
+/// Inline captures work in both arms; pass the arguments explicitly
+/// (`trf!("{}: x", "{}: y", serial)`) when a placeholder repeats.
+#[macro_export]
+macro_rules! trf {
+    ($en:literal, $pl:literal $(, $($arg:tt)*)?) => {
+        if $crate::locale() == "pl" {
+            format!($pl $(, $($arg)*)?)
+        } else {
+            format!($en $(, $($arg)*)?)
+        }
+    };
 }
 
 /// The media card's fallback title: what `media-now-playing.title`
@@ -154,5 +175,26 @@ mod tests {
         reset_locale();
         assert_eq!(locale(), "en");
         assert_eq!(media_idle(), "Nothing is playing");
+    }
+
+    #[test]
+    fn tr_and_trf_follow_the_locale() {
+        let _guard = pin();
+        let code = "ABCD";
+        reset_locale();
+        assert_eq!(tr("No device", "Brak urządzenia"), "No device");
+        assert_eq!(trf!("Pair {code}", "Sparuj {code}"), "Pair ABCD");
+        assert_eq!(
+            trf!("{} updated", "{} zaktualizowane", "board"),
+            "board updated"
+        );
+        set_locale("pl");
+        assert_eq!(tr("No device", "Brak urządzenia"), "Brak urządzenia");
+        assert_eq!(trf!("Pair {code}", "Sparuj {code}"), "Sparuj ABCD");
+        assert_eq!(
+            trf!("{} updated", "{} zaktualizowane", "board"),
+            "board zaktualizowane"
+        );
+        reset_locale();
     }
 }
