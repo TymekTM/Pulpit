@@ -14,6 +14,7 @@ use crate::{OsError, Result};
 pub(crate) mod speaker;
 pub(crate) mod clipboard;
 pub(crate) mod capture;
+pub(crate) mod play;
 
 
 
