@@ -566,14 +566,40 @@ pub fn parse_hotkey(raw: &str) -> Vec<KeyName> {
 
 /// Real OS backend.
 pub struct EnigoInput {
-    enigo: enigo::Enigo,
+    enigo: Option<enigo::Enigo>,
+    /// Why `enigo` is `None` (the init error), for the per-step error.
+    unavailable: String,
 }
 
 impl EnigoInput {
     pub fn new() -> Result<Self> {
         let enigo = enigo::Enigo::new(&enigo::Settings::default())
             .map_err(|e| ActionError::Input(e.to_string()))?;
-        Ok(EnigoInput { enigo })
+        Ok(EnigoInput {
+            enigo: Some(enigo),
+            unavailable: String::new(),
+        })
+    }
+
+    /// An input whose keyboard/mouse backend never started (e.g. a
+    /// headless machine with no display): key/mouse/text/media steps
+    /// fail per step with `reason`, while `open_url`, `spawn` and
+    /// `sleep` still work.
+    pub fn detached(reason: impl Into<String>) -> Self {
+        EnigoInput {
+            enigo: None,
+            unavailable: reason.into(),
+        }
+    }
+
+    fn enigo(&mut self) -> Result<&mut enigo::Enigo> {
+        match self.enigo.as_mut() {
+            Some(enigo) => Ok(enigo),
+            None => Err(ActionError::Input(format!(
+                "keyboard/mouse backend unavailable: {}",
+                self.unavailable
+            ))),
+        }
     }
 
     fn enigo_key(name: &KeyName) -> Result<enigo::Key> {
@@ -640,7 +666,7 @@ impl Input for EnigoInput {
     fn key_down(&mut self, keys: &[KeyName]) -> Result<()> {
         for k in keys {
             let key = Self::enigo_key(k)?;
-            self.enigo
+            self.enigo()?
                 .key(key, enigo::Direction::Press)
                 .map_err(|e| ActionError::Input(e.to_string()))?;
         }
@@ -650,7 +676,7 @@ impl Input for EnigoInput {
     fn key_up(&mut self, keys: &[KeyName]) -> Result<()> {
         for k in keys {
             let key = Self::enigo_key(k)?;
-            self.enigo
+            self.enigo()?
                 .key(key, enigo::Direction::Release)
                 .map_err(|e| ActionError::Input(e.to_string()))?;
         }
@@ -664,13 +690,13 @@ impl Input for EnigoInput {
     }
 
     fn text(&mut self, text: &str) -> Result<()> {
-        self.enigo
+        self.enigo()?
             .text(text)
             .map_err(|e| ActionError::Input(e.to_string()))
     }
 
     fn mouse_move(&mut self, x: i32, y: i32) -> Result<()> {
-        self.enigo
+        self.enigo()?
             .move_mouse(x, y, enigo::Coordinate::Abs)
             .map_err(|e| ActionError::Input(e.to_string()))
     }
@@ -681,7 +707,7 @@ impl Input for EnigoInput {
         } else {
             enigo::Button::Right
         };
-        self.enigo
+        self.enigo()?
             .button(button, enigo::Direction::Click)
             .map_err(|e| ActionError::Input(e.to_string()))
     }
@@ -696,7 +722,7 @@ impl Input for EnigoInput {
             MediaKey::VolumeDown => K::VolumeDown,
             MediaKey::Mute => K::VolumeMute,
         };
-        self.enigo
+        self.enigo()?
             .key(k, enigo::Direction::Click)
             .map_err(|e| ActionError::Input(e.to_string()))
     }
@@ -910,6 +936,24 @@ mod tests {
     fn f_keys_outside_the_range_are_an_error() {
         assert!(EnigoInput::enigo_key(&Function(0)).is_err());
         assert!(EnigoInput::enigo_key(&Function(25)).is_err());
+    }
+
+    #[test]
+    fn detached_input_fails_key_steps_but_runs_the_rest() {
+        let mut input = EnigoInput::detached("no display");
+        for err in [
+            input.key_tap(&[KeyName::Char('a')]).unwrap_err(),
+            input.text("hi").unwrap_err(),
+            input.media(MediaKey::PlayPause).unwrap_err(),
+        ] {
+            match err {
+                ActionError::Input(msg) => {
+                    assert!(msg.contains("no display"), "unexpected message: {msg}")
+                }
+                other => panic!("expected Input error, got {other:?}"),
+            }
+        }
+        assert!(input.sleep(0).is_ok());
     }
 
     #[test]

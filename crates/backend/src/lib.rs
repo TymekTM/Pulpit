@@ -1189,6 +1189,10 @@ impl SqlBackend {
                 Ok(i) => *guard = Some(Box::new(i)),
                 Err(e) => {
                     tracing::error!("input backend init failed: {e}");
+                    // keyboard/mouse steps fail one by one; everything
+                    // else in the chain (http, delay, url, run) still runs
+                    let mut detached = EnigoInput::detached(e.to_string());
+                    f(&mut detached);
                     return;
                 }
             }

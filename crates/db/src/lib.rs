@@ -1494,8 +1494,11 @@ mod tests {
 
     #[test]
     fn open_read_write_still_errors_on_an_unwritable_path() {
-        // creation cannot rescue a path whose parent cannot exist
-        let err = Db::open_read_write(Some(Path::new("Z:/nope/pulpit.db"))).unwrap_err();
+        // creation cannot rescue a path whose parent is a regular file
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("not-a-dir");
+        std::fs::write(&blocker, b"x").unwrap();
+        let err = Db::open_read_write(Some(&blocker.join("pulpit.db"))).unwrap_err();
         assert!(matches!(err, DbError::Sqlite(_)));
     }
 

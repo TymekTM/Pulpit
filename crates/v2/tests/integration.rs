@@ -1455,11 +1455,9 @@ async fn hub_teardown_ends_the_session_and_releases_held_keys() {
         TYPE_STATE_PATCH,
         serde_json::json!({"changes": [{"channel": "ext.flood", "value": "x".repeat(8192)}]}),
     );
-    for _ in 0..600 {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while state.hub.count() != 0 && std::time::Instant::now() < deadline {
         state.hub.broadcast_frame(&fat);
-        if state.hub.count() == 0 {
-            break;
-        }
     }
     assert_eq!(state.hub.count(), 0, "wedged session must be torn down");
     wait_for_exec(&backend, (23, false)).await;

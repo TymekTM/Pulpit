@@ -615,7 +615,23 @@ mod tests {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let addr = listener.local_addr().unwrap();
             let served = std::thread::spawn(move || {
-                let (mut sock, _) = listener.accept().unwrap();
+                // bounded accept: a request that never arrives must fail
+                // this thread, not hang the whole test run
+                listener.set_nonblocking(true).unwrap();
+                let deadline = Instant::now() + Duration::from_secs(10);
+                let (mut sock, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                        Err(e) => panic!("LocalServer: accept failed: {e}"),
+                    }
+                    if Instant::now() >= deadline {
+                        panic!("LocalServer: no request arrived within 10 s");
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                };
+                sock.set_nonblocking(false).unwrap();
+                sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
                 use std::io::{Read as _, Write as _};
                 let mut raw = Vec::new();
                 let mut buf = [0u8; 4096];
