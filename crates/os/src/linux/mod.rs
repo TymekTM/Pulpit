@@ -11,6 +11,9 @@ use std::time::{Duration, Instant};
 
 use crate::{OsError, Result};
 
+pub(crate) mod speaker;
+
+
 /// Default bound for one tool call: everything invoked here answers in
 /// tens of milliseconds; three seconds only guards a wedged daemon.
 pub(crate) const TOOL_TIMEOUT: Duration = Duration::from_secs(3);
