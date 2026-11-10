@@ -1,7 +1,11 @@
 //! Clipboard text access for the paste-based unicode typing the original
 //! used (`typeString`: save clipboard, write text, Ctrl+V, restore).
 
-use crate::{OsError, Result};
+use crate::Result;
+// the Windows branch and the other-OS stubs construct OsError values;
+// the Linux branch only delegates, so it needs the Result alias alone
+#[cfg(not(target_os = "linux"))]
+use crate::OsError;
 
 /// Current clipboard sequence number; the OS bumps it on every write,
 /// whoever made it. Lets the paste-restore path notice that the user (or
@@ -73,7 +77,11 @@ pub fn get_text() -> Result<String> {
             result
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        crate::linux::clipboard::get_text()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = OsError::Unsupported("clipboard read");
         Ok(String::new())
@@ -82,7 +90,7 @@ pub fn get_text() -> Result<String> {
 
 /// Replace the clipboard with `text` (UTF-16, NUL-terminated).
 pub fn set_text(text: &str) -> Result<()> {
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     let _ = text;
     #[cfg(windows)]
     {
@@ -121,7 +129,11 @@ pub fn set_text(text: &str) -> Result<()> {
             result
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        crate::linux::clipboard::set_text(text)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     Err(OsError::Unsupported("clipboard write"))
 }
 

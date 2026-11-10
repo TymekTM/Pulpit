@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 use crate::{OsError, Result};
 
 pub(crate) mod speaker;
+pub(crate) mod clipboard;
+
 
 
 /// Default bound for one tool call: everything invoked here answers in
