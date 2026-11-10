@@ -672,7 +672,12 @@ impl SqlBackend {
         match url {
             Some(url) => {
                 if let Err(e) = self.http_agent.get(&url).call() {
-                    tracing::warn!(url = %url, error = %e, "url-to-call failed");
+                    // same rule as http-request tiles: the path/query of
+                    // a webhook URL is its secret, and ureq may repeat
+                    // the URL inside its error text
+                    let safe_url = http_request::log_safe_url(&url);
+                    let safe_error = e.to_string().replace(url.as_str(), &safe_url);
+                    tracing::warn!(url = %safe_url, error = %safe_error, "url-to-call failed");
                 }
             }
             None => tracing::warn!(kind = "url-to-call", "tile has no urlToCall configured"),

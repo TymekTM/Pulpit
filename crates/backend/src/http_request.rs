@@ -141,7 +141,7 @@ pub fn redact_headers(headers: &[(String, String)]) -> Vec<(String, String)> {
 /// What a log line may show of a request URL: scheme and authority only.
 /// Webhook services carry their secret in the path or query, so both are
 /// dropped; userinfo (`user:pw@`) is dropped too.
-fn log_safe_url(url: &str) -> String {
+pub(crate) fn log_safe_url(url: &str) -> String {
     let Some((scheme, rest)) = url.split_once("://") else {
         return "[url]".to_string();
     };
@@ -149,7 +149,9 @@ fn log_safe_url(url: &str) -> String {
     let host = authority.rsplit('@').next().unwrap_or("");
     if scheme.is_empty()
         || host.is_empty()
-        || !scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
+        || !scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
     {
         return "[url]".to_string();
     }
@@ -519,7 +521,10 @@ mod tests {
                 "https://hooks.example.com/services/T0/B0/s3cr3t?x=1#f",
                 "https://hooks.example.com/…",
             ),
-            ("http://user:pw@host.local:8080/a/b", "http://host.local:8080/…"),
+            (
+                "http://user:pw@host.local:8080/a/b",
+                "http://host.local:8080/…",
+            ),
             ("http://127.0.0.1:9", "http://127.0.0.1:9/…"),
             ("not a url", "[url]"),
             ("://nohost", "[url]"),
