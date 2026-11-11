@@ -141,9 +141,44 @@ fn cpu_times() -> (u64, u64, u64) {
     (raw(&idle), raw(&kernel), raw(&user))
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn cpu_times() -> (u64, u64, u64) {
     (0, 0, 0)
+}
+
+/// Aggregate one `cpu  user nice system idle …` line of `/proc/stat`
+/// into the Windows GetSystemTimes shape this crate computes load
+/// from: `(idle, kernel, user)` where **kernel includes idle** (the
+/// contract `cpu_load_pct` below is written against). Linux counts
+/// user+nice and irq/softirq/steal separately, so they fold in:
+/// idle = idle + iowait, user = user + nice,
+/// kernel = system + irq + softirq + steal + idle.
+#[cfg(target_os = "linux")]
+fn cpu_times() -> (u64, u64, u64) {
+    let stat = std::fs::read_to_string("/proc/stat").unwrap_or_default();
+    parse_proc_stat(&stat).unwrap_or((0, 0, 0))
+}
+
+/// Parse `/proc/stat`'s aggregate `cpu` line; `None` when it is absent
+/// or has no numbers. Counter overflows wrap (u64 since boot: no).
+#[cfg(target_os = "linux")]
+fn parse_proc_stat(stat: &str) -> Option<(u64, u64, u64)> {
+    let line = stat.lines().next()?;
+    // per-kernel-doc fields after the "cpu" label, in order
+    let fields: Vec<u64> = line
+        .split_whitespace()
+        .skip(1)
+        .map(|f| f.parse::<u64>())
+        .collect::<Result<_, _>>()
+        .ok()?;
+    if fields.len() < 4 {
+        return None;
+    }
+    let get = |i: usize| fields.get(i).copied().unwrap_or(0);
+    let idle = get(3) + get(4); // idle + iowait
+    let user = get(0) + get(1); // user + nice
+    let kernel = get(2) + get(5) + get(6) + get(7) + idle;
+    Some((idle, kernel, user))
 }
 
 /// (total, available) physical memory in bytes. Mirrors the JS host's
@@ -189,9 +224,43 @@ fn mem_info() -> (u64, u64) {
     (buf.total_phys, buf.avail_phys)
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn mem_info() -> (u64, u64) {
     (0, 0)
+}
+
+/// `(total, available)` physical memory from `/proc/meminfo` (values are
+/// kB). The kernel has published MemAvailable since 3.14; MemFree is the
+/// fallback for anything older.
+#[cfg(target_os = "linux")]
+fn mem_info() -> (u64, u64) {
+    let info = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    parse_meminfo(&info)
+}
+
+/// Parse `/proc/meminfo` into `(MemTotal, MemAvailable)` bytes.
+#[cfg(target_os = "linux")]
+fn parse_meminfo(info: &str) -> (u64, u64) {
+    let mut total = None;
+    let mut available = None;
+    for line in info.lines() {
+        let value = || {
+            line.split_whitespace()
+                .nth(1)
+                .and_then(|v| v.parse::<u64>().ok())
+                .map(|kb| kb.saturating_mul(1024))
+        };
+        // MemAvailable wins wherever it appears; MemFree only fills in
+        // (pre-3.14 kernels without MemAvailable)
+        let available_key = line.starts_with("MemAvailable:")
+            || (line.starts_with("MemFree:") && available.is_none());
+        if line.starts_with("MemTotal:") {
+            total = value();
+        } else if available_key {
+            available = value();
+        }
+    }
+    (total.unwrap_or(0), available.unwrap_or(0))
 }
 
 /// Busy percentage between two time samples. The JS stack derived the same
@@ -254,8 +323,34 @@ fn cpu_brand() -> String {
     "CPU".into()
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn cpu_brand() -> String {
+    "CPU".into()
+}
+
+/// `si.cpu().brand` equivalent: the first `model name` in `/proc/cpuinfo`
+/// (`Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz`), the same string the
+/// DMI/WMI layer serves systeminformation on Windows.
+#[cfg(target_os = "linux")]
+fn cpu_brand() -> String {
+    let info = std::fs::read_to_string("/proc/cpuinfo").unwrap_or_default();
+    parse_cpu_brand(&info)
+}
+
+/// First `model name\t: …` value, trimmed; `"CPU"` when cpuinfo carries
+/// none (some VMs and ARM boards name their cores differently).
+#[cfg(target_os = "linux")]
+fn parse_cpu_brand(info: &str) -> String {
+    for line in info.lines() {
+        if let Some(rest) = line.strip_prefix("model name") {
+            if let Some(value) = rest.split_once(':') {
+                let value = value.1.trim();
+                if !value.is_empty() {
+                    return value.to_string();
+                }
+            }
+        }
+    }
     "CPU".into()
 }
 
@@ -384,5 +479,95 @@ mod tests {
         // no delta yet: the warm-up push reports zero load
         assert_eq!(first["si-load-cpu"]["value"], "0.0");
         assert!(first["si-load-gb-ram"]["value"].is_string());
+    }
+
+    // ---- Linux /proc parsers (fixture text; no live /proc needed) ----
+
+    #[cfg(target_os = "linux")]
+    const PROC_STAT: &str = "cpu  74608 2520 24433 1117073 6176 0 1292 0 0 0\n\
+                             cpu0 37300 1260 12200 558000 3088 0 600 0 0 0\n\
+                             intr 0\n";
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn proc_stat_folds_into_the_windows_counter_shape() {
+        // idle = 1117073 + 6176, kernel = 24433 + 0 + 1292 + 0 + idle,
+        // user = 74608 + 2520
+        let (idle, kernel, user) = parse_proc_stat(PROC_STAT).expect("parse");
+        assert_eq!(idle, 1_123_249);
+        assert_eq!(kernel, 1_148_974);
+        assert_eq!(user, 77_128);
+        // kernel always includes idle: busy = user + kernel - idle
+        assert!(kernel >= idle);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn proc_stat_without_numbers_is_none() {
+        assert!(parse_proc_stat("").is_none());
+        assert!(parse_proc_stat("cpu\n").is_none());
+        assert!(parse_proc_stat("intr 0\ncpu 1 2 3 4\n").is_none()); // cpu is not first
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn proc_stat_without_optional_columns_still_parses() {
+        // pre-2.6 kernels stop after idle
+        let (idle, kernel, user) = parse_proc_stat("cpu  10 0 20 70\n").expect("parse");
+        assert_eq!((idle, kernel, user), (70, 90, 10));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cpu_load_over_two_proc_stat_samples() {
+        // 25% busy: busy delta 100, total delta 400
+        let first = parse_proc_stat("cpu  100 0 0 300 0 0 0 0\n").expect("first");
+        let second = parse_proc_stat("cpu  150 0 50 600 0 0 0 0\n").expect("second");
+        // (idle 300, kernel 300, user 100) -> (idle 600, kernel 650, user 150)
+        assert_eq!(first, (300, 300, 100));
+        assert_eq!(second, (600, 650, 150));
+        assert_eq!(cpu_load_pct(first, second), 25.0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn meminfo_kilobytes_become_bytes() {
+        // a non-numeric value column breaks only that line's parse, not
+        // the whole file: the key reads as missing and stays at zero
+        const BAD: &str = "MemTotal:       not-a-number kB\n\
+                            MemFree:         1000 kB\n\
+                            MemAvailable:    9000 kB\n";
+        assert_eq!(parse_meminfo(BAD), (0, 9000 * 1024));
+        // no MemAvailable: MemFree is the fallback
+        let no_avail = "MemTotal:       16090 kB\nMemFree:         1000 kB\n";
+        assert_eq!(parse_meminfo(no_avail), (16_090 * 1024, 1000 * 1024));
+        let real = "MemTotal:       16090432 kB\nMemFree:         6622312 kB\nMemAvailable:   10930200 kB\n";
+        assert_eq!(parse_meminfo(real), (16_090_432 * 1024, 10_930_200 * 1024));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cpuinfo_model_name_is_trimmed_with_cpu_fallback() {
+        const PROC_CPUINFO: &str = "processor\t: 0\n\
+                                    vendor_id\t: GenuineIntel\n\
+                                    model name\t: Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz\n\
+                                    processor\t: 1\n\
+                                    model name\t: AMD Ryzen 9\n";
+        assert_eq!(
+            parse_cpu_brand(PROC_CPUINFO),
+            "Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz"
+        );
+        assert_eq!(parse_cpu_brand("processor: 0\n"), "CPU");
+        assert_eq!(parse_cpu_brand(""), "CPU");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn native_proc_readings_are_sane() {
+        let (idle, kernel, user) = cpu_times();
+        assert!(idle <= kernel || (idle, kernel, user) == (0, 0, 0));
+        let (total, available) = mem_info();
+        assert!(available <= total || total == 0);
+        assert_ne!(cpu_brand(), "");
     }
 }

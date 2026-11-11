@@ -157,9 +157,14 @@ fn grab_screen_rgba() -> Result<image::RgbaImage> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn grab_screen_rgba() -> Result<image::RgbaImage> {
     Err(OsError::Unsupported("screen capture"))
+}
+
+#[cfg(target_os = "linux")]
+fn grab_screen_rgba() -> Result<image::RgbaImage> {
+    crate::linux::capture::grab_screen_rgba()
 }
 
 #[cfg(all(test, windows))]

@@ -72,14 +72,19 @@ pub trait Speaker: Send {
 pub fn platform_speaker() -> impl Speaker {
     #[cfg(windows)]
     return win::WinSpeaker::new();
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    return linux::speaker::LinuxSpeaker;
+    #[cfg(not(any(windows, target_os = "linux")))]
     return unsupported::StubSpeaker;
 }
 
 #[cfg(windows)]
 pub(crate) mod win;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub(crate) mod linux;
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub(crate) mod unsupported;
 
 #[cfg(test)]

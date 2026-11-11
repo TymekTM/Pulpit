@@ -16,6 +16,7 @@ import SpotifyPage from "./settings/SpotifyPage.vue";
 import DiscordPage from "./settings/DiscordPage.vue";
 import VoicemeeterPage from "./settings/VoicemeeterPage.vue";
 import AidevPage from "./settings/AidevPage.vue";
+import { vmSupported } from "../api";
 
 // Full-screen settings: a side nav of pages, one page shown at a time.
 // Pages are mounted only while shown, so an integration's status probe
@@ -46,7 +47,18 @@ const integrationPages = PAGES.filter((p) => p.integration);
 const aboutPage = PAGES.find((p) => p.id === "about");
 
 const known = (id) => PAGES.some((p) => p.id === id);
-const page = ref(known(props.initialPage) ? props.initialPage : lastPage);
+// Linux: the Voicemeeter page greys out like its actions in the picker
+// - visible for honesty, never navigable (same visual language as the
+// picker's unavailable items). A remembered or requested landing on it
+// falls back to the first page.
+const pageDisabled = (id) => id === "voicemeeter" && !vmSupported.value;
+const page = ref(
+  known(props.initialPage) && !pageDisabled(props.initialPage)
+    ? props.initialPage
+    : known(lastPage) && !pageDisabled(lastPage)
+      ? lastPage
+      : PAGES[0].id
+);
 lastPage = page.value;
 watch(page, (id) => {
   lastPage = id;
@@ -72,7 +84,7 @@ const closeBtn = ref(null);
 const scrollEl = ref(null);
 
 function go(id) {
-  if (page.value === id) return;
+  if (page.value === id || pageDisabled(id)) return;
   page.value = id;
   if (scrollEl.value) scrollEl.value.scrollTop = 0;
 }
@@ -129,6 +141,9 @@ onUnmounted(() => {
           class="nav-item"
           :data-page="p.id"
           :aria-current="page === p.id ? 'page' : undefined"
+          :aria-disabled="pageDisabled(p.id) ? 'true' : undefined"
+          :class="{ unavailable: pageDisabled(p.id) }"
+          :title="pageDisabled(p.id) ? t('Voicemeeter is not available on this system') : undefined"
           @click="go(p.id)"
         >
           <i :class="p.icon" aria-hidden="true"></i>
@@ -157,3 +172,13 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* platform-unsupported integration (Voicemeeter on Linux): the same
+   visual language as the picker's unavailable items */
+.nav-item.unavailable {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+}
+</style>

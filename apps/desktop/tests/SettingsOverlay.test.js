@@ -10,6 +10,7 @@ import DiscordPage from "../src/components/settings/DiscordPage.vue";
 import VoicemeeterPage from "../src/components/settings/VoicemeeterPage.vue";
 import AidevPage from "../src/components/settings/AidevPage.vue";
 import { calls, handle, dialog } from "./tauri.js";
+import { vmSupported } from "../src/api.js";
 
 // Pages are mounted on their own: their script-setup bindings are
 // reachable through wrapper.vm (test-utils proxies setupState), which
@@ -728,5 +729,70 @@ describe("Voicemeeter page", () => {
     const w = await mountPage(VoicemeeterPage);
     expect(w.text()).toContain("Remote API DLL");
     w.unmount();
+  });
+});
+
+describe("Voicemeeter gating (unsupported platform)", () => {
+  afterEach(() => {
+    vmSupported.value = true;
+  });
+
+  it("greys the settings nav entry out and does not navigate", async () => {
+    defaults();
+    vmSupported.value = false;
+    const w = await mountPage(SettingsOverlay, { status, initialPage: "general" });
+    const nav = w.find("[data-page='voicemeeter']");
+    expect(nav.attributes("aria-disabled")).toBe("true");
+    expect(nav.classes()).toContain("unavailable");
+    expect(nav.attributes("title")).toBe("Voicemeeter is not available on this system");
+    await nav.trigger("click");
+    await flushPromises();
+    // still on general, and the page's status probe never ran
+    expect(w.find("[aria-current='page']").attributes("data-page")).toBe("general");
+    expect(cmds("vm_status")).toHaveLength(0);
+    w.unmount();
+  });
+
+  it("falls back to the first page when voicemeeter was requested", async () => {
+    defaults();
+    vmSupported.value = false;
+    const w = await mountPage(SettingsOverlay, { status, initialPage: "voicemeeter" });
+    expect(w.find("[aria-current='page']").attributes("data-page")).toBe("general");
+    w.unmount();
+    // the remembered page was corrected too: a plain reopen stays there
+    const again = await mountPage(SettingsOverlay, { status });
+    expect(again.find("[aria-current='page']").attributes("data-page")).toBe("general");
+    again.unmount();
+  });
+
+  it("shows the one-line message instead of the page controls", async () => {
+    defaults();
+    vmSupported.value = false;
+    const w = await mountPage(VoicemeeterPage);
+    expect(w.text()).toContain("Voicemeeter is not available on this system");
+    expect(w.text()).not.toContain("Remote API DLL");
+    expect(cmds("vm_status")).toHaveLength(0);
+    w.unmount();
+  });
+
+  it("keeps the page reachable and live on a supported platform", async () => {
+    defaults();
+    handle("vm_status", () => ({ supported: true, installed: false }));
+    const w = await mountPage(SettingsOverlay, { status, initialPage: "voicemeeter" });
+    expect(w.find("[aria-current='page']").attributes("data-page")).toBe("voicemeeter");
+    expect(w.find("[data-page='voicemeeter']").attributes("aria-disabled")).toBeUndefined();
+    w.unmount();
+  });
+
+  it("loads the api module without ever asking vm_status on its own", async () => {
+    // vm_status opens and logs into the remote DLL (starting
+    // Voicemeeter when closed); the startup probe must only ever read
+    // the side-effect-free platform flag
+    vi.resetModules();
+    const fresh = await import("../src/api.js");
+    expect(cmds("vm_status")).toHaveLength(0);
+    expect(cmds("vm_supported")).toHaveLength(1);
+    // a probe without a backend answer keeps the optimistic default
+    expect(fresh.vmSupported.value).toBe(true);
   });
 });

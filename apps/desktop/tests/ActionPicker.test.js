@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import ActionPicker from "../src/components/ActionPicker.vue";
+import { vmSupported } from "../src/api.js";
 
 const groups = [
   {
@@ -186,5 +187,56 @@ describe("ActionPicker list", () => {
     await openPicker(w);
     expect(search(w).element.value).toBe("");
     expect(items(w)).toHaveLength(4);
+  });
+});
+
+describe("ActionPicker Voicemeeter gating (unsupported platform)", () => {
+  // the shared api.js state; tests pin it directly because the startup
+  // probe's answer is the desktop backend's, not the test's
+  const vmGroups = [
+    {
+      header: "Voicemeeter",
+      items: [
+        { value: "vm-set-strip", label: "Set Strip Parameter", icon: "headphones", color: "#171A21" },
+        { value: "speaker-device", label: "Set Audio Device", icon: "volume-up", color: "#27ae60" },
+      ],
+    },
+  ];
+
+  afterEach(() => {
+    vmSupported.value = true;
+  });
+
+  it("greys vm- actions out and never picks them", async () => {
+    vmSupported.value = false;
+    const w = mount(ActionPicker, {
+      props: { groups: vmGroups, modelValue: "" },
+      attachTo: document.body,
+    });
+    await openPicker(w);
+    const vmItem = items(w).find((it) => it.text().includes("Set Strip Parameter"));
+    expect(vmItem.classes()).toContain("unavailable");
+    expect(vmItem.attributes("aria-disabled")).toBe("true");
+    expect(vmItem.attributes("title")).toBe("Voicemeeter is not available on this system");
+    await vmItem.trigger("click");
+    expect(w.emitted("update:modelValue")).toBeUndefined();
+    // neighbouring actions stay pickable
+    const other = items(w).find((it) => it.text().includes("Set Audio Device"));
+    expect(other.classes()).not.toContain("unavailable");
+    w.unmount();
+  });
+
+  it("keeps vm- actions pickable on a supported platform", async () => {
+    const w = mount(ActionPicker, {
+      props: { groups: vmGroups, modelValue: "" },
+      attachTo: document.body,
+    });
+    await openPicker(w);
+    const vmItem = items(w).find((it) => it.text().includes("Set Strip Parameter"));
+    expect(vmItem.classes()).not.toContain("unavailable");
+    expect(vmItem.attributes("aria-disabled")).toBe("false");
+    await vmItem.trigger("click");
+    expect(w.emitted("update:modelValue")[0]).toEqual(["vm-set-strip"]);
+    w.unmount();
   });
 });

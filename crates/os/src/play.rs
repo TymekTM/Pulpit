@@ -89,9 +89,14 @@ pub fn play_audio(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn play_audio(_path: &str) -> Result<(), String> {
     Err("audio playback is Windows-only".into())
+}
+
+#[cfg(target_os = "linux")]
+pub fn play_audio(path: &str) -> Result<(), String> {
+    crate::linux::play::play_audio(path)
 }
 
 #[cfg(all(test, windows))]
