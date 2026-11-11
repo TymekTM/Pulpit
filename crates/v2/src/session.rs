@@ -516,7 +516,9 @@ async fn handle_interaction(state: &Arc<V2State>, session: &Arc<V2Session>, fram
             ack_ok();
             let value = payload.args.value.unwrap_or(0.0);
             let backend = state.backend.clone();
-            tokio::task::spawn_blocking(move || backend.slider(button, value));
+            state.hub.slides().submit(button.id, move || {
+                backend.slider(button, value);
+            });
         }
         Interaction::LongPress
         | Interaction::DoubleTap
@@ -541,7 +543,9 @@ async fn handle_interaction(state: &Arc<V2State>, session: &Arc<V2Session>, fram
                 if let Some(reset) = crate::boards::slider_reset_value(&target_button.kind, &params)
                 {
                     let backend = state.backend.clone();
-                    tokio::task::spawn_blocking(move || backend.slider(target_button, reset));
+                    state.hub.slides().submit(target_button.id, move || {
+                        backend.slider(target_button, reset);
+                    });
                     return;
                 }
             }
