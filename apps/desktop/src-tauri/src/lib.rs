@@ -30,9 +30,10 @@ struct DesktopState {
     v2: Option<Arc<pulpit_v2::V2State>>,
     /// Current touch-mode hotkey combo ("Ctrl+Alt+D" style).
     hotkey: std::sync::Mutex<String>,
-    /// Start with the main window hidden in the tray (`start_minimized`
-    /// in editor.json). The server and the tray are unaffected - only
-    /// the window skips its show at launch, once, in `setup`.
+    /// Start with no main window at all (`start_minimized` in
+    /// editor.json). The server and the tray are unaffected - the
+    /// launch builds no window (and therefore no WebView) until
+    /// something shows it.
     start_minimized: bool,
     /// `pulpitApp/editor.json` - editor-local settings (hotkey), kept
     /// separate from the original app's settings.json.
@@ -207,14 +208,12 @@ pub fn run() {
             app.manage(state);
 
             build_tray(app.handle())?;
-            create_main_window(app.handle(), !start_minimized)?;
             if start_minimized {
-                // count the tray-hidden launch from now, so the idle
-                // WebView teardown treats it like a manual hide
-                HIDDEN_SINCE.store(
-                    pulpit_v2::unix_millis(),
-                    std::sync::atomic::Ordering::Relaxed,
-                );
+                // no window, no WebView: the tray, a second launch or the
+                // touch toggle builds it on first use (show_main_window)
+                tracing::info!("start minimized - the main window is built on first show");
+            } else {
+                create_main_window(app.handle())?;
             }
             spawn_webview_teardown(app.handle().clone());
             Ok(())
@@ -908,7 +907,7 @@ fn show_main_window(app: &AppHandle) {
         // refetches boards, settings and live state on mount
         None => {
             tracing::info!("rebuilding the main window WebView");
-            if let Err(e) = create_main_window(app, true) {
+            if let Err(e) = create_main_window(app) {
                 tracing::error!("could not rebuild the main window: {e}");
             }
         }
@@ -944,14 +943,13 @@ fn goodbye_v2(app: &AppHandle) {
 /// WebView2 argument list is only reachable through the builder API, and a
 /// custom list replaces the default one - so the stock feature disables are
 /// repeated alongside the memory-oriented flags (no background networking,
-/// no component updates, capped HTTP disk cache). `visible` is false for a
-/// start-minimized launch: the window (and its WebView) is created hidden
-/// and only the tray can surface it. Rebuilds after a teardown always pass
-/// true - whoever rebuilds the window is about to show it.
-fn create_main_window(app: &AppHandle, visible: bool) -> tauri::Result<()> {
+/// no component updates, capped HTTP disk cache). The window is built on
+/// demand - at launch unless `start_minimized` is on, otherwise by whatever
+/// first shows it (tray, second launch, touch toggle) - and every caller
+/// is about to show it.
+fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
     tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
         .title("Pulpit")
-        .visible(visible)
         .inner_size(1280.0, 800.0)
         .min_inner_size(900.0, 600.0)
         .theme(Some(tauri::Theme::Dark))
@@ -1096,7 +1094,7 @@ fn toggle_touch_mode(app: &AppHandle) {
         }
         None => {
             tracing::info!("rebuilding the main window WebView for the touch toggle");
-            if let Err(e) = create_main_window(app, true) {
+            if let Err(e) = create_main_window(app) {
                 tracing::error!("could not rebuild the main window: {e}");
                 return;
             }
