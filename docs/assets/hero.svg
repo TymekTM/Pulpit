@@ -1,213 +1,91 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360" role="img" aria-labelledby="hero-title hero-desc">
-  <title id="hero-title">Pulpit: a desktop board editor mirrored on a tablet</title>
-  <desc id="hero-desc">A Windows desktop board editor with button, toggle, slider and live status tiles, connected over the local network to a tablet showing the same board.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" width="1200" height="560" role="img" aria-labelledby="hero-title hero-desc">
+<title id="hero-title">Pulpit: one board in the desktop editor and on a tablet</title>
+<desc id="hero-desc">Illustration. Left, the Pulpit desktop editor: a dark sidebar with the board list and the server status, a top bar with the board name, zoom and the Touch mode button, and a six by four board with scene, microphone, go-live, record, screenshot, chat, media and mute buttons, a volume slider and a clock. Right, a tablet showing the same board, connected over the local network on port 8500.</desc>
+<style>
+text{font-family:Inter,"Segoe UI",Roboto,"Helvetica Neue",Arial,system-ui,sans-serif;fill:#ecf0f1}
+.tl{font-family:Roboto,"Segoe UI","Helvetica Neue",Arial,system-ui,sans-serif;font-size:9.5px;font-weight:700;text-anchor:middle;letter-spacing:.2px}
+.clk{font-family:Roboto,"Segoe UI","Helvetica Neue",Arial,system-ui,sans-serif;font-size:22px;font-weight:700;text-anchor:middle}
+.ui{font-size:12.5px}
+.mono{font-family:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,"Liberation Mono",monospace;font-size:10.5px;fill:#8b97a1}
+.lbl{font-size:10px;font-weight:600;letter-spacing:1.3px;fill:#8b97a1}
+.cap{font-size:13px;fill:#a3b0b8}
+.capb{font-size:13px;font-weight:600}
+</style>
+<defs>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".06" stop-color="#fff" stop-opacity="0"/><stop offset=".85" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>
+<pattern id="dots" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r=".9" fill="#2a333c"/></pattern>
+<g id="i-video" fill="#fff"><rect x="1" y="6" width="15" height="12" rx="2.5"/><path d="M17 10.5l6-3.5v10l-6-3.5z"/></g><g id="i-users" fill="#fff"><circle cx="8" cy="7.5" r="3.6"/><circle cx="16.5" cy="8.5" r="3"/><path d="M1.5 19.5c0-4 2.8-6.6 6.5-6.6s6.5 2.6 6.5 6.6z"/><path d="M15.4 19.5c0-2.6-.7-4.6-2-5.9.9-.5 1.9-.7 3.1-.7 3.2 0 5.5 2.3 5.5 6.6z"/></g><g id="i-cup" fill="#fff"><path d="M3 6h14v7a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5z"/><path d="M17 8h1.5a3.2 3.2 0 0 1 0 6.4H17v-2.2h1.4a1 1 0 0 0 0-2H17z"/><rect x="1" y="19.5" width="19" height="2" rx="1"/></g><g id="i-mic" fill="#fff"><rect x="8" y="1.5" width="8" height="13" rx="4"/><path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/><rect x="11" y="17.5" width="2" height="3.5"/><rect x="8" y="20.5" width="8" height="2" rx="1"/></g><g id="i-live" fill="#fff"><circle cx="12" cy="8" r="2.6"/><path d="M12 10l-5 12h2.6l2.4-6 2.4 6H17z"/><path d="M6.6 3.2a8 8 0 0 0 0 9.6M17.4 3.2a8 8 0 0 1 0 9.6M3.4 1a12 12 0 0 0 0 14M20.6 1a12 12 0 0 1 0 14" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/></g><g id="i-rec" fill="#fff"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="#e74c3c"/></g><g id="i-cam" fill="#fff"><path d="M2 8.5A2.5 2.5 0 0 1 4.5 6h3l1.8-2.5h5.4L16.5 6h3A2.5 2.5 0 0 1 22 8.5v10a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 18.5z"/><circle cx="12" cy="13" r="4.2" fill="#2980b9"/><circle cx="12" cy="13" r="2.6"/></g><g id="i-chat" fill="#fff"><path d="M2 9c0-3.6 3.6-6 8-6s8 2.4 8 6-3.6 6-8 6c-.8 0-1.6-.1-2.3-.2L4 17l1-3.2C3 12.7 2 11 2 9z"/><path d="M19.4 10.4c1.6 1 2.6 2.5 2.6 4.2 0 1.6-.9 3-2.4 4L20.5 21l-3.4-1.5c-.7.2-1.4.2-2.1.2-2.2 0-4.2-.7-5.4-1.9 4.9-.2 9.3-3.1 9.8-7.4z"/></g><g id="i-head" fill="#fff"><path d="M4 13v-1a8 8 0 0 1 16 0v1" fill="none" stroke="#fff" stroke-width="2.2"/><rect x="2.5" y="12" width="5" height="8" rx="2.2"/><rect x="16.5" y="12" width="5" height="8" rx="2.2"/><path d="M19 19.5c0 1.6-1.6 2.5-4 2.5h-2" fill="none" stroke="#fff" stroke-width="1.8"/><rect x="10" y="20.4" width="4" height="3" rx="1.5"/></g><g id="i-prev" fill="#fff"><rect x="3" y="4" width="3" height="16" rx="1"/><path d="M13 12L22 4v16z"/><path d="M5 12l8-8v16z"/></g><g id="i-play" fill="#fff"><path d="M6 3.5v17a1 1 0 0 0 1.5.9l14-8.5a1 1 0 0 0 0-1.8l-14-8.5A1 1 0 0 0 6 3.5z"/></g><g id="i-next" fill="#fff"><rect x="18" y="4" width="3" height="16" rx="1"/><path d="M11 12L2 4v16z"/><path d="M19 12l-8-8v16z"/></g><g id="i-spk" fill="#fff"><path d="M3 9h4l6-5v16l-6-5H3z"/></g><g id="i-vol" fill="#fff"><path d="M2 9h4l6-5v16l-6-5H2z"/><path d="M15 8.5a5 5 0 0 1 0 7M18 5.5a9.5 9.5 0 0 1 0 13M21 3a13 13 0 0 1 0 18" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/></g><g id="i-note" fill="#fff"><path d="M9 17.5V5.2a1 1 0 0 1 .8-1l10-2.4a1 1 0 0 1 1.2 1V15"/><path d="M9 6.5l12-2.9v3.4L9 9.9z"/><ellipse cx="6" cy="17.8" rx="3.6" ry="3"/><ellipse cx="18" cy="15.3" rx="3.6" ry="3"/><rect x="7.6" y="5" width="1.8" height="13"/><rect x="19.4" y="2" width="1.8" height="13"/></g>
+<g id="board"><rect width="474" height="322" rx="22" fill="#34495e"/><rect x=".5" y=".5" width="473" height="321" rx="21.5" fill="none" stroke="#fff" stroke-opacity=".06"/>
+<g transform="translate(14 14)"><rect width="66" height="66" rx="6" fill="#16a085"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-video" x="21" y="14"/><text class="tl" x="33" y="58">Gameplay</text></g>
+<g transform="translate(90 14)"><rect width="66" height="66" rx="6" fill="#16a085"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-users" x="21" y="14"/><text class="tl" x="33" y="58">Chatting</text></g>
+<g transform="translate(166 14)"><rect width="66" height="66" rx="6" fill="#d35400"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-cup" x="21" y="14"/><text class="tl" x="33" y="58">BRB</text></g>
+<g transform="translate(242 14)"><rect width="66" height="66" rx="6" fill="#c0392b"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-mic" x="21" y="14"/><text class="tl" x="33" y="58">Mic</text></g>
+<g transform="translate(318 14)"><rect width="142" height="66" rx="6" fill="#8e44ad"/><rect width="142" height="66" rx="6" fill="url(#rim)"/><use href="#i-live" x="59" y="14"/><text class="tl" x="71" y="58">Go live</text></g>
+<g transform="translate(14 90)"><rect width="66" height="66" rx="6" fill="#e74c3c"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-rec" x="21" y="14"/><text class="tl" x="33" y="58">Record</text></g>
+<g transform="translate(90 90)"><rect width="66" height="66" rx="6" fill="#2980b9"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-cam" x="21" y="14"/><text class="tl" x="33" y="58">Screenshot</text></g>
+<g transform="translate(318 90)"><rect width="66" height="66" rx="6" fill="#27ae60"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-chat" x="21" y="14"/><text class="tl" x="33" y="58">Chat</text></g>
+<g transform="translate(394 90)"><rect width="66" height="66" rx="6" fill="#5865f2"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-head" x="21" y="14"/><text class="tl" x="33" y="58">Voice chat</text></g>
+<g transform="translate(14 166)"><rect width="66" height="66" rx="6" fill="#2c3e50"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-prev" x="21" y="14"/><text class="tl" x="33" y="58">Previous</text></g>
+<g transform="translate(90 166)"><rect width="66" height="66" rx="6" fill="#2c3e50"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-play" x="21" y="14"/><text class="tl" x="33" y="58">Play</text></g>
+<g transform="translate(318 166)"><rect width="66" height="66" rx="6" fill="#2c3e50"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-next" x="21" y="14"/><text class="tl" x="33" y="58">Next</text></g>
+<g transform="translate(394 166)"><rect width="66" height="66" rx="6" fill="#7f8c8d"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-spk" x="21" y="14"/><text class="tl" x="33" y="58">Mute</text></g>
+<g transform="translate(14 242)"><rect width="66" height="66" rx="6" fill="#6c3483"/><rect width="66" height="66" rx="6" fill="url(#rim)"/><use href="#i-note" x="21" y="14"/><text class="tl" x="33" y="58">Music</text></g>
+<g transform="translate(166 90)"><clipPath id="vc"><rect width="142" height="142" rx="6"/></clipPath><g clip-path="url(#vc)"><rect width="142" height="142" fill="#2c3e50"/><rect y="59.64" width="142" height="82.36" fill="#6a7887"/><rect y="58.14" width="142" height="3" fill="#ecf0f1"/></g><use href="#i-vol" transform="translate(47 41) scale(2)"/><text class="tl" x="71" y="134">Volume</text></g>
+<g transform="translate(90 242)"><rect width="142" height="66" rx="6" fill="#3d566e"/><text class="clk" x="71" y="36">11:30</text><text class="tl" x="71" y="54" style="font-weight:400;fill:#d5dde3">Wed, Nov 11</text></g>
+<rect x="242.5" y="242.5" width="65" height="65" rx="6" fill="none" stroke="#fff" stroke-opacity=".22" stroke-dasharray="4 4"/>
+<rect x="318.5" y="242.5" width="65" height="65" rx="6" fill="none" stroke="#fff" stroke-opacity=".22" stroke-dasharray="4 4"/>
+<rect x="394.5" y="242.5" width="65" height="65" rx="6" fill="none" stroke="#fff" stroke-opacity=".22" stroke-dasharray="4 4"/>
+</g>
+</defs>
+<rect x=".5" y=".5" width="1199" height="559" rx="20" fill="#0f1317" stroke="#252f38"/>
 
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0b0f14"/>
-      <stop offset="1" stop-color="#0f1624"/>
-    </linearGradient>
-    <radialGradient id="glowBlue" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#58a6ff" stop-opacity="0.16"/>
-      <stop offset="1" stop-color="#58a6ff" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="glowGreen" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#3fb950" stop-opacity="0.10"/>
-      <stop offset="1" stop-color="#3fb950" stop-opacity="0"/>
-    </radialGradient>
-    <pattern id="dots" width="16" height="16" patternUnits="userSpaceOnUse">
-      <circle cx="1" cy="1" r="1" fill="#21262d"/>
-    </pattern>
-    <filter id="blur" x="-30%" y="-60%" width="160%" height="220%">
-      <feGaussianBlur stdDeviation="7"/>
-    </filter>
+<!-- desktop window -->
+<rect x="32" y="32" width="680" height="448" rx="12" fill="#12171b"/>
+<rect x="188" y="78" width="524" height="402" fill="url(#dots)"/>
+<path d="M44 32H188V480H44A12 12 0 0 1 32 468V44A12 12 0 0 1 44 32Z" fill="#171c21"/>
+<rect x="188" y="32" width="512" height="46" fill="#171c21"/>
+<path d="M700 32A12 12 0 0 1 712 44V78H700Z" fill="#171c21"/>
+<path d="M188.5 32V480M188 78.5H712" stroke="#252f38"/>
+<rect x="32.5" y="32.5" width="679" height="447" rx="11.5" fill="none" stroke="#2f3a44"/>
 
-    <!-- The board, drawn once and shown on the desktop and on the tablet. 360 x 232. -->
-    <g id="board" font-family="sans-serif" font-size="12">
-      <!-- tile A: button with a press glow -->
-      <rect x="-2" y="-2" width="114" height="70" rx="12" fill="#58a6ff" filter="url(#blur)" opacity="0">
-        <animate attributeName="opacity" values="0;0;0.55;0.15;0" keyTimes="0;0.55;0.62;0.8;1" dur="5s" repeatCount="indefinite"/>
-      </rect>
-      <rect x="0" y="0" width="110" height="66" rx="10" fill="#161b22" stroke="#30363d"/>
-      <rect x="0" y="0" width="110" height="66" rx="10" fill="#58a6ff" opacity="0">
-        <animate attributeName="opacity" values="0;0;0.28;0.08;0" keyTimes="0;0.55;0.62;0.8;1" dur="5s" repeatCount="indefinite"/>
-      </rect>
-      <polygon points="47,18 47,38 64,28" fill="#58a6ff"/>
-      <text x="55" y="57" text-anchor="middle" fill="#c9d1d9">Macro</text>
+<g transform="translate(48 46) scale(.12) translate(-52 -48)" fill="#1abc9c"><path d="M66 48H96A14 14 0 0 1 110 62V194A14 14 0 0 1 96 208H66A14 14 0 0 1 52 194V62A14 14 0 0 1 66 48Z"/><path fill-rule="evenodd" d="M138 48H156A48 48 0 0 1 156 144H138A14 14 0 0 1 124 130V62A14 14 0 0 1 138 48ZM124 79H156A17 17 0 0 1 156 113H124Z"/><path fill="#2c353e" d="M138 158H190A14 14 0 0 1 204 172V194A14 14 0 0 1 190 208H138A14 14 0 0 1 124 194V172A14 14 0 0 1 138 158Z"/></g>
+<text x="72" y="61" style="font-size:14px;font-weight:600">Pulpit</text>
+<text class="lbl" x="48" y="98">BOARDS</text>
+<rect x="40" y="111" width="140" height="28" rx="7" fill="#2c353e"/><rect x="32" y="115" width="3" height="20" rx="1.5" fill="#1abc9c"/><rect x="48" y="117" width="14" height="14" rx="4" fill="#34495e" stroke="#fff" stroke-opacity=".15"/><text class="ui" x="70" y="128.5" style="fill:#ecf0f1;font-weight:500">Stream</text><text class="mono" x="174" y="128" text-anchor="end">6×4</text><rect x="48" y="151" width="14" height="14" rx="4" fill="#4a3b5c" stroke="#fff" stroke-opacity=".15"/><text class="ui" x="70" y="162.5" style="fill:#a3b0b8;font-weight:400">Music</text><text class="mono" x="174" y="162" text-anchor="end">5×3</text><rect x="48" y="185" width="14" height="14" rx="4" fill="#2c3e50" stroke="#fff" stroke-opacity=".15"/><text class="ui" x="70" y="196.5" style="fill:#a3b0b8;font-weight:400">Work</text><text class="mono" x="174" y="196" text-anchor="end">6×4</text><rect x="48" y="219" width="14" height="14" rx="4" fill="#3d5a4c" stroke="#fff" stroke-opacity=".15"/><text class="ui" x="70" y="230.5" style="fill:#a3b0b8;font-weight:400">Home</text><text class="mono" x="174" y="230" text-anchor="end">4×3</text><rect x="48" y="253" width="14" height="14" rx="4" fill="#5c3b3b" stroke="#fff" stroke-opacity=".15"/><text class="ui" x="70" y="264.5" style="fill:#a3b0b8;font-weight:400">Games</text><text class="mono" x="174" y="264" text-anchor="end">4×3</text>
+<rect x="40" y="418" width="140" height="48" rx="8" fill="#222a31"/>
+<circle cx="54" cy="436" r="3.5" fill="#1abc9c"/>
+<text x="63" y="440" style="font-size:11.5px;font-weight:600">Server running</text>
+<text x="50" y="457" style="font-size:10.5px;fill:#8b97a1">Port 8500 · Clients: 1</text>
 
-      <!-- tile B: toggle with two states -->
-      <rect x="118" y="0" width="110" height="66" rx="10" fill="#161b22" stroke="#30363d"/>
-      <rect x="143" y="17" width="50" height="26" rx="13" fill="#3fb950">
-        <animate attributeName="fill" values="#3fb950;#3fb950;#30363d;#30363d;#3fb950" keyTimes="0;0.4;0.45;0.9;1" dur="14s" repeatCount="indefinite"/>
-      </rect>
-      <circle cx="180" cy="30" r="10" fill="#e6edf3">
-        <animate attributeName="cx" values="180;180;156;156;180" keyTimes="0;0.4;0.45;0.9;1" dur="14s" repeatCount="indefinite"/>
-      </circle>
-      <text x="173" y="57" text-anchor="middle" fill="#c9d1d9">Mute</text>
+<text x="206" y="61" style="font-size:15px;font-weight:600">Stream</text>
+<rect x="278" y="44" width="92" height="22" rx="11" fill="#222a31"/>
+<text x="324" y="59" text-anchor="middle" style="font-size:11px;fill:#a3b0b8">6×4 · 16 tiles</text>
+<rect x="472" y="41" width="88" height="28" rx="7" fill="#222a31"/>
+<path d="M482 55h8M542 55h8M546 51v8" stroke="#a3b0b8" stroke-width="1.6" stroke-linecap="round"/>
+<text x="516" y="59" text-anchor="middle" style="font-size:11px;fill:#ecf0f1">150%</text>
+<rect x="570" y="41" width="110" height="28" rx="7" fill="#1abc9c"/>
+<path d="M581 49.5v11l8.5-5.5z" fill="#0b2a23"/>
+<text x="596" y="59.5" style="font-size:11.5px;font-weight:600;fill:#0b2a23">Touch mode</text>
+<g fill="#a3b0b8"><circle cx="692" cy="55" r="1.4"/><circle cx="697" cy="55" r="1.4"/><circle cx="687" cy="55" r="1.4"/></g>
 
-      <!-- tile C: button -->
-      <rect x="236" y="0" width="124" height="66" rx="10" fill="#161b22" stroke="#30363d"/>
-      <rect x="284" y="21" width="28" height="18" rx="4" fill="none" stroke="#d29922" stroke-width="2"/>
-      <rect x="291" y="17" width="14" height="5" rx="2" fill="#d29922"/>
-      <circle cx="298" cy="30" r="5" fill="none" stroke="#d29922" stroke-width="2"/>
-      <text x="298" y="57" text-anchor="middle" fill="#c9d1d9">Screenshot</text>
+<use href="#board" x="213" y="118"/>
 
-      <!-- slider tile -->
-      <rect x="0" y="74" width="360" height="50" rx="10" fill="#161b22" stroke="#30363d"/>
-      <text x="16" y="103" fill="#c9d1d9">Volume</text>
-      <rect x="86" y="96" width="254" height="6" rx="3" fill="#30363d"/>
-      <rect x="86" y="96" width="150" height="6" rx="3" fill="#58a6ff">
-        <animate attributeName="width" values="150;176;150" dur="7s" repeatCount="indefinite"/>
-      </rect>
-      <circle cx="236" cy="99" r="13" fill="#58a6ff" opacity="0.18">
-        <animate attributeName="cx" values="236;262;236" dur="7s" repeatCount="indefinite"/>
-      </circle>
-      <circle cx="236" cy="99" r="8" fill="#e6edf3">
-        <animate attributeName="cx" values="236;262;236" dur="7s" repeatCount="indefinite"/>
-      </circle>
+<!-- link -->
+<path d="M722 262.0H790.2" stroke="#1abc9c" stroke-width="2" stroke-dasharray="2 6" stroke-linecap="round"/>
+<circle cx="722" cy="262.0" r="3.5" fill="#1abc9c"/>
+<circle cx="790.2" cy="262.0" r="3.5" fill="#1abc9c"/>
 
-      <!-- live status rows -->
-      <rect x="0" y="132" width="360" height="100" rx="10" fill="#161b22" stroke="#30363d"/>
+<!-- tablet (illustration) -->
+<rect x="800.2" y="131.3" width="367.8" height="261.4" rx="22" fill="#0a0d10" stroke="#3a4753" stroke-width="1.5"/>
+<rect x="818.2" y="149.3" width="331.8" height="225.4" rx="6" fill="#34495e"/>
+<circle cx="809.2" cy="262" r="2.2" fill="#2c353e"/>
+<use href="#board" transform="translate(818.2 149.3) scale(0.7)"/>
 
-      <!-- CPU -->
-      <circle cx="18" cy="154" r="4" fill="#3fb950" opacity="0.5">
-        <animate attributeName="r" values="4;11" dur="2.2s" repeatCount="indefinite"/>
-        <animate attributeName="opacity" values="0.5;0" dur="2.2s" repeatCount="indefinite"/>
-      </circle>
-      <circle cx="18" cy="154" r="4" fill="#3fb950">
-        <animate attributeName="opacity" values="1;0.55;1" dur="2.2s" repeatCount="indefinite"/>
-      </circle>
-      <text x="34" y="158" fill="#c9d1d9">CPU</text>
-      <rect x="100" y="150" width="176" height="8" rx="4" fill="#30363d"/>
-      <rect x="100" y="150" width="58" height="8" rx="4" fill="#3fb950">
-        <animate attributeName="width" values="58;72;58" dur="6s" repeatCount="indefinite"/>
-      </rect>
-      <text x="292" y="158" fill="#8b949e">33%
-        <animate attributeName="opacity" calcMode="discrete" values="1;0;1;1" keyTimes="0;0.25;0.75;1" dur="6s" repeatCount="indefinite"/>
-      </text>
-      <text x="292" y="158" fill="#8b949e" opacity="0">41%
-        <animate attributeName="opacity" calcMode="discrete" values="0;1;0;0" keyTimes="0;0.25;0.75;1" dur="6s" repeatCount="indefinite"/>
-      </text>
-
-      <!-- RAM -->
-      <circle cx="18" cy="182" r="4" fill="#d29922" opacity="0.5">
-        <animate attributeName="r" values="4;11" dur="2.2s" begin="0.7s" repeatCount="indefinite"/>
-        <animate attributeName="opacity" values="0.5;0" dur="2.2s" begin="0.7s" repeatCount="indefinite"/>
-      </circle>
-      <circle cx="18" cy="182" r="4" fill="#d29922">
-        <animate attributeName="opacity" values="1;0.55;1" dur="2.2s" begin="0.7s" repeatCount="indefinite"/>
-      </circle>
-      <text x="34" y="186" fill="#c9d1d9">RAM</text>
-      <rect x="100" y="178" width="176" height="8" rx="4" fill="#30363d"/>
-      <rect x="100" y="178" width="107" height="8" rx="4" fill="#d29922"/>
-      <text x="292" y="186" fill="#8b949e">61%</text>
-
-      <!-- AI plan limit -->
-      <circle cx="18" cy="210" r="4" fill="#3fb950" opacity="0.5">
-        <animate attributeName="r" values="4;11" dur="2.2s" begin="1.4s" repeatCount="indefinite"/>
-        <animate attributeName="opacity" values="0.5;0" dur="2.2s" begin="1.4s" repeatCount="indefinite"/>
-      </circle>
-      <circle cx="18" cy="210" r="4" fill="#3fb950">
-        <animate attributeName="opacity" values="1;0.55;1" dur="2.2s" begin="1.4s" repeatCount="indefinite"/>
-      </circle>
-      <text x="34" y="214" fill="#c9d1d9">GLM 5h</text>
-      <rect x="100" y="206" width="176" height="8" rx="4" fill="#30363d"/>
-      <rect x="100" y="206" width="58" height="8" rx="4" fill="#3fb950"/>
-      <text x="292" y="214" fill="#8b949e">67% left</text>
-    </g>
-  </defs>
-
-  <!-- backdrop -->
-  <rect x="0.5" y="0.5" width="1199" height="359" rx="16" fill="url(#bg)" stroke="#30363d"/>
-  <ellipse cx="330" cy="180" rx="360" ry="170" fill="url(#glowGreen)"/>
-  <ellipse cx="960" cy="180" rx="360" ry="170" fill="url(#glowBlue)"/>
-
-  <g font-family="sans-serif">
-    <text x="40" y="27" font-size="14" font-weight="bold" letter-spacing="4" fill="#8b949e">PULPIT</text>
-    <text x="1160" y="27" font-size="12" text-anchor="end" fill="#6e7681">v1.3.0</text>
-  </g>
-
-  <!-- desktop window -->
-  <rect x="40" y="40" width="600" height="280" rx="12" fill="#0d1117" stroke="#30363d"/>
-  <path d="M40,70 V52 a12,12 0 0 1 12,-12 H628 a12,12 0 0 1 12,12 V70 Z" fill="#161b22"/>
-  <line x1="40" y1="70" x2="640" y2="70" stroke="#30363d"/>
-  <circle cx="58" cy="55" r="5" fill="#ff5f56"/>
-  <circle cx="76" cy="55" r="5" fill="#ffbd2e"/>
-  <circle cx="94" cy="55" r="5" fill="#27c93f"/>
-  <g font-family="sans-serif" font-size="12">
-    <text x="340" y="59" text-anchor="middle" fill="#8b949e">Pulpit - board editor</text>
-    <text x="578" y="59" text-anchor="end" font-size="11" fill="#8b949e">server :8500</text>
-  </g>
-  <circle cx="591" cy="55" r="4" fill="#3fb950" opacity="0.5">
-    <animate attributeName="r" values="4;10" dur="2.2s" repeatCount="indefinite"/>
-    <animate attributeName="opacity" values="0.5;0" dur="2.2s" repeatCount="indefinite"/>
-  </circle>
-  <circle cx="591" cy="55" r="4" fill="#3fb950">
-    <animate attributeName="opacity" values="1;0.55;1" dur="2.2s" repeatCount="indefinite"/>
-  </circle>
-
-  <!-- editor canvas with visible grid -->
-  <rect x="48" y="74" width="380" height="240" rx="8" fill="#0b0f14"/>
-  <rect x="48" y="74" width="380" height="240" rx="8" fill="url(#dots)"/>
-  <use href="#board" transform="translate(58,79)"/>
-
-  <!-- selection around tile A -->
-  <rect x="55" y="76" width="116" height="72" rx="12" fill="none" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4 3">
-    <animate attributeName="stroke-dashoffset" from="0" to="-14" dur="1.2s" repeatCount="indefinite"/>
-  </rect>
-  <g fill="#58a6ff">
-    <rect x="52" y="73" width="6" height="6"/>
-    <rect x="168" y="73" width="6" height="6"/>
-    <rect x="52" y="145" width="6" height="6"/>
-    <rect x="168" y="145" width="6" height="6"/>
-  </g>
-
-  <!-- inspector -->
-  <rect x="440" y="74" width="184" height="240" rx="10" fill="#161b22" stroke="#30363d"/>
-  <g font-family="sans-serif" font-size="11">
-    <text x="456" y="98" fill="#8b949e">Press mode</text>
-    <rect x="456" y="106" width="152" height="28" rx="7" fill="#0d1117" stroke="#30363d"/>
-    <rect x="458" y="108" width="48" height="24" rx="5" fill="#1f6feb"/>
-    <text x="482" y="124" text-anchor="middle" font-size="10" fill="#ffffff">button</text>
-    <text x="532" y="124" text-anchor="middle" font-size="10" fill="#8b949e">toggle</text>
-    <text x="583" y="124" text-anchor="middle" font-size="10" fill="#8b949e">slider</text>
-
-    <text x="456" y="162" fill="#8b949e">Dual state</text>
-    <rect x="456" y="170" width="72" height="24" rx="6" fill="#0c2d6b" stroke="#58a6ff"/>
-    <text x="492" y="186" text-anchor="middle" font-size="10" fill="#c9d1d9">state 1</text>
-    <rect x="536" y="170" width="72" height="24" rx="6" fill="#0f3d1e" stroke="#3fb950"/>
-    <text x="572" y="186" text-anchor="middle" font-size="10" fill="#c9d1d9">state 2</text>
-
-    <text x="456" y="232" fill="#8b949e">Visible grid</text>
-    <rect x="568" y="218" width="40" height="20" rx="10" fill="#238636"/>
-    <circle cx="598" cy="228" r="7" fill="#ffffff"/>
-
-    <line x1="456" y1="250" x2="608" y2="250" stroke="#30363d"/>
-    <rect x="456" y="262" width="152" height="36" rx="8" fill="#238636"/>
-    <text x="532" y="285" text-anchor="middle" font-size="13" font-weight="bold" fill="#ffffff">Touch mode</text>
-  </g>
-
-  <!-- link -->
-  <path id="link" d="M640,180 H760" fill="none" stroke="#58a6ff" stroke-width="2" stroke-dasharray="6 8" opacity="0.85">
-    <animate attributeName="stroke-dashoffset" from="0" to="-14" dur="1.4s" repeatCount="indefinite"/>
-  </path>
-  <circle r="3.5" fill="#e6edf3">
-    <animateMotion dur="2.4s" repeatCount="indefinite" path="M640,180 H760"/>
-  </circle>
-  <circle cx="640" cy="180" r="4" fill="#58a6ff"/>
-  <circle cx="760" cy="180" r="4" fill="#58a6ff"/>
-  <rect x="672" y="165" width="56" height="30" rx="8" fill="#161b22" stroke="#30363d"/>
-  <text x="700" y="185" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#c9d1d9">:8500</text>
-
-  <!-- tablet -->
-  <rect x="760" y="40" width="400" height="280" rx="28" fill="#1c2128" stroke="#444c56" stroke-width="1.5"/>
-  <circle cx="768" cy="180" r="2.5" fill="#30363d"/>
-  <rect x="776" y="56" width="368" height="248" rx="14" fill="#0d1117"/>
-  <use href="#board" transform="translate(780,64)"/>
-
-  <g font-family="sans-serif" font-size="12" fill="#8b949e" text-anchor="middle">
-    <text x="340" y="344">Desktop: Rust + Tauri, editor and touch mode</text>
-    <text x="960" y="344">Tablet: stock Deckboard client or native Pulpit app</text>
-  </g>
+<!-- captions -->
+<text class="capb" x="34" y="514">Desktop editor</text>
+<text class="cap" x="34" y="534">Windows and Linux. Build boards, or run one in touch mode.</text>
+<text class="capb" x="802.2" y="514">Tablet (illustration)</text>
+<text class="cap" x="802.2" y="534">Pulpit for Android or the stock Deckboard client</text>
+<text class="mono" x="756.1" y="250.0" text-anchor="middle" style="fill:#1abc9c">LAN</text>
+<text class="mono" x="756.1" y="282.0" text-anchor="middle">:8500</text>
 </svg>
