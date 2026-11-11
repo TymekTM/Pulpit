@@ -30,9 +30,31 @@ sha2 = "0.10"
 hex = "0.4"
 
 # smaller image = fewer resident pages; LTO + one CGU deduplicate Boa and
-# the stack of async helpers, strip drops symbols nobody loads at runtime
+# the stack of async helpers, strip drops symbols nobody loads at runtime.
+# opt-level "s" for everything except the JS engine: measured on the Linux
+# server at 0da95cd, "s" everywhere shrinks the binary 26% but makes
+# extension JavaScript ~50% slower; keeping the engine crates at 3 gives
+# 17% with unchanged JS speed (22% together with the trimmed Boa features
+# in crates/ext/Cargo.toml). Idle CPU and memory are the same either way.
 [profile.release]
+opt-level = "s"
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+# the JS engine and its regex engine stay speed-optimized (see above)
+[profile.release.package.boa_engine]
+opt-level = 3
+[profile.release.package.boa_parser]
+opt-level = 3
+[profile.release.package.boa_ast]
+opt-level = 3
+[profile.release.package.boa_gc]
+opt-level = 3
+[profile.release.package.boa_interner]
+opt-level = 3
+[profile.release.package.boa_string]
+opt-level = 3
+[profile.release.package.regress]
+opt-level = 3
