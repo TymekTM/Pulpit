@@ -37,6 +37,7 @@ describe("api", () => {
     ["listDevices", [], "list_devices", undefined],
     ["revokeDevice", ["d1"], "revoke_device", { id: "d1" }],
     ["resolveOperatorAsk", [3, false], "resolve_operator_ask", { id: 3, approved: false }],
+    ["pendingOperatorAsk", [], "pending_operator_ask", undefined],
     ["takePendingTouchToggle", [], "take_pending_touch_toggle", undefined],
     ["adbDevices", [], "adb_devices", undefined],
     ["adbInstallApk", ["x.apk"], "adb_install_apk", { path: "x.apk" }],
@@ -76,7 +77,7 @@ describe("api", () => {
   });
 
   it("covers every method in the table above", () => {
-    expect(Object.keys(api)).toHaveLength(63);
+    expect(Object.keys(api)).toHaveLength(64);
   });
 
   it("passes the command's result through", async () => {
