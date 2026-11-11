@@ -39,7 +39,7 @@ jobs:
       # a pull_request is diffed through the API; only a push needs a clone
       - uses: actions/checkout@v4
         if: github.event_name == 'push'
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: f
         with:
           filters: |
