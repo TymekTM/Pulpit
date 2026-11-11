@@ -6,8 +6,8 @@
 </h1>
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/TymekTM/deckboard)](https://github.com/TymekTM/deckboard/releases/latest)
-[![CI](https://github.com/TymekTM/deckboard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/TymekTM/deckboard/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/TymekTM/Pulpit)](https://github.com/TymekTM/Pulpit/releases/latest)
+[![CI](https://github.com/TymekTM/Pulpit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/TymekTM/Pulpit/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-blue)
 ![Rust](https://img.shields.io/badge/Rust-stable%20MSVC-orange)
 
@@ -112,7 +112,7 @@ The discovery pairing flow, step by step:
 ## Install
 
 Download `pulpit-desktop-*.exe` from
-[Releases](https://github.com/TymekTM/deckboard/releases/latest) (Windows 10/11, single binary, no
+[Releases](https://github.com/TymekTM/Pulpit/releases/latest) (Windows 10/11, single binary, no
 installer) and `Pulpit-*.apk` for the Android tablet. The desktop checks for
 newer releases on its own and can update itself in place.
 

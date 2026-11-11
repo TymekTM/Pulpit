@@ -47,9 +47,26 @@ pub type Result<T> = std::result::Result<T, SpotifyError>;
 
 /// User-facing text for toasts/flashes: the design §3 messages are the
 /// `Display` strings of the mapped variants, everything else keeps its
-/// technical text (shown in logs).
+/// technical text (shown in logs). The three design messages follow the
+/// UI language (pulpit-i18n process locale); the `Display` strings stay
+/// English - they ride in logs.
 pub fn user_message(err: &SpotifyError) -> String {
-    err.to_string()
+    match err {
+        SpotifyError::NeedsLogin => pulpit_i18n::tr(
+            "Log in to Spotify in Pulpit settings",
+            "Zaloguj się do Spotify w ustawieniach Pulpit",
+        )
+        .to_string(),
+        SpotifyError::PremiumRequired => {
+            pulpit_i18n::tr("Spotify Premium required", "Wymagane Spotify Premium").to_string()
+        }
+        SpotifyError::NoActiveDevice => pulpit_i18n::tr(
+            "Open Spotify on a device first",
+            "Najpierw otwórz Spotify na jakimś urządzeniu",
+        )
+        .to_string(),
+        _ => err.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -58,18 +75,21 @@ mod tests {
 
     #[test]
     fn design_messages_are_the_display_strings() {
-        assert_eq!(
-            user_message(&SpotifyError::NeedsLogin),
-            "Log in to Spotify in Pulpit settings"
-        );
-        assert_eq!(
-            user_message(&SpotifyError::PremiumRequired),
-            "Spotify Premium required"
-        );
-        assert_eq!(
-            user_message(&SpotifyError::NoActiveDevice),
-            "Open Spotify on a device first"
-        );
+        // The three design messages follow the process locale, and other
+        // test modules in this crate pin "pl" under their own guard -
+        // either language's exact sentence is correct here.
+        assert!(matches!(
+            user_message(&SpotifyError::NeedsLogin).as_str(),
+            "Log in to Spotify in Pulpit settings" | "Zaloguj się do Spotify w ustawieniach Pulpit"
+        ));
+        assert!(matches!(
+            user_message(&SpotifyError::PremiumRequired).as_str(),
+            "Spotify Premium required" | "Wymagane Spotify Premium"
+        ));
+        assert!(matches!(
+            user_message(&SpotifyError::NoActiveDevice).as_str(),
+            "Open Spotify on a device first" | "Najpierw otwórz Spotify na jakimś urządzeniu"
+        ));
     }
 
     #[test]
