@@ -142,6 +142,23 @@ describe("OperatorAskModal", () => {
     expect(listenerCount("operator-ask")).toBe(1);
   });
 
+  it("shows an ask that was already waiting when the window was built", async () => {
+    handle("pending_operator_ask", () => ({ id: 5, kind: "pair-request", name: "Late", code: "424242" }));
+    const w = await mountAsk();
+    expect(w.find(".ask-name").text()).toBe("Late");
+    expect(w.find(".ask-code").text()).toBe("424242");
+    await w.find(".act.trust").trigger("click");
+    await flushPromises();
+    expect(calls.filter((c) => c.cmd === "resolve_operator_ask")).toEqual([
+      { cmd: "resolve_operator_ask", args: { id: 5, approved: true } },
+    ]);
+  });
+
+  it("stays hidden when nothing is waiting", async () => {
+    const w = await mountAsk();
+    expect(w.find(".veil").exists()).toBe(false);
+  });
+
   it("shows a pair request with its verification code", async () => {
     const w = await mountAsk();
     emit("operator-ask", { id: 7, kind: "pair-request", name: "Tablet", code: "123456" });
@@ -168,7 +185,9 @@ describe("OperatorAskModal", () => {
     await flushPromises();
     await w.findAll("button").find((b) => b.text().includes(label)).trigger("click");
     await flushPromises();
-    expect(calls).toEqual([{ cmd: "resolve_operator_ask", args: { id: 9, approved } }]);
+    expect(calls.filter((c) => c.cmd === "resolve_operator_ask")).toEqual([
+      { cmd: "resolve_operator_ask", args: { id: 9, approved } },
+    ]);
     expect(w.find(".veil").exists()).toBe(false);
   });
 
@@ -194,7 +213,7 @@ describe("OperatorAskModal", () => {
     await flushPromises();
     await w.find(".act.trust").trigger("click");
     await w.find(".act").trigger("click");
-    expect(calls).toHaveLength(1);
+    expect(calls.filter((c) => c.cmd === "resolve_operator_ask")).toHaveLength(1);
     expect(w.find(".act").attributes("disabled")).toBeDefined();
     release();
     await flushPromises();

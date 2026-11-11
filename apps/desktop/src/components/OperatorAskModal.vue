@@ -19,6 +19,14 @@ onMounted(async () => {
     // times out and denies on its own)
     ask.value = e.payload;
   });
+  // an ask emitted before this WebView existed (start-minimized launch,
+  // idle teardown): the backend replays the one still waiting
+  try {
+    const pending = await api.pendingOperatorAsk();
+    if (pending && !ask.value) ask.value = pending;
+  } catch (e) {
+    console.error("pending operator ask", e);
+  }
 });
 onUnmounted(() => unlisten?.());
 

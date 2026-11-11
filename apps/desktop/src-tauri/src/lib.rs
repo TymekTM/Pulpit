@@ -30,9 +30,10 @@ struct DesktopState {
     v2: Option<Arc<pulpit_v2::V2State>>,
     /// Current touch-mode hotkey combo ("Ctrl+Alt+D" style).
     hotkey: std::sync::Mutex<String>,
-    /// Start with the main window hidden in the tray (`start_minimized`
-    /// in editor.json). The server and the tray are unaffected - only
-    /// the window skips its show at launch, once, in `setup`.
+    /// Start with no main window at all (`start_minimized` in
+    /// editor.json). The server and the tray are unaffected - the
+    /// launch builds no window (and therefore no WebView) until
+    /// something shows it.
     start_minimized: bool,
     /// `pulpitApp/editor.json` - editor-local settings (hotkey), kept
     /// separate from the original app's settings.json.
@@ -207,14 +208,12 @@ pub fn run() {
             app.manage(state);
 
             build_tray(app.handle())?;
-            create_main_window(app.handle(), !start_minimized)?;
             if start_minimized {
-                // count the tray-hidden launch from now, so the idle
-                // WebView teardown treats it like a manual hide
-                HIDDEN_SINCE.store(
-                    pulpit_v2::unix_millis(),
-                    std::sync::atomic::Ordering::Relaxed,
-                );
+                // no window, no WebView: the tray, a second launch or the
+                // touch toggle builds it on first use (show_main_window)
+                tracing::info!("start minimized - the main window is built on first show");
+            } else {
+                create_main_window(app.handle())?;
             }
             spawn_webview_teardown(app.handle().clone());
             Ok(())
@@ -251,6 +250,7 @@ pub fn run() {
             list_devices,
             revoke_device,
             resolve_operator_ask,
+            pending_operator_ask,
             take_pending_touch_toggle,
             adb_devices,
             adb_install_apk,
@@ -908,7 +908,7 @@ fn show_main_window(app: &AppHandle) {
         // refetches boards, settings and live state on mount
         None => {
             tracing::info!("rebuilding the main window WebView");
-            if let Err(e) = create_main_window(app, true) {
+            if let Err(e) = create_main_window(app) {
                 tracing::error!("could not rebuild the main window: {e}");
             }
         }
@@ -944,14 +944,13 @@ fn goodbye_v2(app: &AppHandle) {
 /// WebView2 argument list is only reachable through the builder API, and a
 /// custom list replaces the default one - so the stock feature disables are
 /// repeated alongside the memory-oriented flags (no background networking,
-/// no component updates, capped HTTP disk cache). `visible` is false for a
-/// start-minimized launch: the window (and its WebView) is created hidden
-/// and only the tray can surface it. Rebuilds after a teardown always pass
-/// true - whoever rebuilds the window is about to show it.
-fn create_main_window(app: &AppHandle, visible: bool) -> tauri::Result<()> {
+/// no component updates, capped HTTP disk cache). The window is built on
+/// demand - at launch unless `start_minimized` is on, otherwise by whatever
+/// first shows it (tray, second launch, touch toggle) - and every caller
+/// is about to show it.
+fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
     tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
         .title("Pulpit")
-        .visible(visible)
         .inner_size(1280.0, 800.0)
         .min_inner_size(900.0, 600.0)
         .theme(Some(tauri::Theme::Dark))
@@ -1096,7 +1095,7 @@ fn toggle_touch_mode(app: &AppHandle) {
         }
         None => {
             tracing::info!("rebuilding the main window WebView for the touch toggle");
-            if let Err(e) = create_main_window(app, true) {
+            if let Err(e) = create_main_window(app) {
                 tracing::error!("could not rebuild the main window: {e}");
                 return;
             }
@@ -1431,13 +1430,51 @@ fn create_pairing_code(state: State<'_, DesktopState>) -> Result<PairingOffer, S
 /// parks the calling worker thread on a channel until
 /// [`resolve_operator_ask`] answers (or the timeout denies). Runs on the
 /// pairing session's blocking thread / the pair-request worker, so the
-/// wait costs no socket-loop time. Deny-safe by construction: a closed
-/// webview, an emit failure, a timeout or a dropped channel all deny -
-/// nothing here can accidentally approve.
-fn pending_asks() -> &'static std::sync::Mutex<HashMap<String, std::sync::mpsc::Sender<bool>>> {
-    static PENDING: OnceLock<std::sync::Mutex<HashMap<String, std::sync::mpsc::Sender<bool>>>> =
-        OnceLock::new();
+/// wait costs no socket-loop time. A missing WebView no longer loses the
+/// ask: it is replayed through [`pending_operator_ask`] when the window
+/// is built, and an unanswered ask still denies at the timeout.
+/// Deny-safe by construction: a closed webview, an emit failure, a
+/// timeout or a dropped channel all deny - nothing here can
+/// accidentally approve.
+fn pending_asks() -> &'static std::sync::Mutex<PendingAsks> {
+    static PENDING: OnceLock<std::sync::Mutex<PendingAsks>> = OnceLock::new();
     PENDING.get_or_init(Default::default)
+}
+
+/// Unanswered operator asks: the parked workers' senders plus the payload
+/// of the most recent ask, kept so a WebView that did not exist when the
+/// ask was emitted (start-minimized launch, idle teardown) can still show
+/// it on mount.
+#[derive(Default)]
+struct PendingAsks {
+    senders: HashMap<String, std::sync::mpsc::Sender<bool>>,
+    latest: Option<(String, serde_json::Value)>,
+}
+
+impl PendingAsks {
+    /// Park a new ask; it becomes the latest.
+    fn park(&mut self, id: &str, tx: std::sync::mpsc::Sender<bool>, payload: serde_json::Value) {
+        self.senders.insert(id.to_string(), tx);
+        self.latest = Some((id.to_string(), payload));
+    }
+
+    /// Remove an ask (answered, timed out, emit failed). Clears `latest`
+    /// when it is this ask.
+    fn take(&mut self, id: &str) -> Option<std::sync::mpsc::Sender<bool>> {
+        if self
+            .latest
+            .as_ref()
+            .is_some_and(|(latest_id, _)| latest_id == id)
+        {
+            self.latest = None;
+        }
+        self.senders.remove(id)
+    }
+
+    /// The latest ask's payload, only while that ask is still parked.
+    fn latest(&self) -> Option<serde_json::Value> {
+        self.latest.as_ref().map(|(_, payload)| payload.clone())
+    }
 }
 
 /// How long the popup may wait for the operator: the pairing-code TTL
@@ -1457,14 +1494,14 @@ fn next_ask_id() -> String {
 fn ask_operator(app: &AppHandle, kind: &str, name: &str, code: Option<String>) -> bool {
     let id = next_ask_id();
     let (tx, rx) = std::sync::mpsc::channel();
+    let payload = serde_json::json!({ "id": id, "kind": kind, "name": name, "code": code });
     pending_asks()
         .lock()
         .expect("asks poisoned")
-        .insert(id.clone(), tx);
-    let payload = serde_json::json!({ "id": id, "kind": kind, "name": name, "code": code });
+        .park(&id, tx, payload.clone());
     if let Err(e) = app.emit("operator-ask", payload) {
         tracing::warn!(error = %e, "operator ask: webview emit failed - denying");
-        pending_asks().lock().expect("asks poisoned").remove(&id);
+        pending_asks().lock().expect("asks poisoned").take(&id);
         return false;
     }
     tracing::info!(kind, name, "operator ask shown in the editor");
@@ -1475,7 +1512,7 @@ fn ask_operator(app: &AppHandle, kind: &str, name: &str, code: Option<String>) -
             false
         }
     };
-    pending_asks().lock().expect("asks poisoned").remove(&id);
+    pending_asks().lock().expect("asks poisoned").take(&id);
     answer
 }
 
@@ -1483,7 +1520,7 @@ fn ask_operator(app: &AppHandle, kind: &str, name: &str, code: Option<String>) -
 /// expired) are errors so a double-click cannot resurrect a decision.
 #[tauri::command]
 fn resolve_operator_ask(id: String, approved: bool) -> Result<(), String> {
-    let sender = pending_asks().lock().expect("asks poisoned").remove(&id);
+    let sender = pending_asks().lock().expect("asks poisoned").take(&id);
     match sender {
         Some(tx) => tx
             .send(approved)
@@ -2365,6 +2402,41 @@ mod tests {
         assert!(!is_window_shown_state(false, true));
     }
 
+    // PendingAsks is tested through a LOCAL instance (never the global
+    // `pending_asks()` - tests run in parallel).
+    #[test]
+    fn latest_ask_is_replayable_until_taken() {
+        let mut asks = PendingAsks::default();
+        let (tx, _rx) = std::sync::mpsc::channel();
+        asks.park("a", tx, serde_json::json!({ "id": "a" }));
+        assert_eq!(asks.latest(), Some(serde_json::json!({ "id": "a" })));
+        assert!(asks.take("a").is_some());
+        assert_eq!(asks.latest(), None);
+    }
+
+    #[test]
+    fn a_newer_ask_replaces_the_latest_and_taking_the_older_keeps_it() {
+        let mut asks = PendingAsks::default();
+        let (tx_a, _rx_a) = std::sync::mpsc::channel();
+        let (tx_b, _rx_b) = std::sync::mpsc::channel();
+        asks.park("a", tx_a, serde_json::json!({ "id": "a" }));
+        asks.park("b", tx_b, serde_json::json!({ "id": "b" }));
+        assert_eq!(asks.latest(), Some(serde_json::json!({ "id": "b" })));
+        assert!(asks.take("a").is_some());
+        assert_eq!(asks.latest(), Some(serde_json::json!({ "id": "b" })));
+        assert!(asks.take("b").is_some());
+        assert_eq!(asks.latest(), None);
+    }
+
+    #[test]
+    fn taking_an_unknown_ask_returns_none() {
+        let mut asks = PendingAsks::default();
+        let (tx, _rx) = std::sync::mpsc::channel();
+        asks.park("a", tx, serde_json::json!({ "id": "a" }));
+        assert!(asks.take("nope").is_none());
+        assert_eq!(asks.latest(), Some(serde_json::json!({ "id": "a" })));
+    }
+
     #[test]
     fn hotkey_plan_swaps_to_a_different_combo() {
         assert!(matches!(
@@ -2863,6 +2935,14 @@ mod tests {
 #[tauri::command]
 fn take_pending_touch_toggle() -> bool {
     PENDING_TOUCH_TOGGLE.swap(false, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The latest operator ask that is still waiting for an answer, for a
+/// WebView that mounted after the ask was emitted. Does not consume it -
+/// the answer still goes through [`resolve_operator_ask`].
+#[tauri::command]
+fn pending_operator_ask() -> Option<serde_json::Value> {
+    pending_asks().lock().expect("asks poisoned").latest()
 }
 
 /// The QR payload for pairing, kept separate so the command body stays
