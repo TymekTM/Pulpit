@@ -160,6 +160,11 @@ jobs:
 
       - run: npm ci
 
+      # Blocks on advisories in what ships to users; dev-tooling
+      # advisories stay visible via `npm audit` locally and Dependabot.
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Build
         run: npx vite build
 
