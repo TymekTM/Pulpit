@@ -72,7 +72,7 @@ the top is an illustration.
   a progress bar, plus play/pause, next, previous, stop and seek tiles for
   whatever player the system reports (browser, Tidal, VLC, foobar2000, not
   only Spotify). Windows uses the system media session, Linux uses MPRIS.
-  On Windows a tile can target one app by name.
+  On Windows and Linux a tile can target one player by name.
 - **HTTP request tiles**: method, URL, headers and body, sent by the server
   when the tile is pressed (Home Assistant, webhooks, n8n or any REST API).
   Configurable timeout, an opt-in to ignore certificate errors, and
@@ -231,7 +231,7 @@ shortcut, the language and the seasonal theme), `aidev.json`,
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PULPIT_PORT` | `8500` | Server port (legacy + v2 share it); overrides the port set in Settings |
-| `PULPIT_DB` | `~/pulpitApp/database.db` | Database location (profiling, hermetic runs) |
+| `PULPIT_DB` | `~/pulpitApp/database.db` | Desktop only: database location (profiling, hermetic runs). The headless server takes the path as its first argument |
 | `PULPIT_EXT_DIR` | `~/pulpitApp/extensions` | Extension directory |
 | `PULPIT_AIDEV_CONFIG` | `~/pulpitApp/aidev.json` | AI usage config |
 | `PULPIT_SPOTIFY_CONFIG` | `~/pulpitApp/spotify.json` | Spotify client id and tokens |
