@@ -16,6 +16,7 @@
   "Cannot move: tiles would leave the grid or overlap others": "Nie można przesunąć: kafelki wychodziłyby poza siatkę lub nachodziły na inne",
   "Cannot move: tiles would leave the grid": "Nie można przesunąć: kafelki wychodziłyby poza siatkę",
   "Cannot move: tiles would overlap other tiles": "Nie można przesunąć: kafelki nakładałyby się na inne kafelki",
+  "Cannot resize: tile would overlap another tile": "Nie można zmienić rozmiaru: kafelek nachodziłby na inny kafelek",
   "Changing tile colors failed": "Zmiana koloru kafli nie powiodła się",
   "Redo failed": "Ponawianie operacji nie powiodło się",
   "Copy ({count} tiles)": "Kopiuj ({count} kafli)",

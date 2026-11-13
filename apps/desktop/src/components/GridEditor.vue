@@ -252,12 +252,32 @@ function startDrag(tile, mode, event) {
       } else {
         const x = clamp(tile.x + d.cx, 0, Math.max(0, props.board.width - tile.w));
         const y = clamp(tile.y + d.cy, 0, Math.max(0, props.board.height - tile.h));
-        if (x !== tile.x || y !== tile.y) emit("tile-moved", tile, x, y, tile.w, tile.h);
+        if (x === tile.x && y === tile.y) return;
+        const overlap = props.board.buttons.some(
+          (u) =>
+            u.id !== tile.id &&
+            !(x + tile.w <= u.x || x >= u.x + u.w || y + tile.h <= u.y || y >= u.y + u.h),
+        );
+        if (overlap) {
+          emit("move-refused", t("Cannot move: tiles would overlap other tiles"));
+          return;
+        }
+        emit("tile-moved", tile, x, y, tile.w, tile.h);
       }
     } else {
       const w = clamp(tile.w + d.cw, 1, Math.max(1, props.board.width - tile.x));
       const h = clamp(tile.h + d.ch, 1, Math.max(1, props.board.height - tile.y));
-      if (w !== tile.w || h !== tile.h) emit("tile-moved", tile, tile.x, tile.y, w, h);
+      if (w === tile.w && h === tile.h) return;
+      const overlap = props.board.buttons.some(
+        (u) =>
+          u.id !== tile.id &&
+          !(tile.x + w <= u.x || tile.x >= u.x + u.w || tile.y + h <= u.y || tile.y >= u.y + u.h),
+      );
+      if (overlap) {
+        emit("move-refused", t("Cannot resize: tile would overlap another tile"));
+        return;
+      }
+      emit("tile-moved", tile, tile.x, tile.y, w, h);
     }
   };
   window.addEventListener("pointermove", onMove);
