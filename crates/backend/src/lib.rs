@@ -57,6 +57,9 @@ pub struct SqlBackend {
     http_last_error: std::sync::Mutex<Option<String>>,
     custom_values: std::sync::Mutex<std::collections::HashMap<String, String>>,
     tools: Option<std::sync::Arc<pulpit_tools::ToolManager>>,
+    /// The desk pet store (see pulpit_tools::pet): persists and relays
+    /// the webview-simulated snapshot, forwards care gestures back.
+    pet: Option<std::sync::Arc<pulpit_tools::PetManager>>,
     /// Kinds already greeted with the one "not available in Pulpit"
     /// warning this run (SLOBS / XSplit / Twitch): the warning is per
     /// kind per run, never per press.
@@ -87,6 +90,7 @@ impl SqlBackend {
             http_last_error: std::sync::Mutex::new(None),
             custom_values: std::sync::Mutex::new(std::collections::HashMap::new()),
             tools: None,
+            pet: None,
             unavailable_warned: std::sync::Mutex::new(std::collections::HashSet::new()),
             speaker: Mutex::new(None),
             http_agent: pulpit_db::http_agent(std::time::Duration::from_secs(10), true),
@@ -168,6 +172,11 @@ impl SqlBackend {
 
     pub fn with_tools(mut self, tools: Option<std::sync::Arc<pulpit_tools::ToolManager>>) -> Self {
         self.tools = tools;
+        self
+    }
+
+    pub fn with_pet(mut self, pet: Option<std::sync::Arc<pulpit_tools::PetManager>>) -> Self {
+        self.pet = pet;
         self
     }
 
@@ -473,6 +482,14 @@ impl Backend for SqlBackend {
             button.options.as_deref(),
             &button.mode,
         );
+        if pulpit_tools::is_pet_action(&cmd.kind) {
+            // the pet simulates in the webview: forward the gesture, the
+            // next snapshot comes back through set_pet
+            if let Some(pet) = &self.pet {
+                pet.gesture(gesture);
+            }
+            return;
+        }
         if pulpit_tools::is_tool_action(&cmd.kind) {
             if let Some(tools) = &self.tools {
                 let g = gesture.parse().unwrap_or(pulpit_tools::ToolGesture::Tap);
@@ -504,6 +521,12 @@ impl Backend for SqlBackend {
         self.spotify_last_error.lock().unwrap().take();
         self.http_last_error.lock().unwrap().take();
         if !builtin && !is_tap_start {
+            if pulpit_tools::is_pet_action(&cmd.kind) {
+                if let Some(pet) = &self.pet {
+                    pet.gesture("tap");
+                }
+                return;
+            }
             if pulpit_tools::is_tool_action(&cmd.kind) {
                 if let Some(tools) = &self.tools {
                     tools.execute(
@@ -583,11 +606,18 @@ impl SqlBackend {
             || self.exec_speaker(cmd, sink)
             || self.exec_play(cmd)
             || self.exec_tool(cmd)
+            || self.exec_pet(cmd)
             || self.exec_media(cmd, None)
     }
 
     fn exec_tool(&self, cmd: &pulpit_actions::Command) -> bool {
         pulpit_tools::is_tool_action(&cmd.kind)
+    }
+
+    /// The pet kind is claimed natively (its press is a gesture forward
+    /// in `exec`), so no extension can hijack "pet".
+    fn exec_pet(&self, cmd: &pulpit_actions::Command) -> bool {
+        pulpit_tools::is_pet_action(&cmd.kind)
     }
 
     /// Full local tap for desktop touch mode and the editor's "Run now":

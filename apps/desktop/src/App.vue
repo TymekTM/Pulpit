@@ -12,12 +12,10 @@ import BoardModal from "./components/BoardModal.vue";
 import SettingsOverlay from "./components/SettingsOverlay.vue";
 import OperatorAskModal from "./components/OperatorAskModal.vue";
 import ConfirmDialog from "./components/ConfirmDialog.vue";
-import TamagotchiPanel from "./components/TamagotchiPanel.vue";
-import TamagotchiSprite from "./components/TamagotchiSprite.vue";
 import SeasonAmbient from "./components/season/SeasonAmbient.vue";
 import SeasonBurst from "./components/season/SeasonBurst.vue";
 import { applySeason, season, seasonOn } from "./season.js";
-import { MOOD_LABEL_KEYS, moodOf, pet, spriteProps, startPet, stopPet } from "./tamagotchi";
+import { pet, petDo, startPet, stopPet } from "./tamagotchi";
 import {
   Ellipsis,
   Eraser,
@@ -61,17 +59,6 @@ const currentId = ref(null);
 const status = ref({ dbOk: false, port: 0, clients: 0, version: "" });
 const touchMode = ref(false);
 const touchBoardId = ref(null);
-
-// the desk pet: one shared store, the sidebar button previews the sprite
-const petPanelOpen = ref(false);
-const petSprite = computed(() => (pet.value ? spriteProps(pet.value) : null));
-const petMoodLabel = computed(() => (pet.value ? t(MOOD_LABEL_KEYS[moodOf(pet.value)]) : ""));
-const petIsDead = computed(() => pet.value?.diedAt != null);
-const petNeedsCare = computed(() => {
-  const s = pet.value;
-  if (!s) return false;
-  return petIsDead.value || s.food < 20 || s.fun < 20 || s.rest < 20 || s.clean < 20;
-});
 const knownInputs = ref([]);
 const audioDevices = ref([]);
 const history = createEditorHistory(100);
@@ -1304,7 +1291,17 @@ onMounted(async () => {
       touchBoardId.value = e.payload;
       if (!touchMode.value) currentId.value = e.payload;
     }),
-    await listen("app-status-update", (e) => onStatusUpdate(e.payload))
+    await listen("app-status-update", (e) => onStatusUpdate(e.payload)),
+    // pet care gestures round-trip through the backend (tablet taps and
+    // touch-mode gestures both arrive here): tap = feed, double-tap =
+    // play, long-press = clean - or a new egg on a dead pet
+    await listen("pet-gesture", (e) => {
+      const action =
+        e.payload === "long-press" && pet.value?.diedAt != null
+          ? "newEgg"
+          : { tap: "feed", "double-tap": "play", "long-press": "clean" }[e.payload];
+      if (action) petDo(action);
+    })
   );
   // the context menu closes on any click outside of it, or on Escape
   window.addEventListener("mousedown", onGlobalMousedown, true);
@@ -1515,21 +1512,6 @@ function onKeydown(event) {
       </div>
 
       <div class="side-foot">
-        <button
-          class="side-pet"
-          :title="t('Desk pet')"
-          @click="petPanelOpen = true"
-        >
-          <span class="side-pet-sprite" aria-hidden="true">
-            <TamagotchiSprite v-bind="petSprite || { stage: 'egg', mood: 'neutral', activity: 'idle', poos: 0 }" />
-            <span
-              v-if="petNeedsCare"
-              class="rail-alert"
-              :class="{ warn: !petIsDead }"
-            ></span>
-          </span>
-          <span class="side-pet-text">{{ petMoodLabel }}</span>
-        </button>
         <button
           class="server-card"
           :class="{ bad: !status.dbOk }"
@@ -1864,9 +1846,6 @@ function onKeydown(event) {
 
     <!-- in-app confirmations (delete / clear / discard) instead of OS dialogs -->
     <ConfirmDialog />
-
-    <!-- the desk pet panel -->
-    <TamagotchiPanel v-if="petPanelOpen" @close="petPanelOpen = false" />
   </div>
 </template>
 
@@ -2088,35 +2067,6 @@ function onKeydown(event) {
   transition: background 120ms ease-out, color 120ms ease-out;
 }
 .side-settings:hover { background: var(--tile); color: var(--ink); }
-.side-pet {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 7px 12px;
-  border-radius: 9px;
-  font-size: 13px;
-  color: var(--ink-2);
-  transition: background 120ms ease-out, color 120ms ease-out;
-}
-.side-pet:hover { background: var(--tile); color: var(--ink); }
-.side-pet:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.side-pet-sprite {
-  position: relative;
-  width: 30px;
-  height: 30px;
-  flex: none;
-  border-radius: 8px;
-  background: var(--accent-soft);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.side-pet-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rail-alert.warn { background: #f1c40f; }
 
 /* ---- main / top bar ---- */
 .main {

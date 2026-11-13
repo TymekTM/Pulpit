@@ -117,6 +117,12 @@ async fn main() -> anyhow::Result<()> {
     let (tools_board_tx, mut tools_board_rx) = tokio::sync::mpsc::unbounded_channel::<i64>();
     tools.set_board_sink(tools_board_tx);
 
+    // The desk pet store: relays the snapshot the desktop webview pushes
+    // (a headless server has no simulator, so gestures forward nowhere).
+    let pet_path = data_dir.join("pet.json");
+    let (pet_change_tx, pet_rx) = tokio::sync::mpsc::unbounded_channel();
+    let pet = std::sync::Arc::new(pulpit_tools::PetManager::new(pet_path, pet_change_tx));
+
     // OBS: the same `obs.json` the desktop writes. `PULPIT_OBS_CONFIG`
     // overrides the location (hermetic runs). A disabled config parks
     // the connection worker - zero traffic until it is enabled.
@@ -149,6 +155,7 @@ async fn main() -> anyhow::Result<()> {
             .with_voicemeeter_override(pulpit_vm::load_dll_override(&settings))
             .with_spotify(spotify.clone())
             .with_tools(Some(tools.clone()))
+            .with_pet(Some(pet.clone()))
             .with_obs(Some(obs)),
     );
 
@@ -255,6 +262,7 @@ async fn main() -> anyhow::Result<()> {
         state.backend.clone(),
     ));
     tokio::spawn(pulpit_host::forward_producer(feed.clone(), tools_rx));
+    tokio::spawn(pulpit_host::forward_producer(feed.clone(), pet_rx));
     // Christmas mode: the desktop's choice in editor.json when this box
     // has one, `auto` (the calendar) otherwise. Read once - a headless
     // server has no Settings to change it at runtime.

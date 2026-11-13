@@ -45,6 +45,10 @@ export const api = {
   deleteButton: (id, boardId) => invoke("delete_button", { id, boardId }),
   clearBoard: (boardId) => invoke("clear_board", { boardId }),
   execButton: (id) => invoke("exec_button", { id }),
+  // the desk pet: server-stored state (`~/pulpitApp/pet.json`) plus the
+  // simulated advance done in the webview, pushed here on change
+  getPet: () => invoke("get_pet"),
+  setPet: (state) => invoke("set_pet", { petState: state }),
   // tool tiles (timer/stopwatch/counter): alternative triggers of the
   // tile's action - double-tap / long-press / reset gestures
   execButtonGesture: (id, gesture) =>

@@ -251,6 +251,15 @@ fn apply_implicit_params(row: &ButtonRow, params: &mut Value) {
             }
         }
     }
+    // the desk pet announces its widget hint too (no command config: the
+    // state lives on the global `pet` channel)
+    if pulpit_tools::is_pet_action(&row.kind) {
+        if !params.is_object() {
+            *params = Value::Object(serde_json::Map::new());
+        }
+        let obj = params.as_object_mut().expect("just made an object");
+        obj.insert("widget".into(), Value::String(row.kind.clone()));
+    }
     if row.kind == "clock-display-time" {
         if !params.is_object() {
             *params = Value::Object(serde_json::Map::new());
@@ -335,6 +344,17 @@ fn widget_kind_for(
             ],
         ),
         _ if row.kind == "tool-counter" => (
+            WidgetKind::Button,
+            vec![
+                Interaction::Tap,
+                Interaction::DoubleTap,
+                Interaction::LongPress,
+            ],
+        ),
+        // the desk pet: the snapshot arrives on the global `pet` channel;
+        // tap feeds, double-tap plays, long-press cleans (or lays a new
+        // egg on a dead pet - the webview decides)
+        _ if row.kind == "pet" => (
             WidgetKind::Button,
             vec![
                 Interaction::Tap,
@@ -456,6 +476,10 @@ fn state_ref(row: &ButtonRow, legacy: &Value, engine: &StateEngine) -> Option<St
         )
     {
         key = format!("tool-{}", row.id);
+    }
+    // the desk pet is global: one channel for every pet tile
+    if key.is_empty() && pulpit_tools::is_pet_action(&row.kind) {
+        key = "pet".to_string();
     }
     if key.is_empty() {
         return None;
@@ -891,6 +915,41 @@ mod tests {
         );
         assert_eq!(clock.manifest.params["widget"], "tool-clock");
         assert!(clock.manifest.interactions.is_empty());
+    }
+
+    #[test]
+    fn pet_tile_carries_widget_hint_and_global_state_channel() {
+        let (assets, _dir) = asset_store();
+        let engine = StateEngine::new(120);
+        let tile = build_tile(
+            &row("pet", "button", None),
+            &HashMap::new(),
+            &assets,
+            &engine,
+        );
+        assert_eq!(tile.manifest.kind, WidgetKind::Button);
+        // the widget hint names the pet renderer even though the tile
+        // has no command config, and every pet tile on any board shares
+        // the one global channel (the pet is not per-id)
+        assert_eq!(tile.manifest.params["widget"], "pet");
+        assert_eq!(tile.manifest.state.as_ref().unwrap().channel, "ext.pet");
+        // tap feeds, double-tap plays, long-press cleans
+        assert_eq!(
+            tile.manifest.interactions,
+            vec![
+                Interaction::Tap,
+                Interaction::DoubleTap,
+                Interaction::LongPress
+            ]
+        );
+        assert_eq!(
+            allowed_interactions(&row("pet", "button", None)),
+            vec![
+                Interaction::Tap,
+                Interaction::DoubleTap,
+                Interaction::LongPress
+            ]
+        );
     }
 
     #[test]

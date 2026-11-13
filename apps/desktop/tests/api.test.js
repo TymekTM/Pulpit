@@ -30,6 +30,8 @@ describe("api", () => {
     ["setLang", ["pl", "en"], "set_lang", { lang: "pl", locale: "en" }],
     ["getSeason", [], "get_season", undefined],
     ["setSeason", ["on"], "set_season", { mode: "on" }],
+    ["getPet", [], "get_pet", undefined],
+    ["setPet", [{ label: "Kot" }], "set_pet", { petState: { label: "Kot" } }],
     ["readImageData", ["C:/a.png"], "read_image_data", { path: "C:/a.png" }],
     ["listKnownInputs", [], "list_known_inputs", undefined],
     ["listLanAddresses", [], "list_lan_addresses", undefined],
@@ -77,7 +79,7 @@ describe("api", () => {
   });
 
   it("covers every method in the table above", () => {
-    expect(Object.keys(api)).toHaveLength(64);
+    expect(Object.keys(api)).toHaveLength(66);
   });
 
   it("passes the command's result through", async () => {

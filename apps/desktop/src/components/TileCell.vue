@@ -11,6 +11,7 @@ import {
 import { resolveStatusArt, payloadReceivedAt, windowVisible } from "../statusMedia";
 import { t } from "../i18n";
 import ToolTile from "./tiles/ToolTile.vue";
+import PetTile from "./tiles/PetTile.vue";
 
 // One tile. Isolated so a live state push re-renders only the tiles that
 // read the pushed key, not the whole board. Geometry (grid position,
@@ -62,6 +63,21 @@ watchEffect(() => {
   }
   const v = props.customValues[`tool-${props.tile.id}`];
   if (v && typeof v === "object") toolState.value = v;
+});
+
+// ---- desk pet ---------------------------------------------------------------
+// One global pet: the compact snapshot arrives on the `pet` channel
+// (customValues key "pet", not per button id), so every pet tile on any
+// board renders the same animal.
+const isPet = computed(() => props.tile.type === "pet");
+const petState = ref(null);
+watchEffect(() => {
+  if (!isPet.value) {
+    petState.value = null;
+    return;
+  }
+  const v = props.customValues["pet"];
+  if (v && typeof v === "object") petState.value = v;
 });
 
 // Whether the tile renders its second state. A known live state wins
@@ -769,10 +785,21 @@ function onTileKeydown(event) {
         :title-color="tileTitleColor() || '#ffffff'"
         @tap="onTap"
       />
+      <!-- the desk pet: the whole face is the pet renderer; gestures live
+           there in touch mode (tap feed / double-tap play / long-press
+           clean) -->
+      <PetTile
+        v-if="isPet"
+        :tile="tile"
+        :state="petState"
+        :touch="touch"
+        @tap="onTap"
+      />
       <i
         v-if="
           tileIcon(tile) &&
           !isTool &&
+          !isPet &&
           !graphData &&
           !(tile.mode === 'status' && statusData) &&
           !(tile.mode === 'custom-value' && !tile.title && customValueLabel)
@@ -947,7 +974,7 @@ function onTileKeydown(event) {
         </template>
       </div>
       <span
-        v-if="boardTileTitle && !isTool"
+        v-if="boardTileTitle && !isTool && !isPet"
         class="tile-title"
         :class="`pos-${tileTitlePos()}`"
         :style="{

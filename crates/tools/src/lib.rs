@@ -20,10 +20,12 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::Notify;
 
+pub mod pet;
 pub mod state;
 #[cfg(test)]
 mod tests;
 
+pub use pet::{is_pet_action, PetManager};
 pub use state::{
     parse_duration_ms, Clock, CounterState, FinishAction, StopwatchState, SystemClock, TimerState,
     ToolKind, ToolState,
@@ -423,5 +425,6 @@ pub fn input_declarations() -> Vec<(
             "#34495e",
             Some("custom-value"),
         ),
+        ("pet", "heart", "#1abc9c", Some("custom-value")),
     ]
 }

@@ -120,7 +120,7 @@ fn boards_sync() {
     // system media tiles (SMTC): the now-playing display tile is a List
     // over the pushed payload with the tap toggle, the seek slider reads
     // the pushed progress fraction
-    let media = &board.tiles[3];
+    let media = &board.tiles[4];
     assert_eq!(media.id, 22);
     assert_eq!(media.manifest.kind, WidgetKind::List);
     assert_eq!(media.manifest.interactions, vec![Interaction::Tap]);
@@ -128,7 +128,7 @@ fn boards_sync() {
         media.manifest.state.as_ref().unwrap().channel,
         "ext.media-now-playing"
     );
-    let seek = &board.tiles[4];
+    let seek = &board.tiles[5];
     assert_eq!(seek.id, 23);
     assert_eq!(seek.manifest.kind, WidgetKind::Slider);
     assert_eq!(
@@ -138,7 +138,7 @@ fn boards_sync() {
     // Discord per-member volume slider: the value rides the pushed
     // `user-volume_<uid>` fraction and the second channel carries the
     // "Name · 85%" label; the double-tap reset (0.5 = 100%) is declared
-    let member = &board.tiles[5];
+    let member = &board.tiles[6];
     assert_eq!(member.id, 41);
     assert_eq!(member.manifest.kind, WidgetKind::Slider);
     assert_eq!(
@@ -192,6 +192,23 @@ fn boards_sync() {
             Interaction::DoubleTap
         ]
     );
+    // the desk pet: global widget hint, one shared `pet` state channel
+    // (not per-id), and the same gesture triple as the counter
+    let pet = &board.tiles[3];
+    assert_eq!(pet.id, 31);
+    assert_eq!(pet.placement.w, 2);
+    assert_eq!(pet.placement.h, 2);
+    assert_eq!(pet.manifest.kind, WidgetKind::Button);
+    assert_eq!(pet.manifest.params["widget"], "pet");
+    assert_eq!(pet.manifest.state.as_ref().unwrap().channel, "ext.pet");
+    assert_eq!(
+        pet.manifest.interactions,
+        vec![
+            Interaction::Tap,
+            Interaction::DoubleTap,
+            Interaction::LongPress
+        ]
+    );
 }
 
 #[test]
@@ -240,6 +257,26 @@ fn state_sync() {
             "finished": false,
             "running": false,
             "startedAtMs": 0,
+        })
+    );
+    // the desk pet rides the same lane as a compact snapshot: the
+    // derived fields every surface renders plus the display label
+    assert_eq!(
+        sync.values["ext.pet"],
+        serde_json::json!({
+            "activity": "idle",
+            "ageMs": 93720000u64,
+            "clean": 95,
+            "food": 88,
+            "fun": 72,
+            "generations": 1,
+            "label": "Kot · Zadowolone",
+            "mood": "happy",
+            "poos": 0,
+            "rest": 64,
+            "sleeping": false,
+            "species": "cat",
+            "stage": "adult",
         })
     );
     assert_eq!(sync.series["ext.si-cpu-usage"], vec![0.1, 0.42, 0.44]);
