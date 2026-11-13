@@ -106,6 +106,8 @@ fun templateFor(tile: Tile): String = when {
     tile.widgetHint() == "tool-timer" -> "tool-timer"
     tile.widgetHint() == "tool-stopwatch" -> "tool-stopwatch"
     tile.widgetHint() == "tool-counter" -> "tool-counter"
+    // the desk pet is a wire "button" with params.widget == "pet"
+    tile.widgetHint() == "pet" -> "pet"
     tile.kind == V2.KIND_SLIDER -> "slider"
     tile.kind == V2.KIND_KNOB -> "knob"
     tile.kind == V2.KIND_GRAPH -> "graph"
@@ -298,6 +300,7 @@ fun Tile(
                 "tool-timer" -> ToolTimerTile(tile, liveElement, titleColor, onPress = onPressEnd, onGesture = onGesture)
                 "tool-stopwatch" -> ToolStopwatchTile(tile, liveElement, titleColor, onPress = onPressEnd, onGesture = onGesture)
                 "tool-counter" -> ToolCounterTile(tile, liveElement, titleColor, onPress = onPressEnd, onGesture = onGesture)
+                "pet" -> PetTile(tile, liveElement, titleColor, onPress = onPressEnd, onGesture = onGesture)
                 "slider" -> SliderTile(tile, color, icon, iconFamily, iconColor, liveValue, labelText, onSlider, onGesture)
                 "knob" -> KnobTile(tile, iconColor, titleColor, liveValue, onSlider, onGesture)
                 "graph" -> GraphTile(tile, series, liveText, channel, titleColor)

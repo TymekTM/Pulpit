@@ -104,7 +104,7 @@ class ProtoFixturesTest {
         val board = sync.boards[0]
         assertEquals(3L, board.id)
         assertEquals(Background.color("#2c3e50"), board.background)
-        assertEquals(6, board.tiles.size)
+        assertEquals(7, board.tiles.size)
 
         val button = board.tiles[0]
         assertEquals(17L, button.id)
@@ -170,16 +170,27 @@ class ProtoFixturesTest {
             tool.interactions,
         )
 
+        // the desk pet: global widget hint, one shared `pet` state
+        // channel (not per-id), same gesture triple as the counter
+        val pet = board.tiles[3]
+        assertEquals(31L, pet.id)
+        assertEquals("pet", pet.widgetHint())
+        assertEquals("ext.pet", pet.state!!.channel)
+        assertEquals(
+            listOf(V2.INT_TAP, V2.INT_DOUBLE_TAP, V2.INT_LONG_PRESS),
+            pet.interactions,
+        )
+
         // system media tiles (SMTC): the now-playing display tile is a
         // List over the pushed payload with the tap toggle, the seek
         // slider reads the pushed progress fraction
-        val media = board.tiles[3]
+        val media = board.tiles[4]
         assertEquals(22L, media.id)
         assertEquals(V2.KIND_LIST, media.kind)
         assertEquals(listOf(V2.INT_TAP), media.interactions)
         assertEquals("ext.media-now-playing", media.state!!.channel)
         assertEquals(V2.SHAPE_SCALAR, media.state!!.shape)
-        val seek = board.tiles[4]
+        val seek = board.tiles[5]
         assertEquals(23L, seek.id)
         assertEquals(V2.KIND_SLIDER, seek.kind)
         assertEquals("ext.media-progress", seek.state!!.channel)
@@ -187,7 +198,7 @@ class ProtoFixturesTest {
         // Discord per-member volume slider: the fraction rides the value
         // channel, the "Name · 85%" label the second text_state channel,
         // and the double-tap reset is declared alongside the slide
-        val member = board.tiles[5]
+        val member = board.tiles[6]
         assertEquals(41L, member.id)
         assertEquals(V2.KIND_SLIDER, member.kind)
         assertEquals(
@@ -234,6 +245,13 @@ class ProtoFixturesTest {
         val timer = sync.values["ext.tool-timer"]!!.jsonObject
         assertEquals(false, timer["running"]!!.jsonPrimitive.boolean)
         assertEquals(300000L, timer["durationMs"]!!.jsonPrimitive.long)
+        // the desk pet: compact snapshot with the derived fields plus
+        // the display label for plain-text rendering
+        val pet = sync.values["ext.pet"]!!.jsonObject
+        assertEquals("cat", pet["species"]!!.jsonPrimitive.content)
+        assertEquals("adult", pet["stage"]!!.jsonPrimitive.content)
+        assertEquals(false, pet["sleeping"]!!.jsonPrimitive.boolean)
+        assertEquals("Kot · Zadowolone", pet["label"]!!.jsonPrimitive.content)
         assertEquals(listOf(0.1, 0.42, 0.44), sync.series["ext.si-cpu-usage"])
     }
 
