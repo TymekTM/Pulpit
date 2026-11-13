@@ -151,6 +151,11 @@ impl Mapper {
         ) {
             return Some("custom-value".to_string());
         }
+        // the desk pet carries its global snapshot under the `pet` key,
+        // the same lane
+        if b.kind == "pet" {
+            return Some("custom-value".to_string());
+        }
         props.app.clone()
     }
 
@@ -190,6 +195,10 @@ impl Mapper {
             "tool-timer" | "tool-stopwatch" | "tool-counter"
         ) {
             extra = format!("tool-{}", b.id);
+        }
+        // the pet listens on the global `pet` key (not per button id)
+        if b.kind == "pet" {
+            extra = "pet".to_string();
         }
 
         let mut o = Map::new();
@@ -555,6 +564,17 @@ mod tests {
         let s = m.shortcut_payload(&button("tool-clock", None, 0, 0, 1, 1));
         assert_eq!(s["extra"], "");
         assert!(s.get("app").is_none());
+    }
+
+    #[test]
+    fn pet_tile_watches_the_global_pet_key() {
+        let m = Mapper::new();
+        let s = m.shortcut_payload(&button("pet", None, 0, 0, 1, 1));
+        // one global pet: the key is fixed `pet`, not per button id, and
+        // the stock client binds it through the app+extra pair like the
+        // tools
+        assert_eq!(s["extra"], "pet");
+        assert_eq!(s["app"], "custom-value");
     }
 
     #[test]

@@ -392,6 +392,13 @@ function onTypeChange() {
     if (entry.extInput.color && !form.color) form.color = entry.extInput.color;
   }
   if (entry?.mode) form.mode = entry.mode;
+  // creation-time default footprint (the desk pet wants 2x2); editing an
+  // existing tile never resizes it from a type change
+  if (props.create) {
+    const size = entry?.defaultSize || { w: 1, h: 1 };
+    form.w = size.w;
+    form.h = size.h;
+  }
   loadFields();
 }
 

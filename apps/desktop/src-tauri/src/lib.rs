@@ -60,6 +60,10 @@ struct DesktopState {
         std::sync::Mutex<Option<(std::time::Instant, Vec<pulpit_spotify::Playlist>)>>,
     #[allow(dead_code)]
     tools: Option<Arc<pulpit_tools::ToolManager>>,
+    /// The desk pet store: persists the webview-simulated snapshot and
+    /// relays it to every client (`pet` channel). The command handlers
+    /// only fetch/store - the rules live in the webview.
+    pet: Option<Arc<pulpit_tools::PetManager>>,
     /// Christmas-mode choice (`season` in editor.json). Sending a new
     /// mode makes the season producer push right away; the fallback
     /// launch has no producer, and `get_season` resolves directly.
@@ -241,6 +245,8 @@ pub fn run() {
             set_start_minimized,
             get_season,
             set_season,
+            get_pet,
+            set_pet,
             get_autostart,
             set_autostart,
             read_image_data,
@@ -443,6 +449,7 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
 
             spotify_playlists: std::sync::Mutex::new(None),
             tools: None,
+            pet: None,
             season,
         };
     }
@@ -518,6 +525,21 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
         }
     });
 
+    // The desk pet: the webview simulates, this store persists
+    // (~/pulpitApp/pet.json) and relays snapshots to every client; care
+    // gestures from tablets round-trip back into the webview as events.
+    let pet_path = data_dir.join("pet.json");
+    let (pet_change_tx, pet_rx) = tokio::sync::mpsc::unbounded_channel();
+    let pet = Arc::new(pulpit_tools::PetManager::new(pet_path, pet_change_tx));
+    let (pet_gesture_tx, mut pet_gesture_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    pet.set_gesture_sink(pet_gesture_tx);
+    let app_for_pet = app.clone();
+    tauri::async_runtime::spawn(async move {
+        while let Some(gesture) = pet_gesture_rx.recv().await {
+            let _ = app_for_pet.emit("pet-gesture", gesture);
+        }
+    });
+
     // Per-member Discord voice state (volume/label/mute keys): the
     // backend's keep-alive RPC actor pushes snapshots once connected.
     let (discord_push_tx, discord_push_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -532,6 +554,7 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
             .with_voicemeeter_override(pulpit_vm::load_dll_override(&settings))
             .with_spotify(spotify.clone())
             .with_tools(Some(tools.clone()))
+            .with_pet(Some(pet.clone()))
             .with_obs(Some(obs_handle.clone())),
     );
     let broadcaster = EditorBroadcaster::new(hub.clone(), backend.clone());
@@ -665,6 +688,7 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
         backend.clone() as Arc<dyn Backend>,
     ));
     tauri::async_runtime::spawn(pulpit_host::forward_producer(feed.clone(), tools_rx));
+    tauri::async_runtime::spawn(pulpit_host::forward_producer(feed.clone(), pet_rx));
     tauri::async_runtime::spawn(pulpit_host::forward_producer(feed.clone(), discord_push_rx));
     tauri::async_runtime::spawn(pulpit_host::forward_producer(
         feed.clone(),
@@ -826,6 +850,7 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
 
         spotify_playlists: std::sync::Mutex::new(None),
         tools: Some(tools),
+        pet: Some(pet),
         season,
     }
 }
@@ -3490,6 +3515,23 @@ async fn set_start_minimized(state: State<'_, DesktopState>, enable: bool) -> Re
         .to_string()
     })?;
     persist_editor_setting(path, "start_minimized", serde_json::json!(enable))
+}
+
+/// The desk pet: the last snapshot the webview simulation pushed (None
+/// before the first push - the webview then lays or migrates an egg).
+#[tauri::command]
+fn get_pet(state: State<'_, DesktopState>) -> Option<serde_json::Value> {
+    state.pet.as_ref().and_then(|pet| pet.get())
+}
+
+/// Store a fresh snapshot from the webview simulation: persisted to
+/// `~/pulpitApp/pet.json` and relayed to every connected client on the
+/// `pet` channel.
+#[tauri::command]
+fn set_pet(state: State<'_, DesktopState>, pet_state: serde_json::Value) {
+    if let Some(pet) = &state.pet {
+        pet.set(pet_state);
+    }
 }
 
 /// Christmas mode for the editor chrome: the stored choice and the

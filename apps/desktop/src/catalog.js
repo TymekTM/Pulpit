@@ -626,6 +626,19 @@ export const CATALOG = [
       { key: "label", label: "Label", placeholder: "Licznik" },
     ],
   },
+  // Desk pet (tamagotchi): the state lives on the server
+  // (`~/pulpitApp/pet.json`) like the tools above, but the simulation
+  // runs in the webview (src/tamagotchi.js) and pushes compact snapshots
+  // on the `pet` channel. One global pet - every pet tile on any board
+  // renders the same animal. Rendered per surface: PetTile.vue here,
+  // the pet branch in ui/Tile.kt on Android.
+  {
+    value: "pet",
+    label: "Desk pet",
+    icon: "heart",
+    color: "#1abc9c",
+    defaultSize: { w: 2, h: 2 },
+  },
   // Christmas mode (pulpit-season): days until Wigilia as a live text,
   // pushed as `season-countdown` all year round. The server registers it
   // as a custom-value input (like the Discord toggles), so every surface

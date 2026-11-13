@@ -104,6 +104,23 @@ describe("tamagotchi sleep", () => {
     expect(r.state.food).toBeGreaterThan(100 - RATES.food / 60);
   });
 
+  it("sleeps automatically when rest runs dry, wakes when rested", () => {
+    // the tile has no sleep button: a pet that hits rock bottom naps
+    // until fully rested, on its own
+    // rest just above the 5-point trigger, so the first 1-minute step
+    // crosses it
+    const s = baby(T0, { rest: 5.1 });
+    const asleep = advance(s, T0 + M, rng0);
+    expect(asleep.state.sleeping).toBe(true);
+    expect(asleep.events).toContain("sleep");
+    // no more drain of rest while asleep, clean paused (see its test)
+    const rested = advance(asleep.state, T0 + 3 * H, rng0);
+    expect(rested.state.sleeping).toBe(false);
+    expect(rested.events).toContain("wake");
+    // woke at a full battery, then kept draining awake for the rest
+    expect(rested.state.rest).toBeGreaterThan(95);
+  });
+
   it("pauses the clean drain while asleep", () => {
     // rest 0 keeps it asleep for the whole hour (a full recovery needs
     // almost three), so nothing can wake it mid-test
@@ -204,14 +221,6 @@ describe("tamagotchi actions", () => {
     expect(blockedReason(baby(T0, { rest: 5 }), "play", T0)).toBe("tired");
   });
 
-  it("pet has a cooldown", () => {
-    const s = baby(T0, { fun: 50 });
-    const once = applyAction(s, "pet", T0);
-    expect(once.state.fun).toBe(58);
-    expect(blockedReason(once.state, "pet", T0 + 1)).toBe("cooldown");
-    expect(blockedReason(once.state, "pet", T0 + 30_001)).toBeNull();
-  });
-
   it("clean sweeps the poos and shines", () => {
     const s = baby(T0, { poos: 2, clean: 40, fun: 50 });
     const r = applyAction(s, "clean", T0);
@@ -221,16 +230,15 @@ describe("tamagotchi actions", () => {
     expect(blockedReason(r.state, "clean", T0)).toBe("clean");
   });
 
-  it("sleep toggles both ways", () => {
-    const awake = baby(T0);
-    const asleep = applyAction(awake, "sleep", T0).state;
-    expect(asleep.sleeping).toBe(true);
-    expect(applyAction(asleep, "sleep", T0).state.sleeping).toBe(false);
+  it("manual sleep is gone: rest has to run out on its own", () => {
+    const awake = applyAction(baby(T0), "sleep", T0);
+    expect(awake.ok).toBe(false); // unknown action -> refused
+    expect(awake.state.sleeping).toBe(false);
   });
 
   it("the egg accepts no care at all", () => {
     const egg = createEgg(T0);
-    for (const name of ["feed", "play", "pet", "clean", "sleep"]) {
+    for (const name of ["feed", "play", "clean", "pet", "sleep"]) {
       expect(blockedReason(egg, name, T0 + M)).toBe("egg");
       expect(applyAction(egg, name, T0 + M).ok).toBe(false);
     }

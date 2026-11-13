@@ -5,6 +5,8 @@
 // offline stretch is the same simulation as an idle app (capped, so a
 // week of holiday cannot kill the pet - OFFLINE_MAX_MS of it counts).
 import { ref } from "vue";
+import { api } from "./api.js";
+import { t } from "./i18n.js";
 
 const H = 3_600_000;
 const M = 60_000;
@@ -46,7 +48,6 @@ export const OFFLINE_MAX_MS = 18 * H;
 const POO_MIN_MS = 45 * M;
 const POO_MAX_MS = 90 * M;
 export const MAX_POOS = 3;
-export const PET_COOLDOWN_MS = 30_000;
 
 const KEY = "pulpit_tamagotchi_v1";
 
@@ -99,7 +100,6 @@ export function createEgg(now = Date.now(), generations = 1, bestAgeMs = 0, spec
     neglectMs: 0,
     generations,
     bestAgeMs,
-    lastPetAt: 0,
     cares: 0,
   };
 }
@@ -148,6 +148,29 @@ export function spriteProps(s, now = Date.now()) {
   };
 }
 
+/// The compact object pushed to the server (channel `ext.pet`): the
+/// derived fields every surface renders without reimplementing rules,
+/// plus a display `label` the legacy lane shows as plain text.
+export function pushState(s, now = Date.now()) {
+  const p = spriteProps(s, now);
+  const moodKey = p.stage === "dead" ? MOOD_LABEL_KEYS.dead : MOOD_LABEL_KEYS[p.mood];
+  return {
+    species: p.species,
+    stage: p.stage,
+    mood: p.mood,
+    activity: p.activity,
+    poos: p.poos,
+    sleeping: !!s.sleeping,
+    food: Math.round(s.food),
+    fun: Math.round(s.fun),
+    rest: Math.round(s.rest),
+    clean: Math.round(s.clean),
+    ageMs: ageOf(s, now),
+    generations: s.generations,
+    label: `${t(SPECIES_LABEL_KEYS[p.species])} · ${t(moodKey)}`,
+  };
+}
+
 /// Run the simulation from `state.lastTick` to `now`. Returns a new
 /// state (the input is never mutated) plus the events crossed, oldest
 /// first: "hatch", "grow", "poo", "wake", "die". With `opts.offline`
@@ -186,6 +209,12 @@ export function advance(state, now, rng = Math.random, opts = {}) {
       s.fun = Math.max(0, s.fun - (RATES.fun * dt) / H);
       s.rest = Math.max(0, s.rest - (RATES.rest * dt) / H);
       s.clean = Math.max(0, s.clean - ((RATES.clean + s.poos * RATES.cleanPerPoo) * dt) / H);
+      // sleep is automatic: a pet runs itself into the ground, then naps
+      // until fully rested (the tile has no sleep button)
+      if (s.rest <= 5) {
+        s.sleeping = true;
+        events.push("sleep");
+      }
     }
 
     if (t >= s.nextPooAt) {
@@ -218,7 +247,7 @@ export function advance(state, now, rng = Math.random, opts = {}) {
 }
 
 /// Why a button is unavailable, or null when it is not. `newEgg` has no
-/// blocked state: the panel only offers it on a dead pet anyway.
+/// blocked state: the tile only offers it on a dead pet anyway.
 export function blockedReason(s, name, now = Date.now()) {
   if (name === "newEgg") return null;
   const phase = phaseOf(s, now);
@@ -232,14 +261,8 @@ export function blockedReason(s, name, now = Date.now()) {
       if (s.food <= 8) return "hungry";
       if (s.rest <= 8) return "tired";
       return null;
-    case "pet":
-      if (s.sleeping) return "asleep";
-      if (now - s.lastPetAt < PET_COOLDOWN_MS) return "cooldown";
-      return null;
     case "clean":
       return s.clean >= 100 && s.poos === 0 ? "clean" : null;
-    case "sleep":
-      return null; // the toggle goes both ways
     default:
       return "unknown";
   }
@@ -269,19 +292,11 @@ export function applyAction(state, name, now = Date.now(), rng = Math.random) {
       s.rest = Math.max(0, s.rest - 8);
       s.cares += 1;
       break;
-    case "pet":
-      s.fun = Math.min(100, s.fun + 8);
-      s.lastPetAt = now;
-      s.cares += 1;
-      break;
     case "clean":
       s.poos = 0;
       s.clean = 100;
       s.fun = Math.min(100, s.fun + 4);
       s.cares += 1;
-      break;
-    case "sleep":
-      s.sleeping = !s.sleeping;
       break;
   }
   return { state: s, ok: true };
@@ -308,7 +323,6 @@ function sanitize(v) {
     neglectMs: Math.max(0, +v.neglectMs || 0),
     generations: Math.max(1, Math.floor(+v.generations || 1)),
     bestAgeMs: Math.max(0, +v.bestAgeMs || 0),
-    lastPetAt: Number.isFinite(v.lastPetAt) ? v.lastPetAt : 0,
     cares: Math.max(0, Math.floor(+v.cares || 0)),
   };
 }
@@ -352,22 +366,47 @@ export function initPet(now = Date.now()) {
 
 // ---- reactive shell -----------------------------------------------------
 //
-// Module-level singleton (the season theme's pattern): the sidebar
-// button and the panel share one pet without prop drilling.
+// Module-level singleton: the board's pet tiles and any desktop surface
+// share one pet. The server (`~/pulpitApp/pet.json`, set through
+// `api.getPet`/`api.setPet`) is the source of truth so the tablet sees
+// the same animal; localStorage is only a one-time migration source for
+// installs that had the old desktop-only pet.
 
 export const pet = ref(null);
-/// Newest last; the panel keeps an index of what it has shown.
+/// Newest last; consumers keep an index of what they have shown.
 export const petEvents = ref([]);
 
 let petTimer = null;
-let ticksSinceSave = 0;
+let ticksSincePush = 0;
 
-export function startPet(now = Date.now()) {
+/// Load the server state (or migrate/create), advance it to `now`, start
+/// the 1 s tick. Safe to call when the backend is down: the pet then
+/// lives on localStorage pushes that silently fail.
+export async function startPet(now = Date.now()) {
   stopPet();
-  const { state, events } = initPet(now);
+  let stored = null;
+  try {
+    stored = await api.getPet();
+  } catch {
+    // no backend: keep the pet in the webview only
+  }
+  let s = stored ? sanitize(stored) : null;
+  if (!s) {
+    // first run on this install: adopt the pre-tile desktop pet once
+    const migrated = loadPet();
+    if (migrated) {
+      s = sanitize(migrated);
+      try {
+        localStorage.removeItem(KEY);
+      } catch {}
+    } else {
+      s = createEgg(now);
+    }
+  }
+  const { state, events } = advance(s, now);
   pet.value = state;
   pushEvents(events);
-  savePet(state);
+  pushToServer(state, now);
   petTimer = setInterval(tickPet, TICK_MS);
   return state;
 }
@@ -380,29 +419,43 @@ export function stopPet() {
 }
 
 function tickPet() {
-  const { state, events } = advance(pet.value, Date.now());
+  const now = Date.now();
+  const { state, events } = advance(pet.value, now);
   pet.value = state;
-  if (events.length) pushEvents(events);
-  // events always persist at once; the routine drain every ~15 s is
-  // cheap to redo from lastTick if the app dies in between
-  if (events.length || ++ticksSinceSave >= 15) {
-    ticksSinceSave = 0;
-    savePet(state);
+  if (events.length) {
+    pushEvents(events);
+    pushToServer(state, now);
+    ticksSincePush = 0;
+    return;
+  }
+  // the routine drain reaches tablets on a budget: stat bars do not
+  // need 1 Hz, events (hatch/poo/sleep/die) always push at once
+  if (++ticksSincePush >= 15) {
+    ticksSincePush = 0;
+    pushToServer(state, now);
   }
 }
 
-/// A button press from the UI. Applies, stores, returns the result.
+function pushToServer(state, now) {
+  api.setPet(pushState(state, now)).catch(() => {
+    // backend down: the local pet keeps living, the tablet keeps the
+    // last pushed frame
+  });
+}
+
+/// A care action from any surface (tile gesture round-trips through the
+/// backend as a `pet-gesture` event; desktop tiles can also call this
+/// directly). Applies, pushes to the server.
 export function petDo(name, now = Date.now()) {
   const r = applyAction(pet.value, name, now);
   if (r.ok) {
     pet.value = r.state;
-    savePet(r.state);
+    pushToServer(r.state, now);
   }
   return r;
 }
 
 function pushEvents(list) {
-  // append-only: the panel tracks what it has shown by index, so the
-  // queue must never be compacted from the front
+  // append-only: consumers track what they have shown by index
   petEvents.value = [...petEvents.value, ...list];
 }
