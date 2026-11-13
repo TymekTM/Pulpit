@@ -177,6 +177,33 @@ describe("GridEditor edit-mode interaction", () => {
     expect(w.emitted("tile-moved")).toBeUndefined();
   });
 
+  it("refuses a single-tile move onto an occupied cell", async () => {
+    const w = mountGrid([tile(1, 0, 0), tile(2, 1, 0)]);
+    await tileOf(w, 1).trigger("pointerdown", { button: 0, clientX: 0, clientY: 0 });
+    pointer("pointermove", { clientX: 96, clientY: 0 });
+    pointer("pointerup", {});
+    expect(w.emitted("tile-moved")).toBeUndefined();
+    expect(w.emitted("move-refused")[0][0]).toBe("Cannot move: tiles would overlap other tiles");
+  });
+
+  it("still moves a single tile to a free cell next to other tiles", async () => {
+    const w = mountGrid([tile(1, 0, 0), tile(2, 3, 0)]);
+    await tileOf(w, 1).trigger("pointerdown", { button: 0, clientX: 0, clientY: 0 });
+    pointer("pointermove", { clientX: 96, clientY: 0 });
+    pointer("pointerup", {});
+    expect(w.emitted("tile-moved")[0].slice(1)).toEqual([1, 0, 1, 1]);
+    expect(w.emitted("move-refused")).toBeUndefined();
+  });
+
+  it("refuses a resize onto another tile", async () => {
+    const w = mountGrid([tile(1, 0, 0), tile(2, 2, 0)]);
+    await slot(w, 1).find(".resize-handle").trigger("pointerdown", { button: 0, clientX: 0, clientY: 0 });
+    pointer("pointermove", { clientX: 96 * 2, clientY: 0 });
+    pointer("pointerup", {});
+    expect(w.emitted("tile-moved")).toBeUndefined();
+    expect(w.emitted("move-refused")[0][0]).toBe("Cannot resize: tile would overlap another tile");
+  });
+
   it("ignores right-button drags", async () => {
     const w = mountGrid([tile(1, 0, 0)]);
     await tileOf(w, 1).trigger("pointerdown", { button: 2, clientX: 0, clientY: 0 });
