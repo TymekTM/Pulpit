@@ -60,9 +60,8 @@ struct DesktopState {
         std::sync::Mutex<Option<(std::time::Instant, Vec<pulpit_spotify::Playlist>)>>,
     #[allow(dead_code)]
     tools: Option<Arc<pulpit_tools::ToolManager>>,
-    /// The desk pet store: persists the webview-simulated snapshot and
-    /// relays it to every client (`pet` channel). The command handlers
-    /// only fetch/store - the rules live in the webview.
+    /// The desk pet: simulation, persistence and relay (`pet` channel).
+    /// The webview only renders it.
     pet: Option<Arc<pulpit_tools::PetManager>>,
     /// Christmas-mode choice (`season` in editor.json). Sending a new
     /// mode makes the season producer push right away; the fallback
@@ -246,7 +245,7 @@ pub fn run() {
             get_season,
             set_season,
             get_pet,
-            set_pet,
+            adopt_pet,
             get_autostart,
             set_autostart,
             read_image_data,
@@ -525,20 +524,11 @@ fn setup_core(app: tauri::AppHandle) -> DesktopState {
         }
     });
 
-    // The desk pet: the webview simulates, this store persists
-    // (~/pulpitApp/pet.json) and relays snapshots to every client; care
-    // gestures from tablets round-trip back into the webview as events.
-    let pet_path = data_dir.join("pet.json");
-    let (pet_change_tx, pet_rx) = tokio::sync::mpsc::unbounded_channel();
-    let pet = Arc::new(pulpit_tools::PetManager::new(pet_path, pet_change_tx));
-    let (pet_gesture_tx, mut pet_gesture_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    pet.set_gesture_sink(pet_gesture_tx);
-    let app_for_pet = app.clone();
-    tauri::async_runtime::spawn(async move {
-        while let Some(gesture) = pet_gesture_rx.recv().await {
-            let _ = app_for_pet.emit("pet-gesture", gesture);
-        }
-    });
+    // The desk pet: simulated here, in the backend (not the webview), so
+    // it keeps living with the editor window closed; persisted to
+    // ~/pulpitApp/pet.json and relayed to every client, the editor's own
+    // pet tiles included.
+    let (pet, pet_rx) = pulpit_tools::spawn_pet(data_dir.join("pet.json"));
 
     // Per-member Discord voice state (volume/label/mute keys): the
     // backend's keep-alive RPC actor pushes snapshots once connected.
@@ -3517,21 +3507,19 @@ async fn set_start_minimized(state: State<'_, DesktopState>, enable: bool) -> Re
     persist_editor_setting(path, "start_minimized", serde_json::json!(enable))
 }
 
-/// The desk pet: the last snapshot the webview simulation pushed (None
-/// before the first push - the webview then lays or migrates an egg).
+/// The desk pet: the current snapshot, for the editor's first paint
+/// (later changes arrive as `pet` custom values like on every client).
 #[tauri::command]
 fn get_pet(state: State<'_, DesktopState>) -> Option<serde_json::Value> {
     state.pet.as_ref().and_then(|pet| pet.get())
 }
 
-/// Store a fresh snapshot from the webview simulation: persisted to
-/// `~/pulpitApp/pet.json` and relayed to every connected client on the
-/// `pet` channel.
+/// One-time move of a pre-1.11.1 desktop pet (simulated in the webview
+/// and saved to its localStorage) into the backend. Taken only while the
+/// backend pet is a fresh, uncared-for egg; returns whether it was.
 #[tauri::command]
-fn set_pet(state: State<'_, DesktopState>, pet_state: serde_json::Value) {
-    if let Some(pet) = &state.pet {
-        pet.set(pet_state);
-    }
+fn adopt_pet(state: State<'_, DesktopState>, saved: serde_json::Value) -> bool {
+    state.pet.as_ref().is_some_and(|pet| pet.adopt(&saved))
 }
 
 /// Christmas mode for the editor chrome: the stored choice and the

@@ -318,6 +318,16 @@ describe("App boards and tiles", () => {
     expect(w.vm.flash).toBe("Creating the tile failed: board full");
   });
 
+  it("paints the backend pet snapshot before the first push", async () => {
+    seed();
+    handle("get_pet", () => ({ species: "cat", stage: "baby", label: "Cat · Content" }));
+    const w = await mountApp();
+    await flushPromises();
+    expect(w.vm.customValues.pet).toMatchObject({ species: "cat", stage: "baby" });
+    // the webview never simulates or writes the pet any more
+    expect(calls.some((c) => c.cmd === "set_pet")).toBe(false);
+  });
+
   it("deletes a tile only after confirmation", async () => {
     seed();
     dialog.ask.mockResolvedValueOnce(false);

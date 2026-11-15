@@ -117,11 +117,9 @@ async fn main() -> anyhow::Result<()> {
     let (tools_board_tx, mut tools_board_rx) = tokio::sync::mpsc::unbounded_channel::<i64>();
     tools.set_board_sink(tools_board_tx);
 
-    // The desk pet store: relays the snapshot the desktop webview pushes
-    // (a headless server has no simulator, so gestures forward nowhere).
-    let pet_path = data_dir.join("pet.json");
-    let (pet_change_tx, pet_rx) = tokio::sync::mpsc::unbounded_channel();
-    let pet = std::sync::Arc::new(pulpit_tools::PetManager::new(pet_path, pet_change_tx));
+    // The desk pet: simulated server-side, so it lives (and answers
+    // tablet care gestures) with no desktop editor around.
+    let (pet, pet_rx) = pulpit_tools::spawn_pet(data_dir.join("pet.json"));
 
     // OBS: the same `obs.json` the desktop writes. `PULPIT_OBS_CONFIG`
     // overrides the location (hermetic runs). A disabled config parks

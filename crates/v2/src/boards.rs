@@ -353,7 +353,7 @@ fn widget_kind_for(
         ),
         // the desk pet: the snapshot arrives on the global `pet` channel;
         // tap feeds, double-tap plays, long-press cleans (or lays a new
-        // egg on a dead pet - the webview decides)
+        // egg on a dead pet - the backend pet decides)
         _ if row.kind == "pet" => (
             WidgetKind::Button,
             vec![
