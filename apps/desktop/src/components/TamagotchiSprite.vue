@@ -11,6 +11,9 @@
 //   species  blob | cat | frog | chick | axolotl      (unknown values -> blob)
 //            shapes the body (ears / gills / wings / tail) and face details;
 //            eggs are tinted with the species accent, the ghost's halo too.
+//
+// The Android client draws this same sprite natively from a port of the
+// paths, colors and keyframes (apps/mobile .../ui/PetSprite.kt): change both.
 import { computed } from "vue";
 
 const props = defineProps({
