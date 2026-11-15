@@ -283,7 +283,7 @@ describe("App boards and tiles", () => {
     expect(w.vm.flash).toContain("Moving the tile failed");
   });
 
-  it("creates a tile in two steps and reopens it for editing", async () => {
+  it("creates a tile in two steps and closes the dialog", async () => {
     seed();
     let created = false;
     handle("create_button", () => {
@@ -301,7 +301,8 @@ describe("App boards and tiles", () => {
     expect(cmds("create_button")[0].args).toEqual({ boardId: 1, kind: "url", mode: "button", x: 1, y: 1 });
     expect(cmds("update_button")[0].args.button).toMatchObject({ id: 99, board_id: 1, command: "https://x", w: 1, h: 1 });
     expect(w.vm.createFlow).toBeNull();
-    expect(w.vm.editingTile.id).toBe(99);
+    // Save finishes the flow - no second (edit) dialog for the new tile
+    expect(w.vm.editingTile).toBeNull();
   });
 
   it("keeps the create dialog open when creation fails", async () => {
@@ -331,6 +332,19 @@ describe("App boards and tiles", () => {
       kind: "warning",
     });
     expect(cmds("delete_button")[0].args).toEqual({ id: 11, boardId: 1 });
+  });
+
+  it("deletes a tile from the edit dialog's Delete button", async () => {
+    seed();
+    const w = await mountApp();
+    w.vm.editingTile = w.vm.boards[0].buttons[0];
+    await flushPromises();
+    const del = w.findAll(".modal-actions button, button").find((b) => b.text().trim() === "Delete");
+    await del.trigger("click");
+    await flushPromises();
+    expect(dialog.ask).toHaveBeenLastCalledWith('Delete tile "t11"?', expect.anything());
+    expect(cmds("delete_button")[0].args).toEqual({ id: 11, boardId: 1 });
+    expect(w.vm.editingTile).toBeNull();
   });
 
   it("saves an edited tile and closes the dialog", async () => {

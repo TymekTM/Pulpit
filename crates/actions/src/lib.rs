@@ -534,17 +534,33 @@ fn split_args(raw: &str) -> Vec<String> {
     args
 }
 
+/// Program arguments carried by an `app`/`file` tile's options column.
+/// The same column also holds the tile's JSON settings (`gestures`,
+/// `gesture_actions`, ...) - a JSON object there is tile metadata, never
+/// argv: passing it through launched the program with the whole gesture
+/// config as its argument. The editor refuses to mix the two, so an
+/// object means "no arguments".
+fn open_args(options: Option<&str>) -> Option<Vec<String>> {
+    let raw = options?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.starts_with('{')
+        && serde_json::from_str::<serde_json::Value>(raw).is_ok_and(|v| v.is_object())
+    {
+        return None;
+    }
+    Some(split_args(raw))
+}
+
 fn run_open_file(input: &mut dyn Input, cmd: &Command) -> Result<()> {
     let path = cmd.command.as_deref().unwrap_or_default();
     if path.is_empty() {
         return Ok(());
     }
-    match &cmd.options {
-        Some(opts) if !opts.trim().is_empty() => {
-            let args = split_args(opts);
-            input.spawn(path, &args)
-        }
-        _ => input.open_url(path),
+    match open_args(cmd.options.as_deref()) {
+        Some(args) => input.spawn(path, &args),
+        None => input.open_url(path),
     }
 }
 
@@ -1145,6 +1161,42 @@ mod tests {
             vec![Effect::Spawn(
                 "C:\\Program Files\\tool.exe".into(),
                 vec!["--msg".to_string(), "hello world".to_string()],
+            )]
+        );
+    }
+
+    #[test]
+    fn open_ignores_tile_settings_json_in_options() {
+        // an app tile with a hold gesture: the options column carries the
+        // gesture JSON, which must not become the program's argv
+        let mut input = MockInput::default();
+        let mut sink = MockSink::default();
+        let c = Command::from_row(
+            "app",
+            Some("C:\\tools\\rift.cmd"),
+            Some(
+                r#"{"gestures":["long-press"],"gesture_actions":{"long-press":{"type":"app","command":"C:\\tools\\rift.cmd"}}}"#,
+            ),
+            "button",
+        );
+        run_command(&mut input, &mut sink, &c, false).unwrap();
+        assert_eq!(
+            input.effects,
+            vec![Effect::OpenUrl("C:\\tools\\rift.cmd".into())]
+        );
+    }
+
+    #[test]
+    fn open_keeps_brace_arguments_that_are_not_json_objects() {
+        let mut input = MockInput::default();
+        let mut sink = MockSink::default();
+        let c = Command::from_row("app", Some("tool.exe"), Some("{x} --flag"), "button");
+        run_command(&mut input, &mut sink, &c, false).unwrap();
+        assert_eq!(
+            input.effects,
+            vec![Effect::Spawn(
+                "tool.exe".into(),
+                vec!["{x}".to_string(), "--flag".to_string()],
             )]
         );
     }

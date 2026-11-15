@@ -114,6 +114,8 @@ describe("EditTileModal basics", () => {
     await button(w, "Delete").trigger("click");
     await button(w, "Cancel").trigger("click");
     expect(w.emitted("delete")).toHaveLength(1);
+    // the tile rides the event: App's tileDeleted reads its title/id
+    expect(w.emitted("delete")[0][0]).toMatchObject({ id: 10 });
     expect(w.emitted("close")).toHaveLength(1);
   });
 
