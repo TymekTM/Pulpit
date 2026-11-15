@@ -1174,11 +1174,16 @@ mod tests {
         let c = Command::from_row(
             "app",
             Some("C:\\tools\\rift.cmd"),
-            Some(r#"{"gestures":["long-press"],"gesture_actions":{"long-press":{"type":"app","command":"C:\\tools\\rift.cmd"}}}"#),
+            Some(
+                r#"{"gestures":["long-press"],"gesture_actions":{"long-press":{"type":"app","command":"C:\\tools\\rift.cmd"}}}"#,
+            ),
             "button",
         );
         run_command(&mut input, &mut sink, &c, false).unwrap();
-        assert_eq!(input.effects, vec![Effect::OpenUrl("C:\\tools\\rift.cmd".into())]);
+        assert_eq!(
+            input.effects,
+            vec![Effect::OpenUrl("C:\\tools\\rift.cmd".into())]
+        );
     }
 
     #[test]
