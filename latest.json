@@ -1,7 +1,7 @@
 {
-  "sha256": "84900ce3bd45c3d75a27cc48f44b13076c3b7b00fc497c2607b9f13a29fdeedf",
-  "version": "1.9.0",
-  "url": "https://github.com/TymekTM/Pulpit/releases/download/v1.9.0/pulpit-desktop-1.9.0.exe",
-  "apk_sha256": "967db512c9f3fa561c5ce1c75f5a9b941a66273d7f01442dd945dd4cf7b4eab1",
-  "apk_url": "https://github.com/TymekTM/Pulpit/releases/download/v1.9.0/pulpit-1.9.0.apk"
+  "sha256": "6bbeed80756f1eb08ce5080c118065b45ab7a2163e3a73388d907853f8f13edd",
+  "version": "1.11.0",
+  "url": "https://github.com/TymekTM/Pulpit/releases/download/v1.11.0/pulpit-desktop-1.11.0.exe",
+  "apk_sha256": "84bd5f7b85a2c5c13ce63f8a5eae04e0ee84cb8d4235e142bb2cb5419da8fb19",
+  "apk_url": "https://github.com/TymekTM/Pulpit/releases/download/v1.11.0/pulpit-1.11.0.apk"
 }
