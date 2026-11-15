@@ -797,9 +797,10 @@ async function pickImage(field) {
 // ---- save / delete ---------------------------------------------------------
 
 // the delete confirmation lives in App.vue's tileDeleted (012 A9), the
-// single choke point for both this dialog and the context menu
+// single choke point for both this dialog and the context menu; it needs
+// the tile itself (title for the prompt, id + board for the delete)
 function removeTile() {
-  emit("delete");
+  emit("delete", props.button);
 }
 
 // ---- dirty guard -----------------------------------------------------------

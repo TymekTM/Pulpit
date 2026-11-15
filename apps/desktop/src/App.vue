@@ -1097,12 +1097,10 @@ async function tileCreated(form) {
     await api.updateButton(fullTile);
     history.push(tileCreateCommand({ tileSnapshot: fullTile, boardId: board.id }));
     updateHistoryFlags();
+    // the dialog is done: Save closes it, it does not reopen the new
+    // tile in the edit dialog
     createFlow.value = null;
     await loadBoards();
-    const tile = boards.value
-      .find((b) => b.id === board.id)
-      ?.buttons.find((b) => b.id === id);
-    if (tile) editingTile.value = tile;
   } catch (e) {
     // keep the dialog open with the entered values on a failed save
     flashError(t("Creating the tile failed"), e);
