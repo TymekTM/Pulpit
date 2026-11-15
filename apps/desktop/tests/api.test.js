@@ -31,7 +31,7 @@ describe("api", () => {
     ["getSeason", [], "get_season", undefined],
     ["setSeason", ["on"], "set_season", { mode: "on" }],
     ["getPet", [], "get_pet", undefined],
-    ["setPet", [{ label: "Kot" }], "set_pet", { petState: { label: "Kot" } }],
+    ["adoptPet", [{ created: 1 }], "adopt_pet", { saved: { created: 1 } }],
     ["readImageData", ["C:/a.png"], "read_image_data", { path: "C:/a.png" }],
     ["listKnownInputs", [], "list_known_inputs", undefined],
     ["listLanAddresses", [], "list_lan_addresses", undefined],

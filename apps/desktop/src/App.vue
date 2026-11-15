@@ -15,7 +15,7 @@ import ConfirmDialog from "./components/ConfirmDialog.vue";
 import SeasonAmbient from "./components/season/SeasonAmbient.vue";
 import SeasonBurst from "./components/season/SeasonBurst.vue";
 import { applySeason, season, seasonOn } from "./season.js";
-import { pet, petDo, startPet, stopPet } from "./tamagotchi";
+import { adoptLegacyPet } from "./tamagotchi";
 import {
   Ellipsis,
   Eraser,
@@ -1279,8 +1279,15 @@ function resetZoom() {
 
 let unlisteners = [];
 onMounted(async () => {
-  // the desk pet starts ticking with the editor (and stops with it)
-  startPet();
+  // the desk pet lives in the backend: move a pre-1.11.1 localStorage pet
+  // there once, then paint the current snapshot until the first push
+  adoptLegacyPet()
+    .catch(() => false)
+    .then(() => api.getPet())
+    .then((snapshot) => {
+      if (snapshot && customValues.pet === undefined) customValues.pet = snapshot;
+    })
+    .catch(() => {});
   // listeners register BEFORE the initial load (012 lower-priority): a
   // rejected load must not leave the app deaf to tray/hotkey/board events
   unlisteners.push(
@@ -1289,17 +1296,7 @@ onMounted(async () => {
       touchBoardId.value = e.payload;
       if (!touchMode.value) currentId.value = e.payload;
     }),
-    await listen("app-status-update", (e) => onStatusUpdate(e.payload)),
-    // pet care gestures round-trip through the backend (tablet taps and
-    // touch-mode gestures both arrive here): tap = feed, double-tap =
-    // play, long-press = clean - or a new egg on a dead pet
-    await listen("pet-gesture", (e) => {
-      const action =
-        e.payload === "long-press" && pet.value?.diedAt != null
-          ? "newEgg"
-          : { tap: "feed", "double-tap": "play", "long-press": "clean" }[e.payload];
-      if (action) petDo(action);
-    })
+    await listen("app-status-update", (e) => onStatusUpdate(e.payload))
   );
   // the context menu closes on any click outside of it, or on Escape
   window.addEventListener("mousedown", onGlobalMousedown, true);
@@ -1328,7 +1325,6 @@ onUnmounted(() => {
   document.removeEventListener("visibilitychange", onVisibilityChange);
   unlisteners.forEach((f) => f());
   canvasObserver?.disconnect();
-  stopPet();
 });
 
 

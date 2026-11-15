@@ -25,7 +25,7 @@ pub mod state;
 #[cfg(test)]
 mod tests;
 
-pub use pet::{is_pet_action, PetManager};
+pub use pet::{is_pet_action, spawn_pet, PetManager};
 pub use state::{
     parse_duration_ms, Clock, CounterState, FinishAction, StopwatchState, SystemClock, TimerState,
     ToolKind, ToolState,

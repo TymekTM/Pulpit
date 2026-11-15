@@ -21,6 +21,16 @@ val workspaceVersionCode: Int =
     workspaceVersion.split(".").map { it.toInt() }
         .let { (major, minor, patch) -> major * 10_000 + minor * 100 + patch }
 
+// Release signing key. The tablet only takes an update signed with the
+// key already installed on it, so the release workflow restores that key
+// from a secret and names it here (PULPIT_KEYSTORE). An explicit config,
+// not the implicit ~/.android/debug.keystore: CI builds that relied on the
+// implicit path ignored the restored file and signed every release with a
+// freshly generated key, so no update ever installed over the previous
+// one. A missing or wrong file fails the build. Without the variable
+// (local builds) the release type signs with the local debug key.
+val deckKeystore: String? = System.getenv("PULPIT_KEYSTORE")?.takeIf { it.isNotBlank() }
+
 android {
     namespace = "app.pulpit.mobile"
     compileSdk = 34
@@ -34,14 +44,26 @@ android {
         versionName = workspaceVersion
     }
 
+    signingConfigs {
+        if (deckKeystore != null) {
+            create("deck") {
+                storeFile = file(deckKeystore)
+                storePassword = System.getenv("PULPIT_KEYSTORE_PASSWORD") ?: "android"
+                keyAlias = System.getenv("PULPIT_KEY_ALIAS") ?: "androiddebugkey"
+                keyPassword = System.getenv("PULPIT_KEY_PASSWORD") ?: "android"
+            }
+        }
+    }
+
     buildTypes {
         release {
             // R8: kotlinx-serialization and OkHttp ship their consumer
-            // keep rules; the debug signing config lets this install
-            // straight over the debug build on the deck tablet.
+            // keep rules. Signed with the deck key in CI (see
+            // deckKeystore above), the local debug key otherwise, so a
+            // local release build installs over a local debug build.
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (deckKeystore != null) "deck" else "debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
     }

@@ -9,8 +9,8 @@ import TamagotchiSprite from "../TamagotchiSprite.vue";
 // from the pushed fields, so no surface reimplements the rules. Gestures
 // in touch mode round-trip through the backend like the tool tiles
 // (tap = feed, double-tap = play, long-press = clean, and on a dead pet
-// long-press lays a new egg); the backend forwards them as the
-// `pet-gesture` event and the webview applies them to the simulation.
+// long-press lays a new egg); the backend simulates the pet and applies
+// them, then pushes the next snapshot.
 const props = defineProps({
   tile: { type: Object, required: true },
   // last compact snapshot from the server; null = nothing pushed yet

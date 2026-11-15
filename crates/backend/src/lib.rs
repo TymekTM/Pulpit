@@ -57,8 +57,8 @@ pub struct SqlBackend {
     http_last_error: std::sync::Mutex<Option<String>>,
     custom_values: std::sync::Mutex<std::collections::HashMap<String, String>>,
     tools: Option<std::sync::Arc<pulpit_tools::ToolManager>>,
-    /// The desk pet store (see pulpit_tools::pet): persists and relays
-    /// the webview-simulated snapshot, forwards care gestures back.
+    /// The desk pet (see pulpit_tools::pet): simulated, persisted and
+    /// relayed there; tile presses and gestures become care actions.
     pet: Option<std::sync::Arc<pulpit_tools::PetManager>>,
     /// Kinds already greeted with the one "not available in Pulpit"
     /// warning this run (SLOBS / XSplit / Twitch): the warning is per
@@ -483,8 +483,8 @@ impl Backend for SqlBackend {
             &button.mode,
         );
         if pulpit_tools::is_pet_action(&cmd.kind) {
-            // the pet simulates in the webview: forward the gesture, the
-            // next snapshot comes back through set_pet
+            // the pet simulates in the backend: the gesture is a care
+            // action, the next snapshot goes out on the `pet` channel
             if let Some(pet) = &self.pet {
                 pet.gesture(gesture);
             }

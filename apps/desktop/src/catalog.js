@@ -626,10 +626,9 @@ export const CATALOG = [
       { key: "label", label: "Label", placeholder: "Licznik" },
     ],
   },
-  // Desk pet (tamagotchi): the state lives on the server
-  // (`~/pulpitApp/pet.json`) like the tools above, but the simulation
-  // runs in the webview (src/tamagotchi.js) and pushes compact snapshots
-  // on the `pet` channel. One global pet - every pet tile on any board
+  // Desk pet (tamagotchi): simulated and stored on the server
+  // (crates/tools/src/pet.rs, `~/pulpitApp/pet.json`) like the tools
+  // above, pushed as compact snapshots on the `pet` channel. One global pet - every pet tile on any board
   // renders the same animal. Rendered per surface: PetTile.vue here,
   // the pet branch in ui/Tile.kt on Android.
   {
