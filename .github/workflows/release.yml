@@ -56,16 +56,49 @@ jobs:
         with:
           packages: 'platforms;android-34 build-tools;34.0.0'
 
+      # The key goes to an explicit path the Gradle build reads from
+      # PULPIT_KEYSTORE. Restoring it to ~/.android/debug.keystore was
+      # ignored: Gradle generated a fresh debug key on every run, so each
+      # release carried a different signature and the tablet refused
+      # every update (INSTALL_FAILED_UPDATE_INCOMPATIBLE).
       - name: Restore the signing key
         if: steps.flag.outputs.built == 'true'
         run: |
-          mkdir -p ~/.android
-          echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+          keystore="$RUNNER_TEMP/deck.keystore"
+          echo "$KEYSTORE_B64" | base64 -d > "$keystore"
+          echo "PULPIT_KEYSTORE=$keystore" >> "$GITHUB_ENV"
+          # fails here when the secret is not a debug keystore
+          keytool -list -keystore "$keystore" -storepass android -alias androiddebugkey > /dev/null
+          want=$(keytool -exportcert -keystore "$keystore" -storepass android -alias androiddebugkey | sha256sum | cut -d' ' -f1)
+          echo "DECK_CERT_SHA256=$want" >> "$GITHUB_ENV"
+          echo "deck signing certificate SHA-256: $want"
 
       - name: Build the release APK
         if: steps.flag.outputs.built == 'true'
         working-directory: apps/mobile
         run: gradle :app:assembleRelease
+
+      # Never ship an APK the tablet will refuse: it must carry the deck
+      # key, and that key must be the pinned one when the repository
+      # variable APK_CERT_SHA256 is set (guards against a replaced secret).
+      - name: Check the APK signature
+        if: steps.flag.outputs.built == 'true'
+        env:
+          PINNED: ${{ vars.APK_CERT_SHA256 }}
+        run: |
+          apk=apps/mobile/app/build/outputs/apk/release/app-release.apk
+          got=$("$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$apk" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          echo "APK signing certificate SHA-256: $got"
+          if [ "$got" != "$DECK_CERT_SHA256" ]; then
+            echo "::error::the APK is not signed with the deck key ($DECK_CERT_SHA256)"
+            exit 1
+          fi
+          pinned=$(echo "$PINNED" | tr -d ': ' | tr 'A-F' 'a-f')
+          if [ -n "$pinned" ] && [ "$got" != "$pinned" ]; then
+            echo "::error::the deck key ($got) is not the pinned APK_CERT_SHA256 ($pinned)"
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         if: steps.flag.outputs.built == 'true'
