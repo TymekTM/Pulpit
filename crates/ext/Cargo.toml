@@ -16,7 +16,7 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 ureq = "3"
 open = "5"
-dirs = "5"
+dirs = "6"
 tempfile = "3"
 pulpit-db = { path = "../db" }
 
