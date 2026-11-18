@@ -36,7 +36,7 @@ jobs:
             echo "::warning::ANDROID_DEBUG_KEYSTORE_B64 is not set - the release will not include a tablet APK"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.flag.outputs.built == 'true'
 
       - uses: actions/setup-java@v4
@@ -112,7 +112,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
